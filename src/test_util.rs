@@ -1,7 +1,17 @@
+macro_rules! fixture {
+    ($path:literal) => {
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/", $path))
+    };
+}
+
+pub(crate) use fixture;
+
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
+
+pub const SHORTCUT_MEMBER: &str = r#"{"mention_name":"ana","workspace2":{"url_slug":"acme"}}"#;
 
 const TIMEOUT: Duration = Duration::from_secs(5);
 const POLL: Duration = Duration::from_millis(20);
@@ -184,6 +194,13 @@ pub fn write_executable(path: &Path, contents: &str) {
     assert!(child.wait().expect("wait for sh").success(), "failed to write {}", path.display());
 }
 
+fn append(path: &Path, text: &str) -> std::fs::File {
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new().append(true).open(path).expect("open agent records");
+    file.write_all(text.as_bytes()).expect("append agent records");
+    file
+}
+
 const TITLE_SIGNAL: &str = r#"if mv "$2/title" "$2/.shown" 2>/dev/null; then
     printf '\033]0;%s\007' "$(cat "$2/.shown")"
   fi"#;
@@ -192,6 +209,99 @@ fn signal(dir: &Path, name: &str, contents: &str) {
     let next = dir.join(format!(".{name}"));
     std::fs::write(&next, contents).expect("write an agent signal");
     std::fs::rename(next, dir.join(name)).expect("put the signal in place");
+}
+
+pub struct FakeClaude {
+    dir: TempDir,
+    _bin: TempDir,
+    script: PathBuf,
+}
+
+impl FakeClaude {
+    pub const WORKING: &str = r#"#!/bin/sh
+s="$1/sessions/$$.json"
+printf '{"pid":%s,"status":"busy"}' $$ > "$s"
+while [ -d "$1" ] && [ ! -e "$1/finish" ]; do sleep 0.02; done
+printf '{"pid":%s,"status":"idle"}' $$ > "$s"
+while [ -d "$1" ] && [ ! -e "$1/quit" ]; do sleep 0.02; done
+rm -f "$s"
+"#;
+
+    pub const SILENT: &str = "#!/bin/sh\nwhile [ -d \"$1\" ] && [ ! -e \"$1/quit\" ]; do sleep 0.02; done\n";
+
+    pub const ANSWERING: &str = r#"#!/bin/sh
+p=$(printf '%s' "$PWD" | tr -c 'a-zA-Z0-9' '-')
+mkdir -p "$1/projects/$p"
+printf '{"type":"assistant","message":{"model":"claude-opus-5-5","usage":{"input_tokens":2,"cache_creation_input_tokens":15655,"cache_read_input_tokens":149954}}}\n' > "$1/projects/$p/s1.jsonl"
+printf '{"pid":%s,"sessionId":"s1","cwd":"%s","status":"idle"}' $$ "$PWD" > "$1/sessions/$$.json"
+while [ -d "$1" ] && [ ! -e "$1/quit" ]; do sleep 0.02; done
+rm -f "$1/sessions/$$.json"
+"#;
+
+    pub const CONTROL: &str = r#"#!/bin/sh
+d="$1"; s="$d/sessions/$$.json"; t="$d/projects/$(printf %s "$PWD" | tr -c 'A-Za-z0-9' '-')"
+mkdir -p "$t"
+state() { printf '{"pid":%s,"sessionId":"s%s","cwd":"%s","status":"%s"}' $$ $$ "$PWD" "$1" > "$s"; }
+state idle
+n=0
+while printf '\033[H\033[2J%s\n────────────\n❯ ' "$said" && IFS= read -r line; do
+  case "$line" in *panel*) printf '\033[H\033[2J────────────\n  Shell details\n  x to stop\n'; read -r line; continue ;; esac
+  case "$line" in *survey*)
+    printf '\033[H\033[2J● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n\n'
+    printf '────────────\n❯ '; IFS= read -r line; [ "$line" = 0 ] && continue ;;
+  esac
+  n=$((n + 1))
+  printf '{"type":"user","uuid":"p%s","origin":{"kind":"human"},"timestamp":"%s.999Z"}\n' "$n" "$(date -u +%Y-%m-%dT%H:%M:%S)" >> "$t/s$$.jsonl"
+  state busy
+  while [ ! -e "$d/finish" ]; do sleep 0.02; done
+  rm -f "$d/finish"
+  printf '{"type":"assistant","timestamp":"%s.999Z","message":{"id":"m%s","model":"synthetic","usage":{"input_tokens":20,"output_tokens":50,"cache_read_input_tokens":200,"cache_creation_input_tokens":10}}}\n' "$(date -u +%Y-%m-%dT%H:%M:%S)" "$n" >> "$t/s$$.jsonl"
+  case "$line" in
+    *ask*) state waiting; read answer ;;
+    *background*) state shell
+      while [ ! -e "$d/finish" ]; do sleep 0.02; done; rm -f "$d/finish" ;;
+  esac
+  said="done: $line"
+  state idle
+done
+rm -f "$s"
+"#;
+
+    pub fn new() -> Self {
+        Self::running(Self::WORKING)
+    }
+
+    pub fn running(script: &str) -> Self {
+        let (dir, bin) = (TempDir::new(), TempDir::new());
+        std::fs::create_dir(dir.path().join("sessions")).expect("create the sessions folder");
+        let path = bin.path().join("claude");
+        write_executable(&path, script);
+        Self { dir, _bin: bin, script: path }
+    }
+
+    pub fn dir(&self) -> &Path {
+        self.dir.path()
+    }
+
+    pub fn script(&self) -> &Path {
+        &self.script
+    }
+
+    pub fn command_line(&self, args: &str) -> String {
+        let unset = format!("env -u {} -u {}", crate::context::NO_LONG_ENV, crate::context::NO_COMPACT_ENV);
+        format!("{unset} {} {} {args}", self.script().display(), self.dir().display())
+    }
+
+    pub fn signal(&self, name: &str) {
+        std::fs::write(self.dir().join(name), "").expect("write the signal");
+    }
+
+    pub fn report(&self, pid: i32, status: &str) {
+        let next = self.dir().join("next.json");
+        std::fs::write(&next, format!(r#"{{"pid":{pid},"status":"{status}"}}"#)).expect("write the session");
+        let session = self.dir().join("sessions").join(format!("{pid}.json"));
+        std::fs::rename(next, session).expect("put the session in place");
+    }
 }
 
 pub struct FakeCodex {
@@ -207,7 +317,7 @@ impl FakeCodex {
         let sessions = dir.path().join("sessions/2026/10/05");
         std::fs::create_dir_all(&sessions).expect("create sessions");
         let rollout = sessions.join(format!("rollout-2026-10-05T12-00-00-{id}.jsonl"));
-        let fixture = include_str!("../tests/fixtures/codex/0.160.0/context.jsonl")
+        let fixture = fixture!("codex/0.160.0/context.jsonl")
             .replace("019a1234-5678-7000-8000-000000000001", id)
             .replace("gpt-5.4", model);
         std::fs::write(&rollout, fixture).expect("write rollout");
@@ -265,9 +375,7 @@ done
     }
 
     pub fn append(&self, text: &str) {
-        use std::io::Write;
-        let mut file = std::fs::OpenOptions::new().append(true).open(&self.rollout).expect("open rollout");
-        file.write_all(text.as_bytes()).expect("append rollout");
+        append(&self.rollout, text);
     }
 
     pub fn serve(&self, cwd: &Path) -> Running {
@@ -337,8 +445,7 @@ impl FakeGemini {
         std::fs::write(dir.path().join(".gemini/projects.json"), registry.to_string()).expect("write Gemini projects");
         std::fs::write(project.join(".project_root"), cwd.to_string_lossy().as_bytes()).expect("write Gemini owner");
         let session = project.join("chats/session-2026-10-10T12-00-00000000.jsonl");
-        std::fs::write(&session, include_str!("../tests/fixtures/gemini/0.63.0/initial.jsonl"))
-            .expect("write Gemini metadata");
+        std::fs::write(&session, fixture!("gemini/0.63.0/initial.jsonl")).expect("write Gemini metadata");
         let script = dir.path().join("gemini");
         let body = r#"#!/bin/sh
 watch_titles() {
@@ -379,9 +486,7 @@ done
     }
 
     pub fn append(&self, text: &str) {
-        use std::io::Write;
-        let mut file = std::fs::OpenOptions::new().append(true).open(&self.session).expect("open Gemini session");
-        file.write_all(text.as_bytes()).expect("append Gemini records");
+        let file = append(&self.session, text);
         file.set_modified(std::time::SystemTime::now()).expect("set the write time");
     }
 
@@ -415,7 +520,7 @@ impl FakeOpencode {
         let database = data.join("opencode.db");
         rusqlite::Connection::open(&database)
             .and_then(|db| {
-                db.execute_batch(include_str!("../tests/fixtures/opencode/1.18.35/schema.sql"))?;
+                db.execute_batch(fixture!("opencode/1.18.35/schema.sql"))?;
                 db.execute(
                     "INSERT INTO project (id, worktree, time_created, time_updated, sandboxes) \
                      VALUES ('global', '/', 0, 0, '[]')",
@@ -423,8 +528,7 @@ impl FakeOpencode {
                 )
             })
             .expect("create the database");
-        std::fs::write(cache.join("models.json"), include_str!("../tests/fixtures/opencode/1.18.35/models.json"))
-            .expect("write models.json");
+        std::fs::write(cache.join("models.json"), fixture!("opencode/1.18.35/models.json")).expect("write models.json");
         let script = dir.path().join("bin/opencode");
         std::fs::create_dir_all(script.parent().expect("bin folder")).expect("create bin folder");
         write_executable(
@@ -529,6 +633,13 @@ pub fn git_repo(files: &[(&str, &str)]) -> TempDir {
     git(repo.path(), &["add", "--all"]);
     git(repo.path(), &["commit", "--quiet", "--allow-empty", "-m", "init"]);
     repo
+}
+
+pub fn clone_of(remote: &Path) -> (TempDir, PathBuf) {
+    let dir = TempDir::new();
+    git(dir.path(), &["clone", "--quiet", &remote.display().to_string(), "clone"]);
+    let path = dir.path().join("clone");
+    (dir, path)
 }
 
 pub struct FakeHttp {

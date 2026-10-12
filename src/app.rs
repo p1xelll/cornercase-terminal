@@ -5653,9 +5653,80 @@ fn pane_cell(pane: Rect, ev: MouseEvent) -> Option<Position> {
 mod tests {
     use std::sync::mpsc::{self, Receiver};
 
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    use ratatui::buffer::Buffer;
+
     use super::*;
     use crate::test_util::{Locked, TempDir, git_repo, is_sh, wait_until, wait_until_within};
     use crate::ui::WorkspaceRow;
+
+    fn drain(app: &mut App, rx: &Receiver<AppEvent>) {
+        drain_in(app, rx, AREA);
+    }
+
+    fn drain_in(app: &mut App, rx: &Receiver<AppEvent>, area: Rect) {
+        while let Ok(ev) = rx.try_recv() {
+            app.handle_event(ev, area).expect("handle event");
+        }
+    }
+
+    fn render(app: &mut App, area: Rect) -> Terminal<TestBackend> {
+        let mut terminal = Terminal::new(TestBackend::new(area.width, area.height)).expect("test backend");
+        terminal.draw(|f| _ = app.draw(f, &Sight::default())).expect("draw");
+        terminal
+    }
+
+    fn render_frame(app: &mut App, area: Rect, sight: &Sight) -> (Buffer, Option<Placed>) {
+        let mut terminal = Terminal::new(TestBackend::new(area.width, area.height)).expect("terminal");
+        let mut placed = None;
+        let buffer = terminal.draw(|f| placed = app.draw(f, sight)).expect("draw").buffer.clone();
+        (buffer, placed)
+    }
+
+    fn write_config(dir: &Path, config: &Config) -> PathBuf {
+        let path = dir.join("config.json");
+        config::save(&path, config).expect("write config");
+        path
+    }
+
+    fn drag(app: &mut App, from: Position, to: Position) {
+        press(app, from);
+        mouse(app, MouseEventKind::Drag(MouseButton::Left), to);
+        mouse(app, MouseEventKind::Up(MouseButton::Left), to);
+    }
+
+    fn panel_area(app: &App) -> Rect {
+        app.layout(AREA).changes
+    }
+
+    fn fake_shortcut<B: Into<Vec<u8>>>(
+        app: &mut App,
+        routes: Vec<(&'static str, u16, B)>,
+    ) -> crate::test_util::FakeHttp {
+        let server = crate::test_util::FakeHttp::start(routes);
+        app.apis.shortcut = format!("{}/api/v3", server.url());
+        server
+    }
+
+    fn closing_last_tab() -> (App, Receiver<AppEvent>, Vec<TempDir>) {
+        let (mut app, rx, dirs) = app_with(1);
+        click_close(&mut app, WorkspaceRow::Tab(0, 0));
+        pump_until(&mut app, &rx, "the tab closes", |a| a.projects[0].workspaces[0].tabs.is_empty());
+        (app, rx, dirs)
+    }
+
+    fn pointer_after_drag(app: &mut App, away: Position) -> pointer::Shape {
+        mouse(app, MouseEventKind::Drag(MouseButton::Left), away);
+        let dragging = app.pointer(AREA);
+        mouse(app, MouseEventKind::Up(MouseButton::Left), away);
+        dragging
+    }
+
+    fn running_sleep(app: &mut App) {
+        type_line(app, "sleep 30");
+        wait_until("sleep runs", || app.term().and_then(|t| t.program(&app.config)).as_deref() == Some("sleep"));
+    }
 
     const AREA: Rect = Rect { x: 0, y: 0, width: 100, height: 20 };
 
@@ -5726,9 +5797,7 @@ mod tests {
 
     fn shows(app: &mut App, rx: &Receiver<AppEvent>, text: &str) {
         wait_until(text, || {
-            while let Ok(ev) = rx.try_recv() {
-                app.handle_event(ev, AREA).expect("handle event");
-            }
+            drain(app, rx);
             screen(app).contains(text)
         });
     }
@@ -5737,18 +5806,14 @@ mod tests {
         type_text(app, &format!("echo {word}-\"\"typed"));
         send_key(app, KeyCode::Enter, KeyModifiers::NONE);
         wait_until("the pane gets the keys", || {
-            while let Ok(ev) = rx.try_recv() {
-                app.handle_event(ev, AREA).expect("handle event");
-            }
+            drain(app, rx);
             screen(app).contains(&format!("{word}-typed"))
         });
     }
 
     fn refreshing(app: &mut App, rx: &Receiver<AppEvent>, what: &str, cond: impl Fn(&App) -> bool) {
         wait_until(what, || {
-            while let Ok(ev) = rx.try_recv() {
-                app.handle_event(ev, AREA).expect("handle event");
-            }
+            drain(app, rx);
             app.refresh(Instant::now());
             cond(app)
         });
@@ -5756,9 +5821,7 @@ mod tests {
 
     fn pump_until(app: &mut App, rx: &Receiver<AppEvent>, what: &str, cond: impl Fn(&App) -> bool) {
         wait_until(what, || {
-            while let Ok(ev) = rx.try_recv() {
-                app.handle_event(ev, AREA).expect("handle event");
-            }
+            drain(app, rx);
             cond(app)
         });
     }
@@ -5930,9 +5993,8 @@ mod tests {
 
     fn with_worktrees_config() -> (TempDir, TempDir, PathBuf) {
         let (worktrees, config) = (TempDir::new(), TempDir::new());
-        let config_path = config.path().join("config.json");
         let worktrees_dir = worktrees.path().display().to_string();
-        config::save(&config_path, &Config { worktrees_dir, ..Config::default() }).expect("write config");
+        let config_path = write_config(config.path(), &Config { worktrees_dir, ..Config::default() });
         (worktrees, config, config_path)
     }
 
@@ -6311,6 +6373,24 @@ mod tests {
 
         use super::*;
 
+        fn moving_while_deleting() -> (App, Receiver<AppEvent>, Vec<TempDir>, u64) {
+            let (mut app, rx, dirs) = asked_to_delete(1, 2);
+            let work = group_label(&app, 0);
+            let moved = app.projects[1].id;
+            click(&mut app, extra_button());
+            move_to(&mut app, 1, &work);
+            (app, rx, dirs, moved)
+        }
+
+        fn renaming_group() -> (App, Receiver<AppEvent>) {
+            let (mut app, rx) = app();
+            new_group(&mut app, "work");
+            right_click_sidebar(&mut app, SidebarRow::Group(0));
+            pick(&mut app, "rename group");
+            clear_input(&mut app);
+            (app, rx)
+        }
+
         fn click_sidebar(app: &mut App, row: SidebarRow) {
             let pos = sidebar_pos(app, row);
             click(app, pos);
@@ -6557,11 +6637,7 @@ mod tests {
 
         #[test]
         fn the_group_menu_renames_it() {
-            let (mut app, _rx) = app();
-            new_group(&mut app, "work");
-            right_click_sidebar(&mut app, SidebarRow::Group(0));
-            pick(&mut app, "rename group");
-            clear_input(&mut app);
+            let (mut app, _rx) = renaming_group();
 
             submit_text(&mut app, "clients");
 
@@ -6570,11 +6646,7 @@ mod tests {
 
         #[test]
         fn an_empty_rename_keeps_the_group_name() {
-            let (mut app, _rx) = app();
-            new_group(&mut app, "work");
-            right_click_sidebar(&mut app, SidebarRow::Group(0));
-            pick(&mut app, "rename group");
-            clear_input(&mut app);
+            let (mut app, _rx) = renaming_group();
 
             send_key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
 
@@ -6654,9 +6726,7 @@ mod tests {
 
         #[test]
         fn without_tabs_the_confirmation_stops_nothing() {
-            let (mut app, rx, _dirs) = app_with(1);
-            click_close(&mut app, WorkspaceRow::Tab(0, 0));
-            pump_until(&mut app, &rx, "the tab closes", |a| a.projects[0].workspaces[0].tabs.is_empty());
+            let (mut app, _rx, _dirs) = closing_last_tab();
             new_group(&mut app, "work");
             let work = group_label(&app, 0);
             move_to(&mut app, 0, &work);
@@ -6727,11 +6797,7 @@ mod tests {
 
         #[test]
         fn a_project_moved_into_the_group_meanwhile_keeps_it_after_the_others_close() {
-            let (mut app, rx, _dirs) = asked_to_delete(1, 2);
-            let work = group_label(&app, 0);
-            let moved = app.projects[1].id;
-            click(&mut app, extra_button());
-            move_to(&mut app, 1, &work);
+            let (mut app, rx, _dirs, moved) = moving_while_deleting();
 
             pump_until(&mut app, &rx, "the old project closes", |a| a.projects.len() == 1);
             app.close_project(moved);
@@ -6742,11 +6808,7 @@ mod tests {
 
         #[test]
         fn a_project_moved_into_the_group_and_closed_before_the_others_still_keeps_it() {
-            let (mut app, rx, _dirs) = asked_to_delete(1, 2);
-            let work = group_label(&app, 0);
-            let moved = app.projects[1].id;
-            click(&mut app, extra_button());
-            move_to(&mut app, 1, &work);
+            let (mut app, rx, _dirs, moved) = moving_while_deleting();
             app.projects[1].workspaces[0].tabs.clear();
 
             app.close_project(moved);
@@ -6874,9 +6936,7 @@ mod tests {
 
         #[test]
         fn without_tabs_the_confirmation_only_asks() {
-            let (mut app, rx, _dirs) = app_with(1);
-            click_close(&mut app, WorkspaceRow::Tab(0, 0));
-            pump_until(&mut app, &rx, "the tab closes", |a| a.projects[0].workspaces[0].tabs.is_empty());
+            let (mut app, _rx, _dirs) = closing_last_tab();
 
             ask_to_close(&mut app, 0);
 
@@ -6943,12 +7003,6 @@ mod tests {
         use rstest::rstest;
 
         use super::*;
-
-        fn drag(app: &mut App, from: Position, to: Position) {
-            press(app, from);
-            mouse(app, MouseEventKind::Drag(MouseButton::Left), to);
-            mouse(app, MouseEventKind::Up(MouseButton::Left), to);
-        }
 
         fn drag_entry(app: &mut App, from: SidebarRow, to: SidebarRow) {
             let (from, to) = (sidebar_pos(app, from), sidebar_pos(app, to));
@@ -7239,6 +7293,13 @@ mod tests {
     mod tabs {
         use super::*;
 
+        fn exited_last_tab() -> (App, Receiver<AppEvent>, Vec<TempDir>) {
+            let (mut app, rx, dirs) = app_with(1);
+            type_line(&mut app, "exit");
+            pump_until(&mut app, &rx, "the tab closes", |a| a.projects[0].workspaces[0].tabs.is_empty());
+            (app, rx, dirs)
+        }
+
         #[test]
         fn plus_tab_opens_one_in_the_workspace_folder() {
             let (mut app, _rx, dirs) = app_with(1);
@@ -7306,9 +7367,7 @@ mod tests {
             click_close(&mut app, WorkspaceRow::Tab(0, 1));
 
             wait_until("the tab closes", || {
-                while let Ok(ev) = rx.try_recv() {
-                    app.handle_event(ev, AREA).expect("handle event");
-                }
+                drain(&mut app, &rx);
                 app.refresh(Instant::now());
                 app.projects[0].workspaces[0].tabs.len() == 1
             });
@@ -7316,19 +7375,13 @@ mod tests {
 
         #[test]
         fn the_last_one_exiting_keeps_the_workspace() {
-            let (mut app, rx, _dirs) = app_with(1);
-
-            type_line(&mut app, "exit");
-
-            pump_until(&mut app, &rx, "the tab closes", |a| a.projects[0].workspaces[0].tabs.is_empty());
+            let (app, _rx, _dirs) = exited_last_tab();
             assert_eq!((app.projects.len(), app.projects[0].workspaces.len()), (1, 1));
         }
 
         #[test]
         fn plus_tab_works_in_an_empty_workspace() {
-            let (mut app, rx, _dirs) = app_with(1);
-            type_line(&mut app, "exit");
-            pump_until(&mut app, &rx, "the tab closes", |a| a.projects[0].workspaces[0].tabs.is_empty());
+            let (mut app, _rx, _dirs) = exited_last_tab();
 
             click_row(&mut app, WorkspaceRow::NewTab(0));
 
@@ -7344,6 +7397,19 @@ mod tests {
 
     mod workspaces {
         use super::*;
+
+        fn external_checkout() -> (TempDir, App, Receiver<AppEvent>, TempDir, PathBuf) {
+            let repo = git_repo(&[]);
+            let (mut app, rx) = app_in(repo.path(), no_config());
+            let tmp = TempDir::new();
+            let path = tmp.path().join("hotfix");
+            crate::test_util::git(
+                repo.path(),
+                &["worktree", "add", "--quiet", "-b", "hotfix", &path.display().to_string()],
+            );
+            app.sync_worktrees();
+            (repo, app, rx, tmp, path)
+        }
 
         fn open_form(app: &mut App) {
             let pos = new_workspace_pos(app);
@@ -7449,16 +7515,7 @@ mod tests {
 
         #[test]
         fn checkouts_made_outside_show_up() {
-            let repo = git_repo(&[]);
-            let (mut app, _rx) = app_in(repo.path(), no_config());
-            let tmp = TempDir::new();
-            let path = tmp.path().join("hotfix");
-            crate::test_util::git(
-                repo.path(),
-                &["worktree", "add", "--quiet", "-b", "hotfix", &path.display().to_string()],
-            );
-
-            app.sync_worktrees();
+            let (_repo, app, _rx, _tmp, _path) = external_checkout();
 
             let workspace = &app.projects[0].workspaces[1];
             assert_eq!((workspace.label(), workspace.worktree, workspace.tabs.len()), ("hotfix".into(), true, 0));
@@ -7466,15 +7523,7 @@ mod tests {
 
         #[test]
         fn checkouts_removed_outside_go_away() {
-            let repo = git_repo(&[]);
-            let (mut app, _rx) = app_in(repo.path(), no_config());
-            let tmp = TempDir::new();
-            let path = tmp.path().join("hotfix");
-            crate::test_util::git(
-                repo.path(),
-                &["worktree", "add", "--quiet", "-b", "hotfix", &path.display().to_string()],
-            );
-            app.sync_worktrees();
+            let (_repo, mut app, _rx, _tmp, path) = external_checkout();
 
             std::fs::remove_dir_all(&path).expect("remove checkout");
             app.sync_worktrees();
@@ -7497,9 +7546,7 @@ mod tests {
             #[test]
             fn a_commit_on_the_remote_shows_until_it_is_pulled() {
                 let remote = git_repo(&[]);
-                let tmp = TempDir::new();
-                git(tmp.path(), &["clone", "--quiet", &remote.path().display().to_string(), "clone"]);
-                let clone = tmp.path().join("clone");
+                let (_tmp, clone) = crate::test_util::clone_of(remote.path());
                 let (mut app, rx) = app_in(&clone, no_config());
                 commit(remote.path());
                 let start = Instant::now();
@@ -7527,8 +7574,7 @@ mod tests {
             fn nothing_is_fetched_when_turned_off() {
                 let repo = git_repo(&[]);
                 let tmp = TempDir::new();
-                let config_path = tmp.path().join("config.json");
-                config::save(&config_path, &Config { fetch_minutes: 0, ..Config::default() }).expect("save config");
+                let config_path = write_config(tmp.path(), &Config { fetch_minutes: 0, ..Config::default() });
                 let (mut app, _rx) = app_in(repo.path(), config_path);
                 app.projects[0].workspaces[0].behind = 2;
 
@@ -8066,22 +8112,11 @@ mod tests {
     mod restore {
         use super::*;
 
-        fn workspace(path: &Path, cwds: Vec<Option<PathBuf>>) -> WorkspaceState {
-            let tabs = cwds.into_iter().map(|cwd| TabState {
-                name: None,
-                panes: vec![PaneState { cwd, right_clicks: false, agent: None }],
-                active: 0,
-                layout: None,
-            });
-            WorkspaceState {
-                path: path.to_path_buf(),
-                name: None,
-                worktree: false,
-                tabs: tabs.collect(),
-                active: 0,
-                base: None,
-                collapsed: false,
-            }
+        fn locked_restore() -> (TempDir, Locked, App, Receiver<AppEvent>, WorkspaceState) {
+            let (dir, locked) = (TempDir::new(), Locked::new());
+            let (app, rx) = empty_app();
+            let ws = with_a_locked_pane(dir.path(), &locked);
+            (dir, locked, app, rx, ws)
         }
 
         fn project(path: &Path, workspaces: Vec<WorkspaceState>) -> ProjectState {
@@ -8102,18 +8137,131 @@ mod tests {
             }
         }
 
+        #[rstest::rstest]
+        #[case::changes(true, false, false)]
+        #[case::todo(false, true, false)]
+        #[case::files(false, false, true)]
+        fn restoring_preserves_the_saved_state(#[case] changes: bool, #[case] todo: bool, #[case] files: bool) {
+            let dirs: Vec<TempDir> = (0..4).map(|_| TempDir::new()).collect();
+            let paths: Vec<PathBuf> = dirs.iter().map(canonical).collect();
+            let mut loose = WorkspaceState::plain(paths[0].clone(), vec![Some(paths[0].clone())], 0);
+            loose.name = Some("planning".into());
+            loose.base = Some("main".into());
+            loose.collapsed = true;
+            loose.tabs[0].name = Some("notes".into());
+            let split = TabState {
+                name: Some("split shell".into()),
+                panes: vec![
+                    PaneState { cwd: Some(paths[2].clone()), right_clicks: false, agent: None },
+                    PaneState { cwd: Some(paths[3].clone()), right_clicks: true, agent: None },
+                ],
+                active: 1,
+                layout: Some(split::Node::Split {
+                    dir: Dir::Down,
+                    ratio: 0.375,
+                    first: Box::new(split::Node::Leaf(0)),
+                    second: Box::new(split::Node::Leaf(1)),
+                }),
+            };
+            let saved = State {
+                version: state::VERSION,
+                groups: vec![
+                    ui::GroupEntry { name: "work".into(), icon: ui::GROUP_ICONS[0], colour: 99, collapsed: false },
+                    ui::GroupEntry { name: "archive".into(), icon: ui::GROUP_ICONS[3], colour: 33, collapsed: true },
+                ],
+                projects: vec![
+                    ProjectState { name: Some("Notes".into()), collapsed: true, ..project(&paths[0], vec![loose]) },
+                    ProjectState {
+                        name: Some("Shop".into()),
+                        group: Some(1),
+                        active: 1,
+                        collapsed: true,
+                        ..project(
+                            &paths[1],
+                            vec![
+                                WorkspaceState::plain(paths[1].clone(), vec![Some(paths[1].clone())], 0),
+                                WorkspaceState {
+                                    path: paths[2].clone(),
+                                    name: Some("returns".into()),
+                                    worktree: true,
+                                    tabs: vec![
+                                        TabState {
+                                            name: Some("build".into()),
+                                            panes: vec![PaneState {
+                                                cwd: Some(paths[2].clone()),
+                                                right_clicks: false,
+                                                agent: None,
+                                            }],
+                                            active: 0,
+                                            layout: None,
+                                        },
+                                        split,
+                                    ],
+                                    active: 1,
+                                    base: Some("release".into()),
+                                    collapsed: true,
+                                },
+                            ],
+                        )
+                    },
+                ],
+                active: 1,
+                widths: Some(ui::Widths {
+                    projects: 35,
+                    workspaces: 24,
+                    changes: Some(42),
+                    stack: Some(11),
+                    agents: Some(7),
+                }),
+                issues: Some(IssuesState {
+                    tab: Some("github".into()),
+                    closed: true,
+                    people: People {
+                        github: [issues::Who::Me, issues::Who::Person("ana".into())],
+                        ..People::default()
+                    },
+                }),
+                changes: Some(ChangesState {
+                    open: changes,
+                    mode: changes::Mode::Commits,
+                    scope: Some(changes::Scope::Every),
+                }),
+                todo,
+                files,
+            };
+            let (mut app, _rx) = empty_app();
+
+            assert!(app.restore(&saved, AREA), "every tab comes back");
+            wait_until("every shell reports its saved folder", || {
+                app.projects.iter().zip(&saved.projects).all(|(project, saved)| {
+                    project.workspaces.iter().zip(&saved.workspaces).all(|(workspace, saved)| {
+                        workspace.tabs.iter().zip(&saved.tabs).all(|(tab, saved)| {
+                            tab.panes.iter().zip(&saved.panes).all(|(pane, saved)| pane.cwd() == saved.cwd)
+                        })
+                    })
+                })
+            });
+
+            assert_eq!(app.state(), saved);
+        }
+
         #[test]
         fn reopens_projects_workspaces_and_tabs() {
             let (a, b) = (TempDir::new(), TempDir::new());
             let (a_path, b_path) = (canonical(&a), canonical(&b));
             std::fs::create_dir(a_path.join("sub")).expect("create folder");
             let (mut app, _rx) = empty_app();
-            let mut second = workspace(&a_path, vec![Some(a_path.clone()), Some(a_path.join("sub"))]);
+            let mut second =
+                WorkspaceState::plain(a_path.clone(), vec![Some(a_path.clone()), Some(a_path.join("sub"))], 0);
             second.name = Some("other".into());
             second.active = 1;
-            let mut first_project = project(&a_path, vec![workspace(&a_path, vec![None]), second]);
+            let mut first_project =
+                project(&a_path, vec![WorkspaceState::plain(a_path.clone(), vec![None], 0), second]);
             first_project.active = 1;
-            let state = saved(vec![first_project, project(&b_path, vec![workspace(&b_path, vec![None])])], 0);
+            let state = saved(
+                vec![first_project, project(&b_path, vec![WorkspaceState::plain(b_path.clone(), vec![None], 0)])],
+                0,
+            );
 
             assert!(app.restore(&state, AREA), "every tab comes back");
 
@@ -8127,11 +8275,14 @@ mod tests {
             let (a, b) = (TempDir::new(), TempDir::new());
             let (a_path, b_path) = (canonical(&a), canonical(&b));
             let (mut app, _rx) = empty_app();
-            let mut folded = workspace(&a_path, vec![None]);
+            let mut folded = WorkspaceState::plain(a_path.clone(), vec![None], 0);
             folded.collapsed = true;
-            let mut other = project(&b_path, vec![workspace(&b_path, vec![None])]);
+            let mut other = project(&b_path, vec![WorkspaceState::plain(b_path.clone(), vec![None], 0)]);
             other.collapsed = true;
-            let state = saved(vec![project(&a_path, vec![folded, workspace(&a_path, vec![None])]), other], 0);
+            let state = saved(
+                vec![project(&a_path, vec![folded, WorkspaceState::plain(a_path.clone(), vec![None], 0)]), other],
+                0,
+            );
 
             app.restore(&state, AREA);
             let again = app.state();
@@ -8146,7 +8297,7 @@ mod tests {
         fn the_first_draw_keeps_a_folded_active_project_folded() {
             let dir = TempDir::new();
             let (mut app, _rx) = empty_app();
-            let mut folded = project(&canonical(&dir), vec![workspace(&canonical(&dir), vec![None])]);
+            let mut folded = project(&canonical(&dir), vec![WorkspaceState::plain(canonical(&dir), vec![None], 0)]);
             folded.collapsed = true;
             app.restore(&saved(vec![folded], 0), AREA);
 
@@ -8156,7 +8307,7 @@ mod tests {
         }
 
         fn with_a_locked_pane(dir: &Path, locked: &Locked) -> WorkspaceState {
-            let mut ws = workspace(dir, vec![None, None]);
+            let mut ws = WorkspaceState::plain(dir.to_path_buf(), vec![None, None], 0);
             ws.tabs[0].panes.push(PaneState {
                 cwd: Some(locked.path().to_path_buf()),
                 right_clicks: false,
@@ -8169,7 +8320,7 @@ mod tests {
         fn a_tab_whose_shell_cannot_start_is_left_out_and_the_rest_comes_back() {
             let (first, last, locked) = (TempDir::new(), TempDir::new(), Locked::new());
             let (mut app, _rx) = empty_app();
-            let one_tab = |path: &Path| project(path, vec![workspace(path, vec![None])]);
+            let one_tab = |path: &Path| project(path, vec![WorkspaceState::plain(path.to_path_buf(), vec![None], 0)]);
             let state = saved(vec![one_tab(first.path()), one_tab(locked.path()), one_tab(last.path())], 0);
 
             assert!(!app.restore(&state, AREA), "the restore says a tab is missing");
@@ -8182,9 +8333,7 @@ mod tests {
 
         #[test]
         fn a_split_tab_with_one_pane_that_cannot_start_is_left_out_whole() {
-            let (dir, locked) = (TempDir::new(), Locked::new());
-            let (mut app, _rx) = empty_app();
-            let ws = with_a_locked_pane(dir.path(), &locked);
+            let (dir, _locked, mut app, _rx, ws) = locked_restore();
 
             assert!(
                 !app.restore(&saved(vec![project(dir.path(), vec![ws])], 0), AREA),
@@ -8198,9 +8347,7 @@ mod tests {
 
         #[test]
         fn a_tab_that_cannot_start_names_the_folder_and_why() {
-            let (dir, locked) = (TempDir::new(), Locked::new());
-            let (mut app, _rx) = empty_app();
-            let ws = with_a_locked_pane(dir.path(), &locked);
+            let (dir, locked, mut app, _rx, ws) = locked_restore();
 
             let Err(e) = app.restore_tab(&ws.tabs[0], dir.path(), AREA) else {
                 panic!("the second pane cannot start");
@@ -8226,8 +8373,10 @@ mod tests {
         fn skips_workspaces_whose_folder_is_gone() {
             let dir = TempDir::new();
             let (mut app, _rx) = empty_app();
-            let workspaces =
-                vec![workspace(Path::new("/nonexistent/folder"), vec![None]), workspace(dir.path(), vec![None])];
+            let workspaces = vec![
+                WorkspaceState::plain(Path::new("/nonexistent/folder").to_path_buf(), vec![None], 0),
+                WorkspaceState::plain(dir.path().to_path_buf(), vec![None], 0),
+            ];
 
             app.restore(&saved(vec![project(dir.path(), workspaces)], 0), AREA);
 
@@ -8239,7 +8388,7 @@ mod tests {
             let dir = TempDir::new();
             let path = canonical(&dir);
             let (mut app, _rx) = empty_app();
-            let ws = workspace(&path, vec![Some(PathBuf::from("/nonexistent/folder"))]);
+            let ws = WorkspaceState::plain(path.clone(), vec![Some(PathBuf::from("/nonexistent/folder"))], 0);
 
             app.restore(&saved(vec![project(&path, vec![ws])], 0), AREA);
 
@@ -8250,7 +8399,7 @@ mod tests {
         fn keeps_the_names() {
             let dir = TempDir::new();
             let (mut app, _rx) = empty_app();
-            let mut ws = workspace(dir.path(), vec![None]);
+            let mut ws = WorkspaceState::plain(dir.path().to_path_buf(), vec![None], 0);
             ws.name = Some("main line".into());
             ws.tabs[0].name = Some("server".into());
             let mut p = project(dir.path(), vec![ws]);
@@ -8342,10 +8491,6 @@ mod tests {
         fn grouped(app: &App, group: &str) -> Vec<PathBuf> {
             let id = app.groups.iter().find(|g| g.entry.name == group).map(|g| g.id);
             app.projects.iter().filter(|p| id.is_some() && p.group == id).map(|p| p.path.clone()).collect()
-        }
-
-        fn toast(app: &App) -> Option<&str> {
-            app.toast.as_ref().map(|t| t.message.as_str())
         }
 
         #[test]
@@ -8580,77 +8725,37 @@ mod tests {
     }
 
     mod agent_status {
-        use ratatui::Terminal;
-        use ratatui::backend::TestBackend;
         use rstest::rstest;
 
         use super::*;
         use crate::activity::Status;
-        use crate::test_util::{FakeCodex, FakeGemini, FakeOpencode, write_executable};
+        use crate::test_util::{FakeClaude, FakeCodex, FakeGemini, FakeOpencode, write_executable};
 
-        const FAKE_CLAUDE: &str = r#"#!/bin/sh
-s="$1/sessions/$$.json"
-printf '{"pid":%s,"status":"busy"}' $$ > "$s"
-while [ -d "$1" ] && [ ! -e "$1/finish" ]; do sleep 0.02; done
-printf '{"pid":%s,"status":"idle"}' $$ > "$s"
-while [ -d "$1" ] && [ ! -e "$1/quit" ]; do sleep 0.02; done
-rm -f "$s"
-"#;
-
-        const TURN_STARTED: &str = include_str!("../tests/fixtures/codex/0.160.0/turn-started.jsonl");
-        const TURN_COMPLETE: &str = include_str!("../tests/fixtures/codex/0.160.0/turn-complete.jsonl");
-        const OPENCODE_WORKING: &str = include_str!("../tests/fixtures/opencode/1.18.35/working.jsonl");
-        const OPENCODE_REPLY: &str = include_str!("../tests/fixtures/opencode/1.18.35/reply.jsonl");
-
-        const SILENT_CLAUDE: &str = "#!/bin/sh\nwhile [ -d \"$1\" ] && [ ! -e \"$1/quit\" ]; do sleep 0.02; done\n";
-
-        const ANSWERING_CLAUDE: &str = r#"#!/bin/sh
-p=$(printf '%s' "$PWD" | tr -c 'a-zA-Z0-9' '-')
-mkdir -p "$1/projects/$p"
-printf '{"type":"assistant","message":{"model":"claude-opus-5-5","usage":{"input_tokens":2,"cache_creation_input_tokens":15655,"cache_read_input_tokens":149954}}}\n' > "$1/projects/$p/s1.jsonl"
-printf '{"pid":%s,"sessionId":"s1","cwd":"%s","status":"idle"}' $$ "$PWD" > "$1/sessions/$$.json"
-while [ -d "$1" ] && [ ! -e "$1/quit" ]; do sleep 0.02; done
-rm -f "$1/sessions/$$.json"
-"#;
-
-        struct Claude {
-            dir: TempDir,
-            _bin: TempDir,
-            script: PathBuf,
+        fn working_claude() -> (App, Receiver<AppEvent>, Vec<TempDir>, FakeClaude) {
+            let (mut app, rx, dirs) = app_with(1);
+            let claude = FakeClaude::new();
+            claude.start(&mut app);
+            watch_until(&mut app, &rx, "claude works", |a| status(a, 0, 0) == Some(Status::Working));
+            (app, rx, dirs, claude)
         }
 
-        impl Claude {
-            fn new() -> Self {
-                Self::running(FAKE_CLAUDE)
-            }
+        const TURN_STARTED: &str = crate::test_util::fixture!("codex/0.160.0/turn-started.jsonl");
+        const TURN_COMPLETE: &str = crate::test_util::fixture!("codex/0.160.0/turn-complete.jsonl");
+        const OPENCODE_WORKING: &str = crate::test_util::fixture!("opencode/1.18.35/working.jsonl");
+        const OPENCODE_REPLY: &str = crate::test_util::fixture!("opencode/1.18.35/reply.jsonl");
 
-            fn running(script: &str) -> Self {
-                let (dir, bin) = (TempDir::new(), TempDir::new());
-                std::fs::create_dir(dir.path().join("sessions")).expect("create the sessions folder");
-                let path = bin.path().join("claude");
-                write_executable(&path, script);
-                Self { dir, _bin: bin, script: path }
-            }
-
+        trait StartClaude {
             fn start(&self, app: &mut App) {
                 self.start_with(app, "");
             }
 
+            fn start_with(&self, app: &mut App, args: &str);
+        }
+
+        impl StartClaude for FakeClaude {
             fn start_with(&self, app: &mut App, args: &str) {
-                app.claude_dir = Some(self.dir.path().to_path_buf());
-                let unset = format!("env -u {} -u {}", context::NO_LONG_ENV, context::NO_COMPACT_ENV);
-                type_line(app, &format!("{unset} {} {} {args}", self.script.display(), self.dir.path().display()));
-            }
-
-            fn signal(&self, name: &str) {
-                std::fs::write(self.dir.path().join(name), "").expect("write the signal");
-            }
-
-            fn report(&self, pid: i32, status: &str) {
-                let next = self.dir.path().join("next.json");
-                std::fs::write(&next, format!(r#"{{"pid":{pid},"status":"{status}"}}"#)).expect("write the session");
-                let session = self.dir.path().join("sessions").join(format!("{pid}.json"));
-                std::fs::rename(next, session).expect("put the session in place");
+                app.claude_dir = Some(self.dir().to_path_buf());
+                type_line(app, &self.command_line(args));
             }
         }
 
@@ -8661,9 +8766,7 @@ rm -f "$1/sessions/$$.json"
 
         fn watch_until(app: &mut App, rx: &Receiver<AppEvent>, what: &str, cond: impl Fn(&App) -> bool) {
             wait_until(what, || {
-                while let Ok(ev) = rx.try_recv() {
-                    app.handle_event(ev, AREA).expect("handle event");
-                }
+                drain(app, rx);
                 tick(app);
                 cond(app)
             });
@@ -8673,29 +8776,19 @@ rm -f "$1/sessions/$$.json"
             app.projects[p].workspaces[0].tabs[t].status()
         }
 
-        fn rendered(app: &mut App, area: Rect) -> Terminal<TestBackend> {
-            let mut t = Terminal::new(TestBackend::new(area.width, area.height)).expect("test backend");
-            t.draw(|f| _ = app.draw(f, &Sight::default())).expect("draw");
-            t
-        }
-
         fn text(t: &Terminal<TestBackend>, r: Rect) -> String {
             (r.x..r.right()).map(|x| t.backend().buffer()[(x, r.y)].symbol().to_string()).collect()
         }
 
         fn second_row(app: &mut App) -> (u16, String) {
             let r = row_rect(app, WorkspaceRow::Tab(0, 0));
-            let below = text(&rendered(app, AREA), Rect { y: r.y + 1, height: 1, ..r });
+            let below = text(&render(app, AREA), Rect { y: r.y + 1, height: 1, ..r });
             (r.height, below.trim_end().to_string())
         }
 
         #[test]
         fn a_tab_follows_what_claude_says_it_is_doing() {
-            let (mut app, rx, _dirs) = app_with(1);
-            let claude = Claude::new();
-
-            claude.start(&mut app);
-            watch_until(&mut app, &rx, "claude works", |a| status(a, 0, 0) == Some(Status::Working));
+            let (mut app, rx, _dirs, claude) = working_claude();
             claude.signal("finish");
             watch_until(&mut app, &rx, "claude finishes in sight", |a| status(a, 0, 0) == Some(Status::Idle));
             claude.signal("quit");
@@ -8705,10 +8798,7 @@ rm -f "$1/sessions/$$.json"
 
         #[test]
         fn finishing_out_of_sight_marks_the_tab_done_until_it_is_opened() {
-            let (mut app, rx, _dirs) = app_with(1);
-            let claude = Claude::new();
-            claude.start(&mut app);
-            watch_until(&mut app, &rx, "claude works", |a| status(a, 0, 0) == Some(Status::Working));
+            let (mut app, rx, _dirs, claude) = working_claude();
             app.add_tab(0, 0, AREA).expect("add a tab");
             claude.signal("finish");
             watch_until(&mut app, &rx, "claude finishes out of sight", |a| status(a, 0, 0) == Some(Status::Done));
@@ -8722,15 +8812,12 @@ rm -f "$1/sessions/$$.json"
 
         #[test]
         fn the_compact_menu_hides_the_tab_beneath_it() {
-            let (mut app, rx, _dirs) = app_with(1);
-            let claude = Claude::new();
-            claude.start(&mut app);
-            watch_until(&mut app, &rx, "claude works", |a| status(a, 0, 0) == Some(Status::Working));
+            let (mut app, rx, _dirs, claude) = working_claude();
             app.nav = Some(ui::Nav::Workspaces);
             claude.signal("finish");
             watch_until(&mut app, &rx, "claude finishes under the menu", |a| status(a, 0, 0) == Some(Status::Done));
             let small = Rect::new(0, 0, 80, 30);
-            let bar = text(&rendered(&mut app, small), Rect::new(0, 1, 7, 1));
+            let bar = text(&render(&mut app, small), Rect::new(0, 1, 7, 1));
 
             app.nav = None;
             let now = app.watched.expect("watched");
@@ -8751,7 +8838,7 @@ rm -f "$1/sessions/$$.json"
         ) {
             let (mut app, rx, _dirs) = app_with(1);
             (app.config.model, app.config.context) = (model, context);
-            let claude = Claude::running(ANSWERING_CLAUDE);
+            let claude = FakeClaude::running(FakeClaude::ANSWERING);
             claude.start(&mut app);
             watch_until(&mut app, &rx, "claude answers", |a| a.projects[0].workspaces[0].tabs[0].context().is_some());
 
@@ -8765,10 +8852,10 @@ rm -f "$1/sessions/$$.json"
             app.projects[0].workspaces[0].tabs[0].memory()
         }
 
-        fn measured_claude() -> (App, Receiver<AppEvent>, Vec<TempDir>, Claude) {
+        fn measured_claude() -> (App, Receiver<AppEvent>, Vec<TempDir>, FakeClaude) {
             let (mut app, rx, dirs) = app_with(1);
             app.config.memory = true;
-            let claude = Claude::running(SILENT_CLAUDE);
+            let claude = FakeClaude::running(FakeClaude::SILENT);
             claude.start(&mut app);
             watch_until(&mut app, &rx, "the memory is measured", |a| memory(a).is_some());
             (app, rx, dirs, claude)
@@ -8844,7 +8931,7 @@ rm -f "$1/sessions/$$.json"
             let (mut app, rx, _dirs) = app_with(2);
             app.config.memory = true;
             app.config.sidebar = ui::Sidebar::Tree.id().into();
-            rendered(&mut app, Rect::new(0, 0, 100, 30));
+            render(&mut app, Rect::new(0, 0, 100, 30));
 
             let measured = |a: &App| a.projects.iter().all(|p| p.workspaces[0].tabs[0].memory().is_some());
             watch_until(&mut app, &rx, "the tabs of both projects are measured", measured);
@@ -8869,7 +8956,7 @@ rm -f "$1/sessions/$$.json"
             assert_eq!(context(&app, 0).expect("first").model, "gpt-5.4");
             assert_eq!(context(&app, 1).expect("second").model, "gpt-5.4-mini");
             assert_eq!(status(&app, 0, 1), Some(Status::Idle));
-            second.append(include_str!("../tests/fixtures/codex/0.160.0/compacted.jsonl"));
+            second.append(crate::test_util::fixture!("codex/0.160.0/compacted.jsonl"));
             watch_until(&mut app, &rx, "compaction clears the percentage", |a| {
                 context(a, 1).is_some_and(|c| c.percent.is_none())
             });
@@ -8888,14 +8975,14 @@ rm -f "$1/sessions/$$.json"
             let context = |a: &App| a.projects[0].workspaces[0].tabs[0].context().cloned();
             type_line(&mut app, &fake.command_line());
             watch_until(&mut app, &rx, "Codex answers", |a| context(a).is_some());
-            fake.append(include_str!("../tests/fixtures/codex/0.160.0/model-change.jsonl"));
+            fake.append(crate::test_util::fixture!("codex/0.160.0/model-change.jsonl"));
             watch_until(&mut app, &rx, "Codex changes models", |a| {
                 context(a).is_some_and(|c| c.model == "gpt-5.4-mini" && c.percent.is_none())
             });
 
             let next =
                 fake.rollout.with_file_name("rollout-2026-10-05T12-00-00-019a1234-5678-7000-8000-000000000002.jsonl");
-            let header = include_str!("../tests/fixtures/codex/0.160.0/context.jsonl")
+            let header = crate::test_util::fixture!("codex/0.160.0/context.jsonl")
                 .lines()
                 .next()
                 .expect("header")
@@ -8910,7 +8997,7 @@ rm -f "$1/sessions/$$.json"
         fn another_project_and_the_menu_button_show_that_claude_finished() {
             let (mut app, rx, _dirs) = app_with(2);
             app.active = 0;
-            let claude = Claude::new();
+            let claude = FakeClaude::new();
             claude.start(&mut app);
             watch_until(&mut app, &rx, "claude works", |a| status(a, 0, 0) == Some(Status::Working));
             app.active = 1;
@@ -8918,15 +9005,15 @@ rm -f "$1/sessions/$$.json"
             watch_until(&mut app, &rx, "claude finishes out of sight", |a| status(a, 0, 0) == Some(Status::Done));
 
             let row = ui::entry_row(list(), areas().pitch, &app.sidebar_rows(), 0, SidebarRow::Project(0));
-            let sidebar = text(&rendered(&mut app, AREA), row);
+            let sidebar = text(&render(&mut app, AREA), row);
             let small = Rect::new(0, 0, 80, 30);
-            let bar = text(&rendered(&mut app, small), Rect::new(0, 1, 7, 1));
+            let bar = text(&render(&mut app, small), Rect::new(0, 1, 7, 1));
 
             assert_eq!((sidebar.trim_end().ends_with('✓'), bar.as_str()), (true, "   ≡ ✓ "));
         }
 
         enum Fake {
-            Claude(Claude, i32),
+            Claude(FakeClaude, i32),
             Codex(FakeCodex, usize),
             Gemini(FakeGemini, usize),
             Opencode(FakeOpencode, usize),
@@ -8983,7 +9070,7 @@ rm -f "$1/sessions/$$.json"
                 } else if agent == agents::OPENCODE {
                     Fake::Opencode(start_opencode(app, rx), app.projects[0].workspaces[0].active)
                 } else {
-                    let claude = Claude::running(SILENT_CLAUDE);
+                    let claude = FakeClaude::running(FakeClaude::SILENT);
                     claude.start(app);
                     pump_until(app, rx, "claude runs", |a| runs(a, agents::CLAUDE));
                     let pid = app.term().and_then(Term::foreground_pid).expect("the pid of claude");
@@ -9105,13 +9192,13 @@ rm -f "$1/sessions/$$.json"
         fn gemini_context_reaches_both_layouts_and_ambiguity_hides_only_conversation_data() {
             let mut w = Watched::start(agents::GEMINI, false);
             let Fake::Gemini(fake, _) = &w.agents[0] else { unreachable!("Gemini was started") };
-            fake.append(include_str!("../tests/fixtures/gemini/0.63.0/reply.jsonl"));
+            fake.append(crate::test_util::fixture!("gemini/0.63.0/reply.jsonl"));
             watch_until(&mut w.app, &w.rx, "Gemini's context shows", |a| {
                 a.tab().is_some_and(|t| t.context().is_some())
             });
             assert!(second_row(&mut w.app).1.contains("1%"));
             w.app.nav = Some(ui::Nav::Workspaces);
-            let compact = rendered(&mut w.app, Rect::new(0, 0, 80, 30));
+            let compact = render(&mut w.app, Rect::new(0, 0, 80, 30));
             let contents: String =
                 compact.backend().buffer().content().iter().map(ratatui::buffer::Cell::symbol).collect();
             assert!(contents.contains("gemini-"));
@@ -9242,6 +9329,14 @@ rm -f "$1/sessions/$$.json"
         mod resuming {
             use super::*;
 
+            fn remembered_claude() -> (App, Receiver<AppEvent>, Vec<TempDir>, FakeClaude, State) {
+                let (mut app, rx, dirs) = app_with(1);
+                let claude = FakeClaude::running(FakeClaude::ANSWERING);
+                claude.start(&mut app);
+                let saved = remembered(&mut app, &rx);
+                (app, rx, dirs, claude, saved)
+            }
+
             const CODEX_ID: &str = "019a1234-5678-7000-8000-000000000001";
 
             fn saved_agent(saved: &State) -> Option<&AgentState> {
@@ -9270,9 +9365,7 @@ rm -f "$1/sessions/$$.json"
 
             fn wait_resumed(app: &mut App, rx: &Receiver<AppEvent>, line: &str) {
                 wait_until("the conversation is resumed", || {
-                    while let Ok(ev) = rx.try_recv() {
-                        app.handle_event(ev, AREA).expect("handle event");
-                    }
+                    drain(app, rx);
                     app.refresh(Instant::now());
                     squeezed(&screen(app)).contains(&squeezed(&format!("resumed: {line}")))
                 });
@@ -9280,18 +9373,15 @@ rm -f "$1/sessions/$$.json"
 
             #[test]
             fn an_agent_restored_in_its_conversation_is_not_a_new_start() {
-                let (mut app, rx, _dirs) = app_with(1);
-                let claude = Claude::running(ANSWERING_CLAUDE);
-                claude.start(&mut app);
-                let saved = remembered(&mut app, &rx);
+                let (mut app, rx, _dirs, claude, saved) = remembered_claude();
                 assert_eq!(app.stats_view(SystemTime::now()).windows["total"].counts.agents, 1);
                 claude.signal("quit");
                 watch_until(&mut app, &rx, "old agent exits", |a| !runs(a, agents::CLAUDE));
-                std::fs::remove_file(claude.dir.path().join("quit")).expect("clear quit");
+                std::fs::remove_file(claude.dir().join("quit")).expect("clear quit");
                 let (mut back, rx, _dirs) = app_with(0);
-                back.config.agent_commands.insert(agents::CLAUDE.into(), claude.script.display().to_string());
-                back.config.agent_args.insert(agents::CLAUDE.into(), vec![claude.dir.path().display().to_string()]);
-                back.claude_dir = Some(claude.dir.path().to_path_buf());
+                back.config.agent_commands.insert(agents::CLAUDE.into(), claude.script().display().to_string());
+                back.config.agent_args.insert(agents::CLAUDE.into(), vec![claude.dir().display().to_string()]);
+                back.claude_dir = Some(claude.dir().to_path_buf());
                 assert!(back.restore(&saved, AREA));
                 refreshing(&mut back, &rx, "resumed conversation", |a| {
                     a.term().and_then(|t| t.context.conversation()).is_some()
@@ -9303,7 +9393,7 @@ rm -f "$1/sessions/$$.json"
             #[test]
             fn claude_comes_back_in_its_conversation_and_mode() {
                 let (mut app, rx, _dirs) = app_with(1);
-                let claude = Claude::running(ANSWERING_CLAUDE);
+                let claude = FakeClaude::running(FakeClaude::ANSWERING);
                 claude.start_with(&mut app, "--permission-mode plan");
                 let saved = remembered(&mut app, &rx);
                 claude.signal("quit");
@@ -9334,7 +9424,7 @@ rm -f "$1/sessions/$$.json"
                 let gemini = FakeGemini::new(&app.projects[0].path);
                 type_line(&mut app, &format!("{} --approval-mode plan", gemini.command_line()));
                 watch_until(&mut app, &rx, "Gemini is ready", |a| status(a, 0, 0) == Some(Status::Idle));
-                gemini.append(include_str!("../tests/fixtures/gemini/0.63.0/prompt.jsonl"));
+                gemini.append(crate::test_util::fixture!("gemini/0.63.0/prompt.jsonl"));
                 let saved = remembered(&mut app, &rx);
                 let (mut back, rx, _bin) = restored(&saved, agents::GEMINI, true);
                 wait_resumed(&mut back, &rx, &format!("--approval-mode plan --resume {}", FakeGemini::ID));
@@ -9343,10 +9433,7 @@ rm -f "$1/sessions/$$.json"
 
             #[test]
             fn the_conversation_is_kept_until_its_agent_is_back_or_the_grace_runs_out() {
-                let (mut app, rx, _dirs) = app_with(1);
-                let claude = Claude::running(ANSWERING_CLAUDE);
-                claude.start(&mut app);
-                let saved = remembered(&mut app, &rx);
+                let (_app, _rx, _dirs, claude, saved) = remembered_claude();
                 claude.signal("quit");
                 let (mut back, _rx, _bin) = restored(&saved, agents::CLAUDE, true);
                 back.launches.clear();
@@ -9362,7 +9449,7 @@ rm -f "$1/sessions/$$.json"
             #[test]
             fn a_pane_whose_agent_quit_comes_back_as_a_shell() {
                 let (mut app, rx, _dirs) = app_with(1);
-                let claude = Claude::running(ANSWERING_CLAUDE);
+                let claude = FakeClaude::running(FakeClaude::ANSWERING);
                 claude.start(&mut app);
                 remembered(&mut app, &rx);
 
@@ -9373,10 +9460,7 @@ rm -f "$1/sessions/$$.json"
 
             #[test]
             fn nothing_resumes_when_it_is_turned_off() {
-                let (mut app, rx, _dirs) = app_with(1);
-                let claude = Claude::running(ANSWERING_CLAUDE);
-                claude.start(&mut app);
-                let saved = remembered(&mut app, &rx);
+                let (_app, _rx, _dirs, claude, saved) = remembered_claude();
                 claude.signal("quit");
 
                 let (back, _rx, _bin) = restored(&saved, agents::CLAUDE, false);
@@ -9405,11 +9489,11 @@ rm -f "$1/sessions/$$.json"
                 (app.active, app.term().map(|t| t.id))
             }
 
-            fn two_agents() -> (App, Receiver<AppEvent>, Vec<TempDir>, Claude, FakeCodex) {
+            fn two_agents() -> (App, Receiver<AppEvent>, Vec<TempDir>, FakeClaude, FakeCodex) {
                 let (mut app, rx, dirs) = app_with(2);
                 app.config.agents_section = true;
                 app.active = 0;
-                let claude = Claude::running(SILENT_CLAUDE);
+                let claude = FakeClaude::running(FakeClaude::SILENT);
                 claude.start(&mut app);
                 pump_until(&mut app, &rx, "claude runs", |a| runs(a, agents::CLAUDE));
                 app.active = 1;
@@ -9427,7 +9511,7 @@ rm -f "$1/sessions/$$.json"
                 right_click(&mut app, Position::new(pane.x + 1, pane.y + 1));
                 pick(&mut app, "split right");
                 app.active = 0;
-                rendered(&mut app, TALL);
+                render(&mut app, TALL);
                 let agents: Vec<String> = app.agents_view().entries.into_iter().map(|e| e.agent).collect();
 
                 let at = agent_pos(&app, TALL, 1);
@@ -9444,7 +9528,7 @@ rm -f "$1/sessions/$$.json"
             fn the_rows_follow_an_agent_as_it_starts_changes_and_quits() {
                 let (mut app, rx, _dirs) = app_with(1);
                 app.config.agents_section = true;
-                let claude = Claude::new();
+                let claude = FakeClaude::new();
                 let before = statuses(&app);
 
                 claude.start(&mut app);
@@ -9460,11 +9544,11 @@ rm -f "$1/sessions/$$.json"
             #[test]
             fn the_switch_shows_and_hides_the_section() {
                 let (mut app, _rx, _dirs) = app_with(1);
-                let off = text(&rendered(&mut app, TALL), app.layout(TALL).agents_list).trim().to_string();
+                let off = text(&render(&mut app, TALL), app.layout(TALL).agents_list).trim().to_string();
 
                 app.config.agents_section = true;
                 let list = app.layout(TALL).agents_list;
-                let on = text(&rendered(&mut app, TALL), list).trim().to_string();
+                let on = text(&render(&mut app, TALL), list).trim().to_string();
 
                 assert_eq!((off.as_str(), on.as_str()), ("", "no agents running"));
             }
@@ -9506,7 +9590,7 @@ rm -f "$1/sessions/$$.json"
                 let (mut app, rx, _dirs, claude, codex) = two_agents();
                 let claude_pane = app.projects[0].workspaces[0].tabs[0].panes[0].id;
                 app.nav = Some(ui::Nav::Projects);
-                rendered(&mut app, SMALL);
+                render(&mut app, SMALL);
 
                 let button = app.layout(SMALL).shown(app.nav).agents_button.as_position();
                 click_in(&mut app, button, SMALL);
@@ -9523,8 +9607,6 @@ rm -f "$1/sessions/$$.json"
     }
 
     mod compact {
-        use ratatui::Terminal;
-        use ratatui::backend::TestBackend;
         use rstest::rstest;
 
         use super::*;
@@ -9654,8 +9736,7 @@ rm -f "$1/sessions/$$.json"
         fn a_wide_terminal_closes_the_menu() {
             let (mut app, _rx) = app();
             open_menu(&mut app);
-            let mut t = Terminal::new(TestBackend::new(AREA.width, AREA.height)).expect("test backend");
-            t.draw(|f| _ = app.draw(f, &Sight::default())).expect("draw");
+            render(&mut app, AREA);
             assert_eq!(app.nav, None);
         }
 
@@ -10031,7 +10112,12 @@ rm -f "$1/sessions/$$.json"
         use crate::settings::{Detail, Row};
         use crate::test_util::FakeHttp;
 
-        const MEMBER: &str = r#"{"mention_name":"ana","workspace2":{"url_slug":"acme"}}"#;
+        fn issues_after_settings(s: &mut Setup) -> &Browser {
+            send_key(&mut s.app, KeyCode::Esc, KeyModifiers::NONE);
+            click(&mut s.app, areas().issues.as_position());
+            let Some(Overlay::Issues(b)) = &s.app.overlay else { panic!("the issues are not open") };
+            b
+        }
 
         struct Setup {
             app: App,
@@ -10083,9 +10169,7 @@ rm -f "$1/sessions/$$.json"
         }
 
         fn shortcut(s: &mut Setup, status: u16) -> FakeHttp {
-            let server = FakeHttp::start(vec![("GET /api/v3/member", status, MEMBER)]);
-            s.app.apis.shortcut = format!("{}/api/v3", server.url());
-            server
+            fake_shortcut(&mut s.app, vec![("GET /api/v3/member", status, crate::test_util::SHORTCUT_MEMBER)])
         }
 
         fn paste_shortcut_token(s: &mut Setup, token: &str) {
@@ -10265,11 +10349,7 @@ rm -f "$1/sessions/$$.json"
             let _server = shortcut(&mut s, 200);
             paste_shortcut_token(&mut s, "t0k");
             pump_until(&mut s.app, &s.rx, "the check finishes", |a| !form(a).busy());
-            send_key(&mut s.app, KeyCode::Esc, KeyModifiers::NONE);
-
-            click(&mut s.app, areas().issues.as_position());
-
-            let Some(Overlay::Issues(b)) = &s.app.overlay else { panic!("the issues are not open") };
+            let b = issues_after_settings(&mut s);
             assert!(b.connections.contains_key(&Source::Shortcut));
         }
 
@@ -10289,11 +10369,7 @@ rm -f "$1/sessions/$$.json"
         fn the_default_agent_picked_here_takes_the_issues() {
             let mut s = open();
             pick(&mut s, &Row::DefaultAgent, "codex");
-            send_key(&mut s.app, KeyCode::Esc, KeyModifiers::NONE);
-
-            click(&mut s.app, areas().issues.as_position());
-
-            let Some(Overlay::Issues(b)) = &s.app.overlay else { panic!("the issues are not open") };
+            let b = issues_after_settings(&mut s);
             assert_eq!(b.agents.default.as_deref(), Some("codex"));
         }
 
@@ -10302,18 +10378,12 @@ rm -f "$1/sessions/$$.json"
             let mut s = open();
             go_to(&mut s, &Row::Tab("linear"));
             enter(&mut s);
-            send_key(&mut s.app, KeyCode::Esc, KeyModifiers::NONE);
-
-            click(&mut s.app, areas().issues.as_position());
-
-            let Some(Overlay::Issues(b)) = &s.app.overlay else { panic!("the issues are not open") };
+            let b = issues_after_settings(&mut s);
             assert!(!b.tabs.contains(&IssueTab::One(Source::Linear)));
         }
     }
 
     mod select_text {
-        use ratatui::Terminal;
-        use ratatui::backend::TestBackend;
         use ratatui::style::Modifier;
 
         use super::*;
@@ -10326,12 +10396,6 @@ rm -f "$1/sessions/$$.json"
 
         fn cell(col: u16, row: u16) -> Position {
             Position::new(areas().pane.x + col, areas().pane.y + row)
-        }
-
-        fn drag(app: &mut App, from: Position, to: Position) {
-            press(app, from);
-            mouse(app, MouseEventKind::Drag(MouseButton::Left), to);
-            mouse(app, MouseEventKind::Up(MouseButton::Left), to);
         }
 
         #[test]
@@ -10406,9 +10470,7 @@ rm -f "$1/sessions/$$.json"
             app.toast = Instant::now()
                 .checked_sub(TOAST_FOR)
                 .map(|at| Toast { at, ..Toast::new(COPIED, ui::ToastIcon::Check) });
-            let mut t = Terminal::new(TestBackend::new(AREA.width, AREA.height)).expect("test backend");
-
-            t.draw(|f| _ = app.draw(f, &Sight::default())).expect("draw");
+            render(&mut app, AREA);
 
             assert_eq!(app.toast, None);
         }
@@ -10558,6 +10620,13 @@ rm -f "$1/sessions/$$.json"
     mod splits {
         use super::*;
 
+        fn two_pane_positions() -> (App, Receiver<AppEvent>, u64, u64, Vec<Rect>) {
+            let (app, rx) = split_right();
+            let [left, right] = ids(&app)[..] else { panic!("two panes") };
+            let r = rects(&app);
+            (app, rx, left, right, r)
+        }
+
         fn pane() -> Rect {
             areas().pane
         }
@@ -10589,12 +10658,6 @@ rm -f "$1/sessions/$$.json"
             tab(app).layout.dividers(pane()).remove(0)
         }
 
-        fn drag(app: &mut App, from: Position, to: Position) {
-            press(app, from);
-            mouse(app, MouseEventKind::Drag(MouseButton::Left), to);
-            mouse(app, MouseEventKind::Up(MouseButton::Left), to);
-        }
-
         #[test]
         fn hovering_a_divider_asks_for_a_resize_pointer_across_it() {
             let (mut right, _rx) = split_right();
@@ -10620,10 +10683,7 @@ rm -f "$1/sessions/$$.json"
             let from = divider(&app).line.as_position();
             press(&mut app, from);
             let away = Position::new(pane().x, from.y + 3);
-            mouse(&mut app, MouseEventKind::Drag(MouseButton::Left), away);
-            let dragging = app.pointer(AREA);
-
-            mouse(&mut app, MouseEventKind::Up(MouseButton::Left), away);
+            let dragging = pointer_after_drag(&mut app, away);
 
             assert_eq!((dragging, app.pointer(AREA)), (pointer::Shape::Columns, pointer::Shape::Default));
         }
@@ -10741,9 +10801,7 @@ rm -f "$1/sessions/$$.json"
             let (mut app, rx) = split_right();
             type_line(&mut app, "echo split-\"\"works");
             wait_until("the new pane runs the command", || {
-                while let Ok(ev) = rx.try_recv() {
-                    app.handle_event(ev, AREA).expect("handle event");
-                }
+                drain(&mut app, &rx);
                 pane_text(&mut app, 1).contains("split-works")
             });
             assert!(!pane_text(&mut app, 0).contains("split-works"));
@@ -10818,9 +10876,7 @@ rm -f "$1/sessions/$$.json"
 
         #[test]
         fn a_pane_dragged_with_the_right_button_onto_the_bottom_of_another_goes_below_it() {
-            let (mut app, _rx) = split_right();
-            let [left, right] = ids(&app)[..] else { panic!("two panes") };
-            let r = rects(&app);
+            let (mut app, _rx, left, right, r) = two_pane_positions();
 
             drag_pane(&mut app, inside(r[0]), bottom(r[1]));
 
@@ -10847,9 +10903,7 @@ rm -f "$1/sessions/$$.json"
 
         #[test]
         fn a_pane_dropped_in_the_middle_of_another_swaps_with_it() {
-            let (mut app, _rx) = split_right();
-            let [left, right] = ids(&app)[..] else { panic!("two panes") };
-            let r = rects(&app);
+            let (mut app, _rx, left, right, r) = two_pane_positions();
 
             drag_pane(&mut app, inside(r[0]), middle(r[1]));
 
@@ -11112,6 +11166,20 @@ rm -f "$1/sessions/$$.json"
 
         use super::*;
 
+        fn moved_projects_border() -> (App, Receiver<AppEvent>, Position) {
+            let (mut app, rx) = app();
+            let from = border(&app, ui::Border::Projects);
+            drag(&mut app, from, 39);
+            let moved = border(&app, ui::Border::Projects);
+            (app, rx, moved)
+        }
+
+        fn grab_projects_border(app: &mut App) -> Position {
+            let from = border(app, ui::Border::Projects);
+            press(app, from);
+            from
+        }
+
         fn border(app: &App, border: ui::Border) -> Position {
             let r = app.layout(AREA).border(border);
             Position::new(r.x, r.y + 1)
@@ -11222,13 +11290,9 @@ rm -f "$1/sessions/$$.json"
         #[test]
         fn the_pointer_stays_while_dragging_away_from_the_border_and_goes_on_release() {
             let (mut app, _rx) = app();
-            let from = border(&app, ui::Border::Projects);
-            press(&mut app, from);
+            let from = grab_projects_border(&mut app);
             let away = Position::new(AREA.width - 1, from.y + 4);
-            mouse(&mut app, MouseEventKind::Drag(MouseButton::Left), away);
-            let dragging = app.pointer(AREA);
-
-            mouse(&mut app, MouseEventKind::Up(MouseButton::Left), away);
+            let dragging = pointer_after_drag(&mut app, away);
 
             assert_eq!((dragging, app.pointer(AREA)), (pointer::Shape::Columns, pointer::Shape::Default));
         }
@@ -11236,8 +11300,7 @@ rm -f "$1/sessions/$$.json"
         #[test]
         fn esc_ends_the_drag_where_it_is() {
             let (mut app, _rx) = app();
-            let from = border(&app, ui::Border::Projects);
-            press(&mut app, from);
+            let from = grab_projects_border(&mut app);
             mouse(&mut app, MouseEventKind::Drag(MouseButton::Left), Position::new(AREA.width - 1, from.y + 4));
             let widths = app.widths;
 
@@ -11250,8 +11313,7 @@ rm -f "$1/sessions/$$.json"
         fn the_prefix_key_ends_the_drag_and_brings_back_the_default_pointer() {
             let (mut app, _rx) = app();
             app.config.prefix_key = "ctrl+]".into();
-            let from = border(&app, ui::Border::Projects);
-            press(&mut app, from);
+            let from = grab_projects_border(&mut app);
             mouse(&mut app, MouseEventKind::Drag(MouseButton::Left), Position::new(AREA.width - 1, from.y + 4));
 
             send_key(&mut app, KeyCode::Char(']'), KeyModifiers::CONTROL);
@@ -11274,8 +11336,7 @@ rm -f "$1/sessions/$$.json"
         #[test]
         fn a_drag_away_from_the_border_keeps_resizing() {
             let (mut app, _rx) = app();
-            let from = border(&app, ui::Border::Projects);
-            press(&mut app, from);
+            let from = grab_projects_border(&mut app);
 
             mouse(&mut app, MouseEventKind::Drag(MouseButton::Left), Position::new(39, from.y + 4));
 
@@ -11284,10 +11345,7 @@ rm -f "$1/sessions/$$.json"
 
         #[test]
         fn a_double_click_brings_back_the_default_width() {
-            let (mut app, _rx) = app();
-            let from = border(&app, ui::Border::Projects);
-            drag(&mut app, from, 39);
-            let moved = border(&app, ui::Border::Projects);
+            let (mut app, _rx, moved) = moved_projects_border();
 
             click(&mut app, moved);
             click(&mut app, moved);
@@ -11297,10 +11355,7 @@ rm -f "$1/sessions/$$.json"
 
         #[test]
         fn two_slow_clicks_are_not_a_double_click() {
-            let (mut app, _rx) = app();
-            let from = border(&app, ui::Border::Projects);
-            drag(&mut app, from, 39);
-            let moved = border(&app, ui::Border::Projects);
+            let (mut app, _rx, moved) = moved_projects_border();
             click(&mut app, moved);
             app.border_click =
                 app.border_click.map(|(b, at)| (b, at.checked_sub(DOUBLE_CLICK).expect("an earlier instant")));
@@ -11312,10 +11367,7 @@ rm -f "$1/sessions/$$.json"
 
         #[test]
         fn a_click_right_after_a_drag_is_not_a_double_click() {
-            let (mut app, _rx) = app();
-            let from = border(&app, ui::Border::Projects);
-            drag(&mut app, from, 39);
-            let moved = border(&app, ui::Border::Projects);
+            let (mut app, _rx, moved) = moved_projects_border();
 
             press(&mut app, moved);
 
@@ -11368,8 +11420,6 @@ rm -f "$1/sessions/$$.json"
 
     mod muted_text {
         use libghostty_vt::style::RgbColor;
-        use ratatui::Terminal;
-        use ratatui::backend::TestBackend;
         use ratatui::style::Color;
 
         use super::*;
@@ -11381,9 +11431,7 @@ rm -f "$1/sessions/$$.json"
                 background: Some(RgbColor { r: 0x1d, g: 0x20, b: 0x22 }),
                 ..HostTheme::default()
             });
-            let mut t = Terminal::new(TestBackend::new(AREA.width, AREA.height)).expect("test backend");
-
-            t.draw(|f| _ = app.draw(f, &Sight::default())).expect("draw");
+            let t = render(&mut app, AREA);
 
             let settings = areas().settings;
             assert_eq!(t.backend().buffer()[(settings.x + 2, settings.y)].fg, Color::Indexed(243));
@@ -11447,15 +11495,12 @@ rm -f "$1/sessions/$$.json"
     }
 
     mod tab_bar {
-        use ratatui::Terminal;
-        use ratatui::backend::TestBackend;
 
         use super::*;
         use crate::ui::tab_bar::Strip;
 
         fn drawn_in(app: &mut App, area: Rect) {
-            let mut t = Terminal::new(TestBackend::new(area.width, area.height)).expect("test backend");
-            t.draw(|f| _ = app.draw(f, &Sight::default())).expect("draw");
+            render(app, area);
         }
 
         fn on_top(tabs: usize) -> (App, Receiver<AppEvent>, Vec<TempDir>) {
@@ -11585,8 +11630,6 @@ rm -f "$1/sessions/$$.json"
     }
 
     mod tree_sidebar {
-        use ratatui::Terminal;
-        use ratatui::backend::TestBackend;
 
         use super::*;
         use crate::ui::TreeRow;
@@ -11594,8 +11637,7 @@ rm -f "$1/sessions/$$.json"
         const TALL: Rect = Rect { x: 0, y: 0, width: 100, height: 30 };
 
         fn drawn(app: &mut App) {
-            let mut t = Terminal::new(TestBackend::new(TALL.width, TALL.height)).expect("test backend");
-            t.draw(|f| _ = app.draw(f, &Sight::default())).expect("draw");
+            render(app, TALL);
         }
 
         fn tree(n: usize) -> (App, Receiver<AppEvent>, Vec<TempDir>) {
@@ -11895,6 +11937,22 @@ rm -f "$1/sessions/$$.json"
         use super::*;
         use crate::test_util::{FakeHttp, fake_gh};
 
+        fn assert_only_linear(s: &Setup) {
+            assert_eq!(s.app.accounts.keys().collect::<Vec<_>>(), [&Source::Linear]);
+        }
+
+        fn accounts_with_linear(s: &mut Setup, source: Source, workspace: &str) {
+            s.app.accounts.insert(source, Account { handle: "Ana".into(), workspace: workspace.into() });
+            s.app.accounts.insert(Source::Linear, Account { handle: "ana".into(), workspace: "b".into() });
+        }
+
+        fn shortcut_with_token(s: &mut Setup) -> FakeHttp {
+            let server = shortcut(s, Vec::new());
+            secrets::write(&secrets_file(s), "shortcut_token", "t0k").expect("save token");
+            open_loaded(s, Source::Shortcut);
+            server
+        }
+
         const LIST: &str = r#"[
             {"number":7,"title":"Fix the login","state":"OPEN","labels":[{"name":"bug"}],"author":{"login":"ana"},
              "updatedAt":"2026-09-19T12:00:00Z","url":"https://github.com/acme/shop/issues/7"},
@@ -11904,7 +11962,6 @@ rm -f "$1/sessions/$$.json"
         const VIEW: &str = r#"{"number":7,"title":"Fix the login","state":"OPEN","labels":[],"assignees":[],
             "author":{"login":"ana"},"updatedAt":"","url":"u","body":"It **breaks**.",
             "comments":[{"author":{"login":"bo"},"body":"Same here","createdAt":""}]}"#;
-        const MEMBER: &str = r#"{"mention_name":"ana","workspace2":{"url_slug":"acme"}}"#;
         const STORIES: &str = r#"{"data":[{"id":482,"name":"Returns page crashes","app_url":"https://app.shortcut.com/acme/story/482",
             "updated_at":"2026-09-30T00:00:00Z"}],"next":null}"#;
 
@@ -11923,7 +11980,6 @@ rm -f "$1/sessions/$$.json"
         fn setup(git: bool, gh_script: &str) -> Setup {
             let dir = if git { git_repo(&[("README", "hi")]) } else { TempDir::new() };
             let (worktrees, config) = (TempDir::new(), TempDir::new());
-            let config_path = config.path().join("config.json");
             let gh = fake_gh(config.path(), &format!("touch \"$0.called\"\necho \"$@\" >> \"$0.args\"\n{gh_script}"));
             let agent = config.path().join("agent");
             crate::test_util::write_executable(&agent, FAKE_AGENT);
@@ -11935,7 +11991,7 @@ rm -f "$1/sessions/$$.json"
                 accept_trust_prompts: true,
                 ..Config::default()
             };
-            config::save(&config_path, &settings).expect("write config");
+            let config_path = write_config(config.path(), &settings);
             let (mut app, rx) = app_in(dir.path(), config_path);
             app.env_tokens.clear();
             Setup { app, rx, worktrees, config, _dir: dir }
@@ -11950,15 +12006,13 @@ rm -f "$1/sessions/$$.json"
 
         fn shortcut(s: &mut Setup, routes: Vec<(&'static str, u16, &'static str)>) -> FakeHttp {
             let mut all = vec![
-                ("GET /api/v3/member", 200, MEMBER),
+                ("GET /api/v3/member", 200, crate::test_util::SHORTCUT_MEMBER),
                 ("GET /api/v3/members", 200, "[]"),
                 ("GET /api/v3/workflows", 200, "[]"),
                 ("GET /api/v3/search/stories", 200, STORIES),
             ];
             all.splice(0..0, routes);
-            let server = FakeHttp::start(all);
-            s.app.apis.shortcut = format!("{}/api/v3", server.url());
-            server
+            fake_shortcut(&mut s.app, all)
         }
 
         fn secrets_file(s: &Setup) -> PathBuf {
@@ -12004,9 +12058,7 @@ rm -f "$1/sessions/$$.json"
         }
 
         fn pump(s: &mut Setup) {
-            while let Ok(ev) = s.rx.try_recv() {
-                s.app.handle_event(ev, AREA).expect("handle event");
-            }
+            drain(&mut s.app, &s.rx);
             s.app.refresh(Instant::now());
         }
 
@@ -12140,9 +12192,7 @@ rm -f "$1/sessions/$$.json"
                 let notes = TempDir::new();
                 s.app.open_project(notes.path().to_path_buf(), AREA).expect("open notes");
                 s.app.active = 0;
-                let _server = shortcut(&mut s, Vec::new());
-                secrets::write(&secrets_file(&s), "shortcut_token", "t0k").expect("save token");
-                open_loaded(&mut s, Source::Shortcut);
+                let _server = shortcut_with_token(&mut s);
                 enter(&mut s);
                 enter(&mut s);
                 let folder = notes.path().file_name().and_then(|n| n.to_str()).expect("name").to_string();
@@ -12393,9 +12443,7 @@ rm -f "$1/sessions/$$.json"
             #[test]
             fn without_git_a_story_starts_in_a_new_tab() {
                 let mut s = setup(false, "echo '[]'");
-                let _server = shortcut(&mut s, Vec::new());
-                secrets::write(&secrets_file(&s), "shortcut_token", "t0k").expect("save token");
-                open_loaded(&mut s, Source::Shortcut);
+                let _server = shortcut_with_token(&mut s);
 
                 enter(&mut s);
                 enter(&mut s);
@@ -12482,6 +12530,14 @@ rm -f "$1/sessions/$$.json"
         mod jira {
             use super::*;
 
+            fn configured_jira() -> (Setup, FakeHttp) {
+                let mut s = setup(false, "echo '[]'");
+                let server = jira(&mut s);
+                s.app.config.jira_site = "acme.atlassian.net".into();
+                s.app.config.jira_email = "ana@acme.dev".into();
+                (s, server)
+            }
+
             const MYSELF: &str = r#"{"accountId":"a1","displayName":"Ana"}"#;
             const SEARCH: &str = r#"{"issues":[{"key":"SHOP-482","fields":{"summary":"Returns page crashes",
                 "updated":"2026-09-30T00:00:00.000+0000"}}],"isLast":true}"#;
@@ -12564,10 +12620,7 @@ rm -f "$1/sessions/$$.json"
 
             #[test]
             fn a_list_asked_before_the_site_changed_is_dropped() {
-                let mut s = setup(false, "echo '[]'");
-                let _server = jira(&mut s);
-                s.app.config.jira_site = "acme.atlassian.net".into();
-                s.app.config.jira_email = "ana@acme.dev".into();
+                let (mut s, _server) = configured_jira();
                 secrets::write(&secrets_file(&s), "jira_api_token", "t0k").expect("save token");
                 open_list(&mut s);
                 let key = s.app.cache_key(Source::Jira, browser(&s.app).project, &browser(&s.app).query(Source::Jira));
@@ -12580,10 +12633,7 @@ rm -f "$1/sessions/$$.json"
 
             #[test]
             fn a_token_checked_against_the_old_email_is_not_saved() {
-                let mut s = setup(false, "echo '[]'");
-                let _server = jira(&mut s);
-                s.app.config.jira_site = "acme.atlassian.net".into();
-                s.app.config.jira_email = "ana@acme.dev".into();
+                let (mut s, _server) = configured_jira();
 
                 s.app.check_token(Source::Jira, Secret("t0k".into()));
                 s.app.set_config(Config { jira_email: "bo@acme.dev".into(), ..s.app.config.clone() });
@@ -12594,10 +12644,7 @@ rm -f "$1/sessions/$$.json"
 
             #[test]
             fn a_list_asked_with_the_old_token_is_dropped_once_a_new_one_is_saved() {
-                let mut s = setup(false, "echo '[]'");
-                let _server = jira(&mut s);
-                s.app.config.jira_site = "acme.atlassian.net".into();
-                s.app.config.jira_email = "ana@acme.dev".into();
+                let (mut s, _server) = configured_jira();
                 secrets::write(&secrets_file(&s), "jira_api_token", "old").expect("save token");
                 open_list(&mut s);
                 let key = s.app.cache_key(Source::Jira, browser(&s.app).project, &browser(&s.app).query(Source::Jira));
@@ -12614,12 +12661,11 @@ rm -f "$1/sessions/$$.json"
             #[test]
             fn another_site_forgets_the_account_and_the_lists_of_the_old_one() {
                 let mut s = setup(false, "echo '[]'");
-                s.app.accounts.insert(Source::Jira, Account { handle: "Ana".into(), workspace: "a".into() });
-                s.app.accounts.insert(Source::Linear, Account { handle: "ana".into(), workspace: "b".into() });
+                accounts_with_linear(&mut s, Source::Jira, "a");
 
                 s.app.set_config(Config { jira_site: "other.atlassian.net".into(), ..s.app.config.clone() });
 
-                assert_eq!(s.app.accounts.keys().collect::<Vec<_>>(), [&Source::Linear]);
+                assert_only_linear(&s);
             }
         }
 
@@ -12691,12 +12737,11 @@ rm -f "$1/sessions/$$.json"
             #[test]
             fn another_workspace_forgets_the_account_of_the_old_one() {
                 let mut s = setup(false, "echo '[]'");
-                s.app.accounts.insert(Source::Plane, Account { handle: "Ana".into(), workspace: "acme".into() });
-                s.app.accounts.insert(Source::Linear, Account { handle: "ana".into(), workspace: "b".into() });
+                accounts_with_linear(&mut s, Source::Plane, "acme");
 
                 s.app.set_config(Config { plane_workspace: "other".into(), ..s.app.config.clone() });
 
-                assert_eq!(s.app.accounts.keys().collect::<Vec<_>>(), [&Source::Linear]);
+                assert_only_linear(&s);
             }
 
             #[test]
@@ -12737,8 +12782,7 @@ rm -f "$1/sessions/$$.json"
         fn the_settings_button_says_what_stops_before_restarting() {
             let (mut app, _rx) = empty_app();
             app.open_here(AREA).expect("open a project");
-            type_line(&mut app, "sleep 30");
-            wait_until("sleep runs", || app.term().and_then(|t| t.program(&app.config)).as_deref() == Some("sleep"));
+            running_sleep(&mut app);
 
             open(&mut app);
 
@@ -12767,6 +12811,13 @@ rm -f "$1/sessions/$$.json"
         use super::*;
         use crate::error::Error;
         use crate::test_util::FakeHttp;
+
+        fn scrolled_notes() -> (App, Receiver<AppEvent>) {
+            let notes: Vec<String> = (0..60).map(|i| format!("- change {i}")).collect();
+            let (mut app, rx) = with_notes(&notes.join("\n"));
+            mouse(&mut app, MouseEventKind::ScrollDown, ui::update_notes(AREA).as_position());
+            (app, rx)
+        }
 
         const LATEST: &str = r#"{"tag_name": "v9.0.0", "assets": []}"#;
 
@@ -12825,8 +12876,7 @@ rm -f "$1/sessions/$$.json"
         fn the_whole_restart_list_is_shown() {
             let (mut app, _rx) = found(replaced());
             app.open_here(AREA).expect("open a project");
-            type_line(&mut app, "sleep 30");
-            wait_until("sleep runs", || app.term().and_then(|t| t.program(&app.config)).as_deref() == Some("sleep"));
+            running_sleep(&mut app);
 
             let message = installed(&mut app);
 
@@ -12897,19 +12947,14 @@ rm -f "$1/sessions/$$.json"
 
         #[test]
         fn the_wheel_scrolls_long_notes() {
-            let notes: Vec<String> = (0..60).map(|i| format!("- change {i}")).collect();
-            let (mut app, _rx) = with_notes(&notes.join("\n"));
-
-            mouse(&mut app, MouseEventKind::ScrollDown, ui::update_notes(AREA).as_position());
+            let (app, _rx) = scrolled_notes();
 
             assert_eq!(app.update_scroll, 3);
         }
 
         #[test]
         fn the_restart_list_starts_at_its_top() {
-            let notes: Vec<String> = (0..60).map(|i| format!("- change {i}")).collect();
-            let (mut app, _rx) = with_notes(&notes.join("\n"));
-            mouse(&mut app, MouseEventKind::ScrollDown, ui::update_notes(AREA).as_position());
+            let (mut app, _rx) = scrolled_notes();
 
             app.handle_event(AppEvent::Updated(Ok(())), AREA).expect("handle the update");
 
@@ -13485,6 +13530,12 @@ rm -f "$1/sessions/$$.json"
         mod every_project {
             use super::*;
 
+            fn filter_changes(app: &mut App, query: &str) {
+                let mut filter = changes::filter::Filter::default();
+                query.chars().for_each(|c| filter.push(c));
+                app.changes.filter = Some(filter);
+            }
+
             fn loaded_every(app: &mut App, rx: &Receiver<AppEvent>) {
                 app.changes.open = true;
                 app.changes.set_scope(changes::Scope::Every);
@@ -13551,16 +13602,12 @@ rm -f "$1/sessions/$$.json"
                 let sub = row(&app, panel::Row::Header(2));
                 click(&mut app, sub);
                 assert!(!panel::rows(&app.panel_view().expect("panel")).contains(&panel::Row::File(1)));
-                let mut filter = changes::filter::Filter::default();
-                "new.txt".chars().for_each(|c| filter.push(c));
-                app.changes.filter = Some(filter);
+                filter_changes(&mut app, "new.txt");
                 assert_eq!(
                     panel::rows(&app.panel_view().expect("panel")),
                     [panel::Row::Header(0), panel::Row::Header(2)]
                 );
-                let mut filter = changes::filter::Filter::default();
-                "a.txt".chars().for_each(|c| filter.push(c));
-                app.changes.filter = Some(filter);
+                filter_changes(&mut app, "a.txt");
                 assert_eq!(
                     panel::rows(&app.panel_view().expect("panel")),
                     [
@@ -13720,20 +13767,15 @@ rm -f "$1/sessions/$$.json"
                     "#!/bin/sh\nIFS= read -r line\nprintf '%s' \"$line\" > got\nIFS= read -r line\n",
                 );
                 write_executable(&editor, "#!/bin/sh\nprintf '%s\n' \"$PWD\" \"$@\" > editor-got\nIFS= read -r line\n");
-                let config_path = scripts.path().join("config.json");
-                config::save(
-                    &config_path,
+                let config_path = write_config(
+                    scripts.path(),
                     &Config {
                         agent_commands: [("fake".into(), agent.display().to_string())].into(),
                         ..Config::default()
                     },
-                )
-                .expect("config");
+                );
                 let (mut app, rx) = app_in(second.path(), config_path);
-                app.term_mut().expect("pane").write(format!("exec {}\n", agent.display()).as_bytes());
-                wait_until("the agent runs", || {
-                    agents::detect(&app.config, &app.term().expect("pane").foreground_args()).is_some()
-                });
+                exec_agent(&mut app, &agent);
                 let owner = app.projects[0].workspaces[0].id;
                 let agent_pane = app.term().expect("agent pane").id;
                 app.open_project(first.path().to_path_buf(), AREA).expect("other project");
@@ -13780,6 +13822,35 @@ rm -f "$1/sessions/$$.json"
             }
         }
 
+        fn filtered_changes() -> (TempDir, App, Receiver<AppEvent>) {
+            let repo = repo_with_edit();
+            let (mut app, rx) = app_in(repo.path(), no_config());
+            open_filter(&mut app, &rx);
+            type_text(&mut app, "*.txt");
+            (repo, app, rx)
+        }
+
+        fn first_changed_file(app: &App) -> (Checkout, std::sync::Arc<changes::diff::File>) {
+            let target = app.changes_target().expect("target");
+            let file = app.changed_diff(&target).expect("diff").files[0].clone();
+            (target, file)
+        }
+
+        fn exec_agent(app: &mut App, agent: &Path) {
+            app.term_mut().expect("pane").write(format!("exec {}\n", agent.display()).as_bytes());
+            wait_until("the agent runs", || {
+                agents::detect(&app.config, &app.term().expect("pane").foreground_args()).is_some()
+            });
+        }
+
+        fn open_changes() -> (TempDir, App, Receiver<AppEvent>) {
+            let repo = repo_with_edit();
+            let (mut app, rx) = app_in(repo.path(), no_config());
+            app.changes.open = true;
+            refresh_until_loaded(&mut app, &rx);
+            (repo, app, rx)
+        }
+
         fn repo_with_edit() -> TempDir {
             let repo = git_repo(&[("a.txt", "one\ntwo\n")]);
             std::fs::write(repo.path().join("a.txt"), "one\nTWO\n").expect("edit");
@@ -13801,10 +13872,6 @@ rm -f "$1/sessions/$$.json"
         fn button(app: &App) -> Position {
             let label = app.changes_label().expect("a changes button");
             ui::changes_button(areas().issues, &label).as_position()
-        }
-
-        fn panel_area(app: &App) -> Rect {
-            app.layout(AREA).changes
         }
 
         #[test]
@@ -13835,10 +13902,7 @@ rm -f "$1/sessions/$$.json"
 
         #[test]
         fn the_panel_shows_the_changed_file() {
-            let repo = repo_with_edit();
-            let (mut app, rx) = app_in(repo.path(), no_config());
-            app.changes.open = true;
-            refresh_until_loaded(&mut app, &rx);
+            let (_repo, app, _rx) = open_changes();
             let Some(panel::View { body: panel::Body::Ready(diff), .. }) = app.panel_view() else {
                 panic!("the panel has a diff")
             };
@@ -13943,12 +14007,8 @@ rm -f "$1/sessions/$$.json"
 
         #[test]
         fn copy_puts_the_hunk_on_the_clipboard() {
-            let repo = repo_with_edit();
-            let (mut app, rx) = app_in(repo.path(), no_config());
-            app.changes.open = true;
-            refresh_until_loaded(&mut app, &rx);
-            let target = app.changes_target().expect("target");
-            let file = app.changed_diff(&target).expect("diff").files[0].clone();
+            let (_repo, mut app, _rx) = open_changes();
+            let (target, file) = first_changed_file(&app);
             app.hunk_action(&target, &file, 0, HunkAction::Copy, AREA).expect("copy");
             let patch = file.hunks[0].patch();
             assert_eq!((app.take_host_writes(), toast(&app)), (vec![clipboard::osc52(&patch)], Some(COPIED)));
@@ -13959,24 +14019,19 @@ rm -f "$1/sessions/$$.json"
             let config = TempDir::new();
             let agent = config.path().join("agent");
             write_executable(&agent, "#!/bin/sh\nIFS= read -r line\nprintf '%s' \"$line\" > got\n");
-            let config_path = config.path().join("config.json");
             let settings = Config {
                 agent_commands: [("fake".to_string(), agent.display().to_string())].into(),
                 ..Config::default()
             };
-            config::save(&config_path, &settings).expect("save config");
+            let config_path = write_config(config.path(), &settings);
             let (mut app, rx) = app_in(repo.path(), config_path);
-            app.term_mut().expect("pane").write(format!("exec {}\n", agent.display()).as_bytes());
-            wait_until("the agent runs", || {
-                agents::detect(&app.config, &app.term().expect("pane").foreground_args()).is_some()
-            });
+            exec_agent(&mut app, &agent);
             refresh_until_loaded(&mut app, &rx);
             (repo, config, app)
         }
 
         fn ask_about_the_first_hunk(app: &mut App) {
-            let target = app.changes_target().expect("target");
-            let file = app.changed_diff(&target).expect("diff").files[0].clone();
+            let (target, file) = first_changed_file(app);
             app.hunk_action(&target, &file, 0, HunkAction::Ask, AREA).expect("ask");
         }
 
@@ -14006,8 +14061,7 @@ rm -f "$1/sessions/$$.json"
             let repo = repo_with_edit();
             let (mut app, rx) = app_in(repo.path(), no_config());
             refresh_until_loaded(&mut app, &rx);
-            let target = app.changes_target().expect("target");
-            let file = app.changed_diff(&target).expect("diff").files[0].clone();
+            let (target, file) = first_changed_file(&app);
             app.hunk_action(&target, &file, 0, HunkAction::Ask, AREA).expect("ask");
             assert_eq!(app.take_host_writes(), vec![clipboard::osc52("a.txt:2")]);
         }
@@ -14024,10 +14078,7 @@ rm -f "$1/sessions/$$.json"
 
         #[test]
         fn keys_go_to_the_field_until_a_click_in_the_pane() {
-            let repo = repo_with_edit();
-            let (mut app, rx) = app_in(repo.path(), no_config());
-            open_filter(&mut app, &rx);
-            type_text(&mut app, "*.txt");
+            let (_repo, mut app, rx) = filtered_changes();
             let pane = app.layout(AREA).pane;
             click(&mut app, Position::new(pane.x + 2, pane.y + 2));
             type_in_pane(&mut app, &rx, "pane");
@@ -14079,10 +14130,7 @@ rm -f "$1/sessions/$$.json"
 
         #[test]
         fn esc_closes_the_field_and_clears_the_filter() {
-            let repo = repo_with_edit();
-            let (mut app, rx) = app_in(repo.path(), no_config());
-            open_filter(&mut app, &rx);
-            type_text(&mut app, "*.txt");
+            let (_repo, mut app, _rx) = filtered_changes();
             send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
             assert_eq!((query(&app), app.filtering()), (None, false));
         }
@@ -14104,8 +14152,7 @@ rm -f "$1/sessions/$$.json"
             let (mut app, rx) = app_in(repo.path(), no_config());
             app.editor_env = vec![("VISUAL".into(), "true".into())];
             refresh_until_loaded(&mut app, &rx);
-            let target = app.changes_target().expect("target");
-            let file = app.changed_diff(&target).expect("diff").files[0].clone();
+            let (target, file) = first_changed_file(&app);
             let tabs = app.projects[0].workspaces[0].tabs.len();
             app.hunk_action(&target, &file, 0, HunkAction::Open, AREA).expect("open");
             let workspace = &app.projects[0].workspaces[0];
@@ -14119,12 +14166,17 @@ rm -f "$1/sessions/$$.json"
         use crate::ui::changes::Action;
         use crate::ui::files::{self as panel, Screen};
 
-        fn repo() -> TempDir {
-            git_repo(&[("README.md", "# shop\n"), ("src/main.rs", "fn main() {\n    run();\n}\n")])
+        fn pressed_lines() -> (TempDir, App, Receiver<AppEvent>, Position) {
+            let repo = repo();
+            let (mut app, rx) = opened(&repo);
+            show(&mut app, &rx, "src/main.rs");
+            let (first, last) = (line_pos(&app, 1), line_pos(&app, 3));
+            press(&mut app, first);
+            (repo, app, rx, last)
         }
 
-        fn panel_area(app: &App) -> Rect {
-            app.layout(AREA).changes
+        fn repo() -> TempDir {
+            git_repo(&[("README.md", "# shop\n"), ("src/main.rs", "fn main() {\n    run();\n}\n")])
         }
 
         fn view(app: &App) -> panel::View {
@@ -14139,9 +14191,7 @@ rm -f "$1/sessions/$$.json"
         fn settle(app: &mut App, rx: &Receiver<AppEvent>, what: &str, cond: impl Fn(&panel::View) -> bool) {
             wait_until(what, || {
                 app.refresh(Instant::now());
-                while let Ok(ev) = rx.try_recv() {
-                    app.handle_event(ev, AREA).expect("handle event");
-                }
+                drain(app, rx);
                 cond(&view(app))
             });
         }
@@ -14289,11 +14339,7 @@ rm -f "$1/sessions/$$.json"
 
         #[test]
         fn dragging_over_the_numbers_selects_lines_for_the_agent() {
-            let repo = repo();
-            let (mut app, rx) = opened(&repo);
-            show(&mut app, &rx, "src/main.rs");
-            let (first, last) = (line_pos(&app, 1), line_pos(&app, 3));
-            press(&mut app, first);
+            let (_repo, mut app, _rx, last) = pressed_lines();
             mouse(&mut app, MouseEventKind::Drag(MouseButton::Left), last);
             mouse(&mut app, MouseEventKind::Up(MouseButton::Left), last);
             assert_eq!(file(&app).selection, Some((1, 3)));
@@ -14305,11 +14351,7 @@ rm -f "$1/sessions/$$.json"
 
         #[test]
         fn a_selection_whose_release_was_lost_ends_at_the_next_event() {
-            let repo = repo();
-            let (mut app, rx) = opened(&repo);
-            show(&mut app, &rx, "src/main.rs");
-            let (first, last) = (line_pos(&app, 1), line_pos(&app, 3));
-            press(&mut app, first);
+            let (_repo, mut app, _rx, last) = pressed_lines();
             mouse(&mut app, MouseEventKind::Moved, last);
             click(&mut app, last);
             assert_eq!(file(&app).selection, Some((3, 3)));
@@ -14471,9 +14513,7 @@ rm -f "$1/sessions/$$.json"
         }
 
         mod images {
-            use ratatui::Terminal;
-            use ratatui::backend::TestBackend;
-            use ratatui::buffer::{Buffer, CellDiffOption};
+            use ratatui::buffer::CellDiffOption;
 
             use super::*;
             use crate::files::disk::Body;
@@ -14512,20 +14552,11 @@ rm -f "$1/sessions/$$.json"
                 (app, rx)
             }
 
-            fn draw(app: &mut App, sight: &Sight) -> (Buffer, Option<Placed>) {
-                let mut terminal = Terminal::new(TestBackend::new(AREA.width, AREA.height)).expect("terminal");
-                let mut placed = None;
-                let buffer = terminal.draw(|f| placed = app.draw(f, sight)).expect("draw").buffer.clone();
-                (buffer, placed)
-            }
-
             fn ready(app: &mut App, rx: &Receiver<AppEvent>, sight: &Sight) -> (Buffer, Placed) {
                 let mut last = None;
                 wait_until("the payload is ready", || {
-                    while let Ok(ev) = rx.try_recv() {
-                        app.handle_event(ev, AREA).expect("handle event");
-                    }
-                    last = Some(draw(app, sight));
+                    drain(app, rx);
+                    last = Some(render_frame(app, AREA, sight));
                     last.as_ref().is_some_and(|(_, p)| p.as_ref().is_some_and(|p| p.payload.is_some()))
                 });
                 let (buffer, placed) = last.expect("drawn");
@@ -14561,7 +14592,7 @@ rm -f "$1/sessions/$$.json"
                 let (mut app, rx) = shown(&dir);
                 let kitty = sight(Some(Protocol::Kitty));
 
-                let (first, placed) = draw(&mut app, &kitty);
+                let (first, placed) = render_frame(&mut app, AREA, &kitty);
                 assert!(placed.is_some_and(|p| !p.drawn), "blank until the payload comes");
                 assert_eq!(cells(&first, panel_area(&app), |s| s.starts_with(PLACEHOLDER)), 0);
                 let (buffer, placed) = ready(&mut app, &rx, &kitty);
@@ -14588,7 +14619,7 @@ rm -f "$1/sessions/$$.json"
                 let (mut app, _rx) = shown(&dir);
                 let blind = sight(None);
 
-                let (buffer, placed) = draw(&mut app, &blind);
+                let (buffer, placed) = render_frame(&mut app, AREA, &blind);
 
                 assert!(placed.is_none());
                 let missing = blind.support.missing.expect("missing");
@@ -14604,13 +14635,13 @@ rm -f "$1/sessions/$$.json"
                 let settings = app.layout(AREA).settings.as_position();
                 click(&mut app, settings);
 
-                let (buffer, placed) = draw(&mut app, &kitty);
+                let (buffer, placed) = render_frame(&mut app, AREA, &kitty);
                 let placed = placed.expect("placed");
                 assert!(!placed.drawn);
                 assert_eq!(cells(&buffer, placed.rect, |s| s.starts_with(PLACEHOLDER)), 0);
 
                 send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
-                assert!(draw(&mut app, &kitty).1.is_some_and(|p| p.drawn));
+                assert!(render_frame(&mut app, AREA, &kitty).1.is_some_and(|p| p.drawn));
             }
 
             #[test]
@@ -14622,7 +14653,7 @@ rm -f "$1/sessions/$$.json"
                 let pane = app.layout(AREA).pane;
                 right_click(&mut app, Position::new(pane.right() - 1, placed.rect.y));
 
-                let (buffer, placed) = draw(&mut app, &iterm);
+                let (buffer, placed) = render_frame(&mut app, AREA, &iterm);
                 let placed = placed.expect("placed");
                 let covered: Vec<Position> =
                     placed.rect.positions().filter(|&p| buffer[p].symbol() != MARKER).collect();
@@ -14640,7 +14671,7 @@ rm -f "$1/sessions/$$.json"
                 let (_, wide) = ready(&mut app, &rx, &kitty);
                 let narrow = Sight { visible: Rect::new(0, 0, wide.rect.x + 6, AREA.height), ..kitty };
 
-                let (_, placed) = draw(&mut app, &narrow);
+                let (_, placed) = render_frame(&mut app, AREA, &narrow);
 
                 let placed = placed.expect("placed");
                 assert!(placed.rect.right() <= narrow.visible.right() && placed.rect.width < wide.rect.width);
@@ -14649,8 +14680,6 @@ rm -f "$1/sessions/$$.json"
     }
 
     mod path_links {
-        use ratatui::Terminal;
-        use ratatui::backend::TestBackend;
         use ratatui::style::Modifier;
         use rstest::rstest;
 
@@ -14721,8 +14750,7 @@ rm -f "$1/sessions/$$.json"
             let pane = app.layout(area).pane;
             let pos = Position::new(pane.x + 2, pane.y);
             mouse_in(&mut app, MouseEventKind::Moved, pos, area);
-            let mut terminal = Terminal::new(TestBackend::new(area.width, area.height)).expect("test backend");
-            terminal.draw(|f| _ = app.draw(f, &Sight::default())).expect("draw");
+            let terminal = render(&mut app, area);
             assert!(terminal.backend().buffer()[pos].modifier.contains(Modifier::UNDERLINED));
             click_in(&mut app, pos, area);
             assert_eq!(shown(&app), Some((path.clone(), Some((2, 3)))));
@@ -14730,9 +14758,7 @@ rm -f "$1/sessions/$$.json"
             assert!(!written(&app), "the program never gets the click");
             wait_until("the outside file is read", || {
                 app.refresh(Instant::now());
-                while let Ok(event) = rx.try_recv() {
-                    app.handle_event(event, area).expect("handle event");
-                }
+                drain_in(&mut app, &rx, area);
                 matches!(app.files_view().expect("files view").screen, ui::files::Screen::File(f)
                     if f.content.as_ref().is_some_and(|c| if picture_file {
                         matches!(&c.body, files::disk::Body::Image(p) if (p.format, p.width, p.height) == ("PNG", 16, 8))
@@ -14787,8 +14813,7 @@ rm -f "$1/sessions/$$.json"
             let repo = repo();
             let (mut app, _rx) = showing(&repo, "open src/main.rs now");
             mouse(&mut app, MouseEventKind::Moved, cell(7, 0));
-            let mut t = Terminal::new(TestBackend::new(AREA.width, AREA.height)).expect("test backend");
-            t.draw(|f| _ = app.draw(f, &Sight::default())).expect("draw");
+            let t = render(&mut app, AREA);
             let lined = |col: u16| t.backend().buffer()[cell(col, 0)].modifier.contains(Modifier::UNDERLINED);
             assert_eq!([lined(4), lined(5), lined(15), lined(16)], [false, true, true, false]);
         }
@@ -14798,6 +14823,20 @@ rm -f "$1/sessions/$$.json"
         use super::*;
         use crate::ui::todo as panel;
 
+        fn toggle_button(app: &mut App) -> String {
+            tap(app, |a| panel::check(item_row(a, 0)));
+            todo_button(app)
+        }
+
+        fn edited_typo() -> (App, Receiver<AppEvent>, Vec<TempDir>) {
+            let (mut app, rx, dirs) = opened();
+            add(&mut app, &["fix logn", "b"]);
+            let row = item_row(&app, 0);
+            click(&mut app, Position::new(row.x + panel::TEXT_X + 7, row.y));
+            type_text(&mut app, "i");
+            (app, rx, dirs)
+        }
+
         fn tap(app: &mut App, at: impl Fn(&App) -> Rect) {
             let pos = at(app).as_position();
             click(app, pos);
@@ -14805,10 +14844,6 @@ rm -f "$1/sessions/$$.json"
 
         fn open(app: &mut App) {
             tap(app, |a| a.layout(AREA).todo_button);
-        }
-
-        fn panel_area(app: &App) -> Rect {
-            app.layout(AREA).changes
         }
 
         fn view(app: &App) -> panel::View {
@@ -14971,22 +15006,14 @@ rm -f "$1/sessions/$$.json"
 
         #[test]
         fn checking_an_item_being_edited_saves_the_text_and_checks_it() {
-            let (mut app, _rx, _dirs) = opened();
-            add(&mut app, &["fix logn", "b"]);
-            let row = item_row(&app, 0);
-            click(&mut app, Position::new(row.x + panel::TEXT_X + 7, row.y));
-            type_text(&mut app, "i");
+            let (mut app, _rx, _dirs) = edited_typo();
             tap(&mut app, |a| panel::check(item_row(a, 0)));
             assert_eq!((app.todo.field.is_none(), texts(&app)), (true, vec!["b".into(), "[x] fix login".into()]));
         }
 
         #[test]
         fn deleting_an_item_being_edited_saves_the_text_and_undo_brings_it_back() {
-            let (mut app, _rx, _dirs) = opened();
-            add(&mut app, &["fix logn", "b"]);
-            let row = item_row(&app, 0);
-            click(&mut app, Position::new(row.x + panel::TEXT_X + 7, row.y));
-            type_text(&mut app, "i");
+            let (mut app, _rx, _dirs) = edited_typo();
             tap(&mut app, |a| panel::delete(item_row(a, 0)));
             assert_eq!((app.todo.field.is_none(), texts(&app)), (true, vec!["b".into()]));
             undo(&mut app, "deleted");
@@ -15026,9 +15053,7 @@ rm -f "$1/sessions/$$.json"
         fn todo_button(app: &mut App) -> String {
             let open = std::mem::replace(&mut app.todo.open, false);
             let r = app.layout(AREA).todo_button;
-            let mut t =
-                ratatui::Terminal::new(ratatui::backend::TestBackend::new(AREA.width, AREA.height)).expect("backend");
-            t.draw(|f| _ = app.draw(f, &Sight::default())).expect("draw");
+            let t = render(app, AREA);
             app.todo.open = open;
             (r.x - 2..r.right()).map(|x| t.backend().buffer()[(x, r.y)].symbol().to_string()).collect()
         }
@@ -15039,10 +15064,8 @@ rm -f "$1/sessions/$$.json"
             let mut seen = vec![todo_button(&mut app)];
             add(&mut app, &["a"]);
             seen.push(todo_button(&mut app));
-            tap(&mut app, |a| panel::check(item_row(a, 0)));
-            seen.push(todo_button(&mut app));
-            tap(&mut app, |a| panel::check(item_row(a, 0)));
-            seen.push(todo_button(&mut app));
+            seen.push(toggle_button(&mut app));
+            seen.push(toggle_button(&mut app));
             tap(&mut app, |a| panel::check(item_row(a, 0)));
             tap(&mut app, |a| panel::clear_done(panel_area(a), &view(a)));
             seen.push(todo_button(&mut app));
@@ -15274,37 +15297,16 @@ rm -f "$1/sessions/$$.json"
 
         use super::*;
         use crate::control::{self as wire, Command, Done, Item, Report, Response, Until};
-        use crate::test_util::write_executable;
+        use crate::test_util::{FakeClaude, write_executable};
+
+        fn wait_after_typing(app: &mut App, rx: &Receiver<AppEvent>) -> Instant {
+            let id = done(answered(app, rx, "the command is typed")).ids.pane.expect("the pane");
+            let typed = Instant::now();
+            ask(app, None, wait_for(id, Until::Shell, None));
+            typed
+        }
 
         const CLIENT: u64 = 9;
-        const AGENT: &str = r#"#!/bin/sh
-d="$1"; s="$d/sessions/$$.json"; t="$d/projects/$(printf %s "$PWD" | tr -c 'A-Za-z0-9' '-')"
-mkdir -p "$t"
-state() { printf '{"pid":%s,"sessionId":"s%s","cwd":"%s","status":"%s"}' $$ $$ "$PWD" "$1" > "$s"; }
-state idle
-n=0
-while printf '\033[H\033[2J%s\n────────────\n❯ ' "$said" && IFS= read -r line; do
-  case "$line" in *panel*) printf '\033[H\033[2J────────────\n  Shell details\n  x to stop\n'; read -r line; continue ;; esac
-  case "$line" in *survey*)
-    printf '\033[H\033[2J● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n\n'
-    printf '────────────\n❯ '; IFS= read -r line; [ "$line" = 0 ] && continue ;;
-  esac
-  n=$((n + 1))
-  printf '{"type":"user","uuid":"p%s","origin":{"kind":"human"},"timestamp":"%s.999Z"}\n' "$n" "$(date -u +%Y-%m-%dT%H:%M:%S)" >> "$t/s$$.jsonl"
-  state busy
-  while [ ! -e "$d/finish" ]; do sleep 0.02; done
-  rm -f "$d/finish"
-  printf '{"type":"assistant","timestamp":"%s.999Z","message":{"id":"m%s","model":"synthetic","usage":{"input_tokens":20,"output_tokens":50,"cache_read_input_tokens":200,"cache_creation_input_tokens":10}}}\n' "$(date -u +%Y-%m-%dT%H:%M:%S)" "$n" >> "$t/s$$.jsonl"
-  case "$line" in
-    *ask*) state waiting; read answer ;;
-    *background*) state shell
-      while [ ! -e "$d/finish" ]; do sleep 0.02; done; rm -f "$d/finish" ;;
-  esac
-  said="done: $line"
-  state idle
-done
-rm -f "$s"
-"#;
 
         fn request(app: &mut App, caller: Option<u64>, command: Command, area: Option<Rect>) {
             let server = caller.map(|_| wire::server_token().to_string());
@@ -15325,9 +15327,7 @@ rm -f "$s"
         fn answered(app: &mut App, rx: &Receiver<AppEvent>, what: &str) -> Response {
             let mut got = Vec::new();
             wait_until(what, || {
-                while let Ok(ev) = rx.try_recv() {
-                    app.handle_event(ev, AREA).expect("handle event");
-                }
+                drain(app, rx);
                 app.refresh(Instant::now());
                 got = answers(app);
                 !got.is_empty()
@@ -15460,9 +15460,7 @@ rm -f "$s"
         ) -> Vec<Streamed> {
             let mut got = Vec::new();
             wait_until(what, || {
-                while let Ok(ev) = rx.try_recv() {
-                    app.handle_event(ev, AREA).expect("handle event");
-                }
+                drain(app, rx);
                 app.refresh(Instant::now());
                 got.extend(streamed(app));
                 enough(&got)
@@ -15693,10 +15691,7 @@ rm -f "$s"
             fn wait_until_shell_right_after_typing_waits_for_the_program() {
                 let (mut app, rx) = app();
                 ask(&mut app, None, new_tab(Some("sleep 1")));
-                let id = done(answered(&mut app, &rx, "the command is typed")).ids.pane.expect("the pane");
-                let typed = Instant::now();
-
-                ask(&mut app, None, wait_for(id, Until::Shell, None));
+                let typed = wait_after_typing(&mut app, &rx);
                 done(answered(&mut app, &rx, "sleep ends"));
 
                 assert!(typed.elapsed() >= Duration::from_millis(900), "it ended after {:?}", typed.elapsed());
@@ -15706,10 +15701,7 @@ rm -f "$s"
             fn a_shell_busy_before_its_program_starts_is_not_back_yet() {
                 let (mut app, rx) = app();
                 ask(&mut app, None, new_tab(Some("x=$(sleep 0.6); sleep 1")));
-                let id = done(answered(&mut app, &rx, "the command is typed")).ids.pane.expect("the pane");
-                let typed = Instant::now();
-
-                ask(&mut app, None, wait_for(id, Until::Shell, None));
+                let typed = wait_after_typing(&mut app, &rx);
                 done(answered(&mut app, &rx, "the program ends"));
 
                 assert!(typed.elapsed() >= Duration::from_millis(1500), "it ended after {:?}", typed.elapsed());
@@ -15989,7 +15981,7 @@ rm -f "$s"
                 ask(&mut running.app, None, wait_for(id, Until::TurnOver, Some(5.0)));
                 running.app.refresh(Instant::now());
                 assert_eq!(answers(&mut running.app).len(), 0);
-                running.fake.append(include_str!("../tests/fixtures/gemini/0.63.0/reply.jsonl"));
+                running.fake.append(crate::test_util::fixture!("gemini/0.63.0/reply.jsonl"));
                 running.title("◇  Ready (project)");
                 let ended = done(answered(&mut running.app, &running.rx, "the Gemini turn ends"));
                 assert_eq!(ended.ended.as_deref(), Some("idle"));
@@ -16063,30 +16055,43 @@ rm -f "$s"
         mod agents {
             use super::*;
 
+            fn known_conversation() -> (Agent, u64) {
+                let mut agent = Agent::new();
+                let id = agent.start(None);
+                agent.refreshing("the pane knows its conversation", |a| {
+                    pane(a, id).context.record_for(crate::agents::CLAUDE).is_some()
+                });
+                (agent, id)
+            }
+
+            fn finish_working(agent: &mut Agent, id: u64) -> Vec<Response> {
+                agent.refreshing("the agent works", |a| pane(a, id).agent.status() == Some(activity::Status::Working));
+                let early = answers(&mut agent.app);
+                agent.finish();
+                early
+            }
+
             struct Agent {
                 app: App,
                 rx: Receiver<AppEvent>,
-                dir: TempDir,
+                fake: FakeClaude,
                 _config: TempDir,
                 _project: TempDir,
             }
 
             impl Agent {
                 fn new() -> Self {
-                    let (dir, config, project) = (TempDir::new(), TempDir::new(), TempDir::new());
-                    std::fs::create_dir(dir.path().join("sessions")).expect("create the sessions folder");
-                    let script = config.path().join("claude");
-                    write_executable(&script, AGENT);
+                    let (config, project) = (TempDir::new(), TempDir::new());
+                    let fake = FakeClaude::running(FakeClaude::CONTROL);
                     let settings = Config {
-                        agent_commands: [("claude".to_string(), script.display().to_string())].into(),
-                        agent_args: [("claude".to_string(), vec![dir.path().display().to_string()])].into(),
+                        agent_commands: [("claude".to_string(), fake.script().display().to_string())].into(),
+                        agent_args: [("claude".to_string(), vec![fake.dir().display().to_string()])].into(),
                         ..Config::default()
                     };
-                    let config_path = config.path().join("config.json");
-                    config::save(&config_path, &settings).expect("write config");
+                    let config_path = write_config(config.path(), &settings);
                     let (mut app, rx) = app_in(project.path(), config_path);
-                    app.claude_dir = Some(dir.path().to_path_buf());
-                    Self { app, rx, dir, _config: config, _project: project }
+                    app.claude_dir = Some(fake.dir().to_path_buf());
+                    Self { app, rx, fake, _config: config, _project: project }
                 }
 
                 fn start(&mut self, prompt: Option<&str>) -> u64 {
@@ -16102,12 +16107,16 @@ rm -f "$s"
                 }
 
                 fn finish(&self) {
-                    std::fs::write(self.dir.path().join("finish"), "").expect("finish");
+                    self.fake.signal("finish");
                 }
 
                 fn until(&mut self, what: &str, cond: impl Fn(&App) -> bool) {
                     let (app, rx) = (&mut self.app, &self.rx);
                     pump_until(app, rx, what, |a| cond(a));
+                }
+
+                fn refreshing(&mut self, what: &str, cond: impl Fn(&App) -> bool) {
+                    refreshing(&mut self.app, &self.rx, what, cond);
                 }
 
                 fn status(&self, id: u64) -> Option<activity::Status> {
@@ -16135,17 +16144,14 @@ rm -f "$s"
                 fn working_grows_time_and_finishing_counts_a_turn_and_the_recorded_tokens() {
                     let mut agent = Agent::new();
                     let id = agent.start(Some("synthetic work"));
-                    refreshing(&mut agent.app, &agent.rx, "agent working", |a| {
-                        pane(a, id).agent.status() == Some(activity::Status::Working)
-                    });
+                    agent
+                        .refreshing("agent working", |a| pane(a, id).agent.status() == Some(activity::Status::Working));
                     let before = total(&agent);
                     sample(&mut agent);
                     let working = total(&agent);
                     assert!(working.counts.agent_seconds >= before.counts.agent_seconds + 0.9);
                     agent.finish();
-                    refreshing(&mut agent.app, &agent.rx, "agent idle", |a| {
-                        pane(a, id).agent.status() != Some(activity::Status::Working)
-                    });
+                    agent.refreshing("agent idle", |a| pane(a, id).agent.status() != Some(activity::Status::Working));
                     let after = total(&agent);
                     assert_eq!(
                         (after.counts.agents, after.counts.prompts, after.counts.turns, after.counts.tokens.out),
@@ -16161,11 +16167,10 @@ rm -f "$s"
                 fn background_shells_stop_agent_time() {
                     let mut agent = Agent::new();
                     let id = agent.start(Some("background"));
-                    refreshing(&mut agent.app, &agent.rx, "agent working", |a| {
-                        pane(a, id).agent.status() == Some(activity::Status::Working)
-                    });
+                    agent
+                        .refreshing("agent working", |a| pane(a, id).agent.status() == Some(activity::Status::Working));
                     agent.finish();
-                    refreshing(&mut agent.app, &agent.rx, "background shell", |a| pane(a, id).agent.background_shell());
+                    agent.refreshing("background shell", |a| pane(a, id).agent.background_shell());
                     sample(&mut agent);
                     let before = total(&agent);
                     sample(&mut agent);
@@ -16179,9 +16184,7 @@ rm -f "$s"
                     let mut agent = Agent::new();
                     let id = agent.start(Some("please ask"));
                     agent.finish();
-                    refreshing(&mut agent.app, &agent.rx, "waiting", |a| {
-                        pane(a, id).agent.status() == Some(activity::Status::Waiting)
-                    });
+                    agent.refreshing("waiting", |a| pane(a, id).agent.status() == Some(activity::Status::Waiting));
                     let before = total(&agent).counts.waited_seconds;
                     sample(&mut agent);
                     assert!(total(&agent).counts.waited_seconds >= before + 0.9);
@@ -16190,9 +16193,7 @@ rm -f "$s"
                         None,
                         Command::Keys(wire::Keys { pane: Some(id), tab: None, keys: vec!["y".into(), "enter".into()] }),
                     ));
-                    refreshing(&mut agent.app, &agent.rx, "unseen done", |a| {
-                        pane(a, id).agent.status() == Some(activity::Status::Done)
-                    });
+                    agent.refreshing("unseen done", |a| pane(a, id).agent.status() == Some(activity::Status::Done));
                     sample(&mut agent);
                     let before = total(&agent).counts.waited_seconds;
                     sample(&mut agent);
@@ -16219,12 +16220,7 @@ rm -f "$s"
                 let id = agent.start(None);
 
                 ask(&mut agent.app, None, send_text(id, "next step", true, true));
-                let (app, rx) = (&mut agent.app, &agent.rx);
-                refreshing(app, rx, "the agent works", |a| {
-                    pane(a, id).agent.status() == Some(activity::Status::Working)
-                });
-                let early = answers(&mut agent.app);
-                agent.finish();
+                let early = finish_working(&mut agent, id);
 
                 let ended = done(agent.answered("the agent stops"));
                 assert_eq!((early, ended.ended.as_deref()), (Vec::new(), Some("done")));
@@ -16238,12 +16234,7 @@ rm -f "$s"
                 done(agent.answered("the enter is pressed"));
 
                 ask(&mut agent.app, None, wait_for(id, Until::Stops, None));
-                let (app, rx) = (&mut agent.app, &agent.rx);
-                refreshing(app, rx, "the agent works", |a| {
-                    pane(a, id).agent.status() == Some(activity::Status::Working)
-                });
-                let early = answers(&mut agent.app);
-                agent.finish();
+                let early = finish_working(&mut agent, id);
 
                 let ended = done(agent.answered("the agent stops"));
                 assert_eq!((early, ended.ended.is_some()), (Vec::new(), true));
@@ -16262,10 +16253,7 @@ rm -f "$s"
                     ..wire::SendText::default()
                 };
                 ask(&mut agent.app, None, Command::Send(send));
-                let (app, rx) = (&mut agent.app, &agent.rx);
-                refreshing(app, rx, "the agent works", |a| {
-                    pane(a, id).agent.status() == Some(activity::Status::Working)
-                });
+                agent.refreshing("the agent works", |a| pane(a, id).agent.status() == Some(activity::Status::Working));
                 agent.finish();
                 let turn = done(agent.answered("the turn is over"));
 
@@ -16358,13 +16346,9 @@ rm -f "$s"
                 let tab = agent.app.projects[0].workspaces[0].tabs[1].id;
                 ask(&mut agent.app, None, send_text(id, "watch the tests in the background", true, false));
                 done(agent.answered("the enter is pressed"));
-                let (app, rx) = (&mut agent.app, &agent.rx);
-                refreshing(app, rx, "the agent works", |a| {
-                    pane(a, id).agent.status() == Some(activity::Status::Working)
-                });
+                agent.refreshing("the agent works", |a| pane(a, id).agent.status() == Some(activity::Status::Working));
                 agent.finish();
-                let (app, rx) = (&mut agent.app, &agent.rx);
-                refreshing(app, rx, "the turn is over", |a| pane(a, id).agent.background_shell());
+                agent.refreshing("the turn is over", |a| pane(a, id).agent.background_shell());
 
                 ask(&mut agent.app, None, wait_on(&[id], &[tab], false, Until::TurnOver, None));
                 let any = done(agent.answered("the first one's turn is over"));
@@ -16417,10 +16401,7 @@ rm -f "$s"
                 let mut agent = Agent::new();
                 let id = agent.start(Some("please ask"));
                 agent.finish();
-                let (app, rx) = (&mut agent.app, &agent.rx);
-                refreshing(app, rx, "the agent asks", |a| {
-                    pane(a, id).agent.status() == Some(activity::Status::Waiting)
-                });
+                agent.refreshing("the agent asks", |a| pane(a, id).agent.status() == Some(activity::Status::Waiting));
 
                 let message = error(now(&mut agent.app, None, send_text(id, "yes", true, false)));
 
@@ -16460,18 +16441,12 @@ rm -f "$s"
                 ]);
                 ask(&mut agent.app, None, send_text(id, "next step", true, false));
                 done(agent.answered("the enter is pressed"));
-                let (app, rx) = (&mut agent.app, &agent.rx);
-                refreshing(app, rx, "the agent works", |a| {
-                    pane(a, id).agent.status() == Some(activity::Status::Working)
-                });
+                agent.refreshing("the agent works", |a| pane(a, id).agent.status() == Some(activity::Status::Working));
 
                 ask(&mut agent.app, None, last_message(id));
                 let working = done(agent.answered("the transcript is read"));
                 agent.finish();
-                let (app, rx) = (&mut agent.app, &agent.rx);
-                refreshing(app, rx, "the agent stops", |a| {
-                    pane(a, id).agent.status() != Some(activity::Status::Working)
-                });
+                agent.refreshing("the agent stops", |a| pane(a, id).agent.status() != Some(activity::Status::Working));
                 ask(&mut agent.app, None, last_message(id));
                 let over = done(agent.answered("the transcript is read again"));
 
@@ -16486,12 +16461,7 @@ rm -f "$s"
 
             #[test]
             fn the_record_of_another_agent_is_not_read() {
-                let mut agent = Agent::new();
-                let id = agent.start(None);
-                let (app, rx) = (&mut agent.app, &agent.rx);
-                refreshing(app, rx, "the pane knows its conversation", |a| {
-                    pane(a, id).context.record_for(crate::agents::CLAUDE).is_some()
-                });
+                let (mut agent, id) = known_conversation();
                 let term = agent.app.projects.iter_mut().flat_map(Project::terms_mut).find(|t| t.id == id);
                 term.expect("the agent's pane").agent.follow(Some(crate::agents::CODEX));
 
@@ -16505,12 +16475,7 @@ rm -f "$s"
 
             #[test]
             fn an_agent_that_has_not_written_yet_has_no_last_message() {
-                let mut agent = Agent::new();
-                let id = agent.start(None);
-                let (app, rx) = (&mut agent.app, &agent.rx);
-                refreshing(app, rx, "the pane knows its conversation", |a| {
-                    pane(a, id).context.record_for(crate::agents::CLAUDE).is_some()
-                });
+                let (mut agent, id) = known_conversation();
 
                 ask(&mut agent.app, None, last_message(id));
 
@@ -16521,6 +16486,14 @@ rm -f "$s"
             mod restarting_when_idle {
                 use super::*;
 
+                fn finish_and_recheck(agent: &mut Agent, id: u64) {
+                    agent.finish();
+                    agent.refreshing("the agent stops", |a| {
+                        pane(a, id).agent.status() != Some(activity::Status::Working)
+                    });
+                    looked_again(agent);
+                }
+
                 fn when_idle(timeout: Option<f64>) -> Command {
                     Command::RestartWhenIdle(wire::RestartWhenIdle { timeout })
                 }
@@ -16529,8 +16502,7 @@ rm -f "$s"
                     let id = agent.start(None);
                     ask(&mut agent.app, None, send_text(id, prompt, true, false));
                     done(agent.answered("the enter is pressed"));
-                    let (app, rx) = (&mut agent.app, &agent.rx);
-                    refreshing(app, rx, "the agent works", |a| {
+                    agent.refreshing("the agent works", |a| {
                         pane(a, id).agent.status() == Some(activity::Status::Working)
                     });
                     id
@@ -16538,8 +16510,7 @@ rm -f "$s"
 
                 fn looked_again(agent: &mut Agent) {
                     let since = Instant::now();
-                    let (app, rx) = (&mut agent.app, &agent.rx);
-                    refreshing(app, rx, "another look at the agents", |a| a.watched.is_some_and(|at| at > since));
+                    agent.refreshing("another look at the agents", |a| a.watched.is_some_and(|at| at > since));
                 }
 
                 fn report(response: Response) -> Report {
@@ -16575,8 +16546,7 @@ rm -f "$s"
                     let mut agent = Agent::new();
                     let id = working(&mut agent, "watch in the background");
                     agent.finish();
-                    let (app, rx) = (&mut agent.app, &agent.rx);
-                    refreshing(app, rx, "the turn is over", |a| pane(a, id).agent.background_shell());
+                    agent.refreshing("the turn is over", |a| pane(a, id).agent.background_shell());
 
                     ask(&mut agent.app, None, when_idle(None));
                     report(agent.answered("the restart"));
@@ -16644,12 +16614,7 @@ rm -f "$s"
                     let cancel = ui::toast_button(AREA, shown).as_position();
                     click(&mut agent.app, cancel);
                     let message = error(answers(&mut agent.app).remove(0));
-                    agent.finish();
-                    let (app, rx) = (&mut agent.app, &agent.rx);
-                    refreshing(app, rx, "the agent stops", |a| {
-                        pane(a, id).agent.status() != Some(activity::Status::Working)
-                    });
-                    looked_again(&mut agent);
+                    finish_and_recheck(&mut agent, id);
 
                     assert_eq!(message, "the restart was cancelled in the window; the server keeps running");
                     assert_eq!((agent.app.take_restart(), toast(&agent.app)), (None, None));
@@ -16662,12 +16627,7 @@ rm -f "$s"
                     ask(&mut agent.app, None, when_idle(None));
 
                     agent.app.forget(CLIENT);
-                    agent.finish();
-                    let (app, rx) = (&mut agent.app, &agent.rx);
-                    refreshing(app, rx, "the agent stops", |a| {
-                        pane(a, id).agent.status() != Some(activity::Status::Working)
-                    });
-                    looked_again(&mut agent);
+                    finish_and_recheck(&mut agent, id);
 
                     let answered = answers(&mut agent.app);
                     assert_eq!((agent.app.take_restart(), toast(&agent.app), answered), (None, None, Vec::new()));
@@ -16702,10 +16662,8 @@ rm -f "$s"
                     let id = working(&mut agent, "next step");
                     let held = (agent.app.awake.state(), agent.app.report(None).keep_awake);
                     agent.finish();
-                    let (app, rx) = (&mut agent.app, &agent.rx);
-                    refreshing(app, rx, "the turn ends", |a| {
-                        pane(a, id).agent.status() != Some(activity::Status::Working)
-                    });
+                    agent
+                        .refreshing("the turn ends", |a| pane(a, id).agent.status() != Some(activity::Status::Working));
 
                     let kept = later(&mut agent, Duration::ZERO);
                     let released = later(&mut agent, KEEP_FOR + Duration::from_secs(1));
@@ -16721,8 +16679,7 @@ rm -f "$s"
                     let _fakes = holding(&mut agent);
                     let id = working(&mut agent, "watch in the background");
                     agent.finish();
-                    let (app, rx) = (&mut agent.app, &agent.rx);
-                    refreshing(app, rx, "the turn is over", |a| pane(a, id).agent.background_shell());
+                    agent.refreshing("the turn is over", |a| pane(a, id).agent.background_shell());
 
                     later(&mut agent, Duration::ZERO);
                     let released = later(&mut agent, KEEP_FOR + Duration::from_secs(1));
@@ -16827,7 +16784,7 @@ rm -f "$s"
                 let pane = term(&app, 0).id;
                 let typed = Launch::command(pane, "sleep 30".into(), Instant::now());
                 app.launches.push(typed);
-                pump_refreshing(&mut app, &rx, "sleep runs", |app| {
+                refreshing(&mut app, &rx, "sleep runs", |app| {
                     pane_job(app, pane).is_some_and(|job| job.program == "sleep")
                 });
 
@@ -16849,7 +16806,7 @@ rm -f "$s"
                 let (mut app, rx, _dirs) = app_with(1);
                 let id = term(&app, 0).id;
                 app.launches.push(Launch::command(id, "sleep 30".into(), Instant::now()));
-                pump_refreshing(&mut app, &rx, "sleep runs", |app| {
+                refreshing(&mut app, &rx, "sleep runs", |app| {
                     pane(app, id).program(&app.config).as_deref() == Some("sleep")
                 });
 
@@ -16861,16 +16818,6 @@ rm -f "$s"
 
             fn pane_job(app: &App, id: u64) -> Option<crate::term::Job> {
                 pane(app, id).job.clone()
-            }
-
-            fn pump_refreshing(app: &mut App, rx: &Receiver<AppEvent>, what: &str, cond: impl Fn(&App) -> bool) {
-                wait_until(what, || {
-                    while let Ok(ev) = rx.try_recv() {
-                        app.handle_event(ev, AREA).expect("handle event");
-                    }
-                    app.refresh(Instant::now());
-                    cond(app)
-                });
             }
         }
 
@@ -16967,6 +16914,24 @@ rm -f "$s"
             use super::*;
             use crate::test_util::git;
 
+            fn changed_workspace(app: &mut App, rx: &Receiver<AppEvent>) -> (u64, PathBuf) {
+                let (id, path) = made(app, rx);
+                std::fs::write(path.join("notes.txt"), "draft").expect("write file");
+                (id, path)
+            }
+
+            fn locked_workspace(app: &mut App, rx: &Receiver<AppEvent>, repo: &Path) -> (u64, PathBuf) {
+                let (id, path) = made(app, rx);
+                lock(repo, &path);
+                (id, path)
+            }
+
+            fn removing_workspace(app: &mut App, rx: &Receiver<AppEvent>) -> u64 {
+                let (id, _) = made(app, rx);
+                app.start_removal(app.projects[0].id, id, false, false, None);
+                id
+            }
+
             fn repo() -> (App, Receiver<AppEvent>, TempDir, TempDir, TempDir) {
                 let repo = git_repo(&[("README", "hi")]);
                 let (worktrees, config, config_path) = with_worktrees_config();
@@ -17022,8 +16987,7 @@ rm -f "$s"
             #[test]
             fn a_worktree_already_being_removed_is_refused() {
                 let (mut app, rx, _repo, _worktrees, _config) = repo();
-                let (id, _) = made(&mut app, &rx);
-                app.start_removal(app.projects[0].id, id, false, false, None);
+                let id = removing_workspace(&mut app, &rx);
 
                 let message = error(now(&mut app, None, remove(id)));
 
@@ -17033,8 +16997,7 @@ rm -f "$s"
             #[test]
             fn no_tab_opens_in_a_worktree_being_removed() {
                 let (mut app, rx, _repo, _worktrees, _config) = repo();
-                let (id, _) = made(&mut app, &rx);
-                app.start_removal(app.projects[0].id, id, false, false, None);
+                let id = removing_workspace(&mut app, &rx);
 
                 let new = wire::NewTab { workspace: Some(id), ..wire::NewTab::default() };
                 let message = error(now(&mut app, None, Command::NewTab(new)));
@@ -17057,8 +17020,7 @@ rm -f "$s"
             #[test]
             fn a_worktree_with_changes_is_refused_before_anything_stops() {
                 let (mut app, rx, _repo, _worktrees, _config) = repo();
-                let (id, path) = made(&mut app, &rx);
-                std::fs::write(path.join("notes.txt"), "draft").expect("write file");
+                let (id, path) = changed_workspace(&mut app, &rx);
 
                 ask(&mut app, None, remove(id));
                 let message = error(answered(&mut app, &rx, "git status answers"));
@@ -17086,8 +17048,7 @@ rm -f "$s"
             #[test]
             fn a_locked_worktree_is_refused_before_anything_stops() {
                 let (mut app, rx, repo, _worktrees, _config) = repo();
-                let (id, path) = made(&mut app, &rx);
-                lock(repo.path(), &path);
+                let (id, path) = locked_workspace(&mut app, &rx, repo.path());
 
                 ask(&mut app, None, remove(id));
                 let message = error(answered(&mut app, &rx, "git status answers"));
@@ -17102,8 +17063,7 @@ rm -f "$s"
             #[test]
             fn force_does_not_unlock_a_locked_worktree() {
                 let (mut app, rx, repo, _worktrees, _config) = repo();
-                let (id, path) = made(&mut app, &rx);
-                lock(repo.path(), &path);
+                let (id, path) = locked_workspace(&mut app, &rx, repo.path());
 
                 ask(&mut app, None, force_remove(id));
                 let message = error(answered(&mut app, &rx, "git status answers"));
@@ -17115,8 +17075,7 @@ rm -f "$s"
             #[test]
             fn force_removes_a_worktree_with_changes() {
                 let (mut app, rx, _repo, _worktrees, _config) = repo();
-                let (id, path) = made(&mut app, &rx);
-                std::fs::write(path.join("notes.txt"), "draft").expect("write file");
+                let (id, path) = changed_workspace(&mut app, &rx);
 
                 ask(&mut app, None, force_remove(id));
                 done(answered(&mut app, &rx, "git removes the worktree"));
