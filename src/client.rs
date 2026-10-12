@@ -42,7 +42,7 @@ use crate::restart;
 use crate::ui::remote::{self as notice, Notice};
 use crate::update::{self, CURRENT, Install, Outcome};
 
-mod input;
+pub(crate) mod input;
 
 const THEME_QUERY_TIMEOUT: Duration = Duration::from_secs(1);
 const TMUX_CHECK_TIMEOUT: Duration = Duration::from_millis(500);

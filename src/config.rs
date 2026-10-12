@@ -55,6 +55,8 @@ pub struct Config {
     pub memory: bool,
     pub desktop_notifications: String,
     pub check_updates: bool,
+    pub remote: bool,
+    pub remote_port: u16,
 }
 
 impl Default for Config {
@@ -92,6 +94,8 @@ impl Default for Config {
             memory: false,
             desktop_notifications: notify::AUTO.into(),
             check_updates: true,
+            remote: false,
+            remote_port: crate::web::DEFAULT_PORT,
         }
     }
 }

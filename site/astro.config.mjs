@@ -68,6 +68,7 @@ export default defineConfig({
             { label: 'Search', slug: 'docs/guides/search' },
             { label: 'Sessions and the server', slug: 'docs/guides/sessions' },
             { label: 'Remote machines', slug: 'docs/guides/remote' },
+            { label: 'From your phone', slug: 'docs/guides/phone' },
             { label: 'Small terminals', slug: 'docs/guides/small-terminals' },
           ],
         },

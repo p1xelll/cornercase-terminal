@@ -41,6 +41,7 @@ pub mod split;
 pub mod state;
 pub mod stats;
 pub mod syntax;
+pub mod tailscale;
 pub mod term;
 pub mod todo;
 pub mod ui;
@@ -48,6 +49,7 @@ pub mod update;
 pub mod upstream;
 pub mod usage;
 pub mod vscode;
+pub mod web;
 pub mod worktree;
 
 #[cfg(test)]

@@ -1,0 +1,91 @@
+:root {
+  --bg: #16181d;
+  --fg: #d6d8dc;
+  --muted: #8b9099;
+  --surface: #262a31;
+  --accent: #5fd7ff;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #fbfbfa;
+    --fg: #1f2328;
+    --muted: #6a6f78;
+    --surface: #e9eaec;
+    --accent: #0a7ea4;
+  }
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+#terminal {
+  position: fixed;
+  top: 0;
+  right: env(safe-area-inset-right, 0);
+  left: env(safe-area-inset-left, 0);
+  height: 100%;
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+  touch-action: none;
+}
+
+#terminal.keyboard {
+  padding-bottom: 0;
+}
+
+#notice {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--fg);
+  font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+#notice[hidden] {
+  display: none;
+}
+
+#notice button {
+  flex: none;
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 10px;
+  background: var(--accent);
+  color: var(--bg);
+  font: inherit;
+  font-weight: 600;
+}
+
+.message {
+  max-width: 34em;
+  margin: 0 auto;
+  padding: 48px 20px;
+  font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.message h1 {
+  font-size: 20px;
+}
+
+.message p {
+  color: var(--muted);
+}

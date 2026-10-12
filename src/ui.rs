@@ -15,9 +15,12 @@ pub mod changes;
 pub mod files;
 pub mod keys;
 pub mod remote;
+pub mod remote_access;
 mod stats;
 pub mod tab_bar;
 pub mod todo;
+
+pub use remote_access::{RemoteAccess, button as remote_button, done as remote_done};
 
 use crate::activity::{self, Status};
 use crate::emulator::Snapshot;
@@ -2316,6 +2319,7 @@ pub enum Overlay {
     Confirm(Confirm),
     Update(Update),
     Usage(Usage),
+    Remote(RemoteAccess),
     Picker(Picker),
     Issues(Issues),
     Settings(Settings),
@@ -2333,6 +2337,7 @@ impl Overlay {
             Self::Form(_) | Self::GroupStyle(_) | Self::Confirm(_) => Some(form_area(area)),
             Self::Update(_) | Self::Picker(_) => Some(picker_area(area)),
             Self::Usage(usage) => Some(usage_area(area, usage)),
+            Self::Remote(remote) => Some(remote_access::area(area, remote)),
             Self::Issues(_) => Some(issues_area(area)),
             Self::Settings(_) => Some(settings_area(area)),
             Self::Menu { .. } | Self::Search(_) | Self::Keys(_) => None,
@@ -2510,6 +2515,7 @@ pub struct View<'a> {
     pub toast: Option<Toast<'a>>,
     pub nav: Option<Nav>,
     pub update: Option<String>,
+    pub remote: Option<bool>,
     pub changes: Option<changes::View>,
     pub changes_button: Option<ChangesButton>,
     pub todo: Option<todo::View>,
@@ -2663,6 +2669,7 @@ pub fn draw(f: &mut Frame, view: &View) {
         Some(Overlay::Confirm(confirm)) => draw_confirm(f, view, confirm),
         Some(Overlay::Update(update)) => draw_update(f, view, update),
         Some(Overlay::Usage(usage)) => draw_usage(f, view, usage),
+        Some(Overlay::Remote(remote)) => remote_access::draw(f, view, remote),
         Some(Overlay::Picker(picker)) => draw_picker(f, view, picker),
         Some(Overlay::Issues(issues)) => draw_issues(f, view, issues),
         Some(Overlay::Settings(settings)) => draw_settings(f, view, settings),
@@ -3563,7 +3570,15 @@ fn draw_footer(f: &mut Frame, view: &View, areas: &Areas) {
         settings.width -= r.width;
     }
     draw_settings_button(f, view, settings);
-    draw_usage_button(f, view, areas.usage);
+    let mut usage = areas.usage;
+    if let Some(connected) = view.remote {
+        let r = remote_access::button(areas.usage, connected);
+        remote_access::draw_button(f, view, r, connected);
+        if !r.is_empty() {
+            usage.width = r.x - usage.x;
+        }
+    }
+    draw_usage_button(f, view, usage);
     draw_quit_button(f, view, areas.quit);
 }
 
@@ -4509,6 +4524,7 @@ mod tests {
             toast: None,
             nav: None,
             update: None,
+            remote: None,
             changes: None,
             changes_button: None,
             todo: None,
@@ -6877,6 +6893,55 @@ mod tests {
 
         fn with(overlay: Overlay) -> View<'static> {
             View { overlay: Some(overlay), ..view(&["cornercase"]) }
+        }
+
+        fn remote_access(url: Option<&str>) -> RemoteAccess {
+            RemoteAccess {
+                url: url.map(String::from),
+                code: url.map(remote_access::code).unwrap_or_default(),
+                lines: vec![
+                    "scan the code with your phone's camera.".into(),
+                    "the phone needs the Tailscale app, logged in as ada@example.com.".into(),
+                ],
+            }
+        }
+
+        const PAIR_URL: &str = "https://mac.tail1234.ts.net:8443/pair?t=0123456789abcdef0123456789abcdef";
+
+        #[test]
+        fn renders_the_remote_code() {
+            let view = with(Overlay::Remote(remote_access(Some(PAIR_URL))));
+            insta::assert_snapshot!(render_sized(&view, W, 40).backend());
+        }
+
+        #[test]
+        fn a_short_window_shows_the_remote_address_without_the_code() {
+            insta::assert_snapshot!(render(&with(Overlay::Remote(remote_access(Some(PAIR_URL))))).backend());
+        }
+
+        #[test]
+        fn the_remote_dialog_is_drawn_where_its_area_says() {
+            let corners = corners_of_its_area(&with(Overlay::Remote(remote_access(None))));
+            assert_eq!(corners, (String::from("╭"), String::from("╯")));
+        }
+
+        #[test]
+        fn the_remote_button_lights_green_while_a_browser_is_attached() {
+            let view = View { remote: Some(true), ..view(&["cornercase"]) };
+            let t = render(&view);
+            let r = remote_button(layout(AREA, Widths::default()).usage, true);
+            let dot = t.backend().buffer()[(r.right() - 2, r.y)].clone();
+            assert_eq!((dot.symbol(), dot.fg), ("●", Color::Green));
+        }
+
+        #[test]
+        fn hovering_the_remote_button_leaves_usage_unlit() {
+            let usage = layout(AREA, Widths::default()).usage;
+            let remote = remote_button(usage, false);
+            let view = View { remote: Some(false), hover: Some(remote.as_position()), ..view(&["cornercase"]) };
+            let t = render(&view);
+            let cells = (t.backend().buffer()[(remote.x, remote.y)].bg, t.backend().buffer()[(usage.x, usage.y)].bg);
+            assert_eq!(cells, (Color::Cyan, Color::Reset));
         }
 
         #[test]

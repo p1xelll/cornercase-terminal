@@ -51,6 +51,8 @@ pub enum Row {
     Trust,
     Resume,
     KeepAwake,
+    Remote,
+    Browsers,
     Kind(String),
     AddAgent,
 }
@@ -70,6 +72,7 @@ impl Row {
             | Self::Notifications
             | Self::Updates
             | Self::Prefix => "",
+            Self::Remote | Self::Browsers => "Remote",
             Self::Token(Source::Jira) | Self::JiraSite | Self::JiraEmail | Self::JiraJql => "Jira",
             Self::Token(Source::Plane) | Self::PlaneWorkspace | Self::PlaneUrl | Self::PlaneFilter => "Plane",
             Self::Token(_) => "Accounts",
@@ -106,7 +109,9 @@ impl Row {
             | Self::Detail(_)
             | Self::Notifications
             | Self::Updates
-            | Self::Prefix => Page::Ui,
+            | Self::Prefix
+            | Self::Remote
+            | Self::Browsers => Page::Ui,
         }
     }
 }
@@ -203,6 +208,7 @@ pub enum Action {
     Save(Box<Config>),
     CheckToken(Source, Secret),
     RemoveToken(Source),
+    ForgetBrowsers,
 }
 
 #[derive(Debug)]
@@ -240,6 +246,8 @@ pub struct Settings {
     pub notice: Option<String>,
     pub capturing: bool,
     pub awake: String,
+    pub remote: String,
+    pub browsers: usize,
 }
 
 impl Settings {
@@ -257,6 +265,8 @@ impl Settings {
             notice: None,
             capturing: false,
             awake: String::new(),
+            remote: String::new(),
+            browsers: 0,
         }
     }
 
@@ -321,7 +331,11 @@ impl Settings {
             Row::Notifications,
             Row::Updates,
             Row::Prefix,
+            Row::Remote,
         ]);
+        if self.browsers > 0 {
+            rows.push(Row::Browsers);
+        }
         rows.retain(|row| row.page() == self.page);
         rows
     }
@@ -390,21 +404,7 @@ impl Settings {
             Row::PlaneUrl => self.start_edit(row, self.config.plane_url.clone()),
             Row::PlaneFilter => self.start_edit(row, self.config.plane_filter.clone()),
             Row::Tab(id) => self.toggle_tab(id),
-            Row::DefaultAgent => {
-                let auto = PickItem {
-                    value: agents::AUTO.into(),
-                    note: "the agent in your tab, otherwise ask".into(),
-                    dangerous: false,
-                };
-                let mut items = vec![auto];
-                items.extend(agents::kinds(&self.config).into_iter().map(|kind| PickItem {
-                    note: agents::command(&self.config, &kind),
-                    value: kind,
-                    dangerous: false,
-                }));
-                self.open_pick(row, items);
-                Action::None
-            }
+            Row::DefaultAgent => self.pick_default_agent(row),
             Row::Submit => {
                 self.flip(|c| &mut c.submit, ["the prompt is sent for you", "the prompt is typed; you press Enter"])
             }
@@ -438,6 +438,11 @@ impl Settings {
                 ["trust prompts are accepted for you", "trust prompts are left to you"],
             ),
             Row::Prefix => self.start_capture(),
+            Row::Remote => self.flip(
+                |c| &mut c.remote,
+                ["remote access is on: click Remote to connect a phone", "remote access is off"],
+            ),
+            Row::Browsers => Action::ForgetBrowsers,
             Row::Resume => self.flip(
                 |c| &mut c.resume_agents,
                 ["conversations resume after a restart", "agents no longer resume after a restart"],
@@ -462,6 +467,22 @@ impl Settings {
                 Action::None
             }
         }
+    }
+
+    fn pick_default_agent(&mut self, row: Row) -> Action {
+        let auto = PickItem {
+            value: agents::AUTO.into(),
+            note: "the agent in your tab, otherwise ask".into(),
+            dangerous: false,
+        };
+        let mut items = vec![auto];
+        items.extend(agents::kinds(&self.config).into_iter().map(|kind| PickItem {
+            note: agents::command(&self.config, &kind),
+            value: kind,
+            dangerous: false,
+        }));
+        self.open_pick(row, items);
+        Action::None
     }
 
     fn pick_mode(&mut self, kind: String) -> Action {
@@ -958,6 +979,13 @@ impl Settings {
             }
             Row::KeepAwake => self.keep_awake_row(),
             Row::Prefix => self.prefix_row(),
+            Row::Remote => {
+                let value = if config.remote { "[x] over Tailscale" } else { "[ ] off" };
+                ("remote access".into(), value.into(), self.remote.clone(), false)
+            }
+            Row::Browsers => {
+                ("paired browsers".into(), self.browsers.to_string(), "enter forgets them all".into(), true)
+            }
             Row::Kind(kind) => kind_row(config, kind),
             Row::AddAgent => ("+ another agent…".into(), String::new(), String::new(), false),
         };
@@ -1186,7 +1214,7 @@ mod tests {
         #[case::worktrees(Page::Worktrees, &[""])]
         #[case::agents(Page::Agents, &["Agent", "How each agent starts"])]
         #[case::issues(Page::Issues, &["Accounts", "Sources shown"])]
-        #[case::ui(Page::Ui, &[""])]
+        #[case::ui(Page::Ui, &["", "Remote"])]
         fn hold_their_sections(#[case] page: Page, #[case] expected: &[&str]) {
             assert_eq!(sections(page), expected);
         }
@@ -1578,6 +1606,36 @@ mod tests {
         }
     }
 
+    mod remote {
+        use super::*;
+
+        #[test]
+        fn is_a_switch_that_starts_off() {
+            let mut s = settings();
+            let before = s.config.remote;
+            go_to(&mut s, &Row::Remote);
+            assert_eq!((before, saved(press(&mut s, KeyCode::Enter)).remote), (false, true));
+        }
+
+        #[test]
+        fn paired_browsers_show_only_when_there_are_some() {
+            let mut s = settings();
+            s.open_page(Page::Ui);
+            let without = s.rows().contains(&Row::Browsers);
+            s.browsers = 2;
+            assert_eq!((without, s.rows().contains(&Row::Browsers)), (false, true));
+        }
+
+        #[test]
+        fn enter_on_paired_browsers_asks_to_forget_them_and_keeps_the_row_until_they_are() {
+            let mut s = settings();
+            s.browsers = 1;
+            go_to(&mut s, &Row::Browsers);
+            assert_eq!(press(&mut s, KeyCode::Enter), Action::ForgetBrowsers);
+            assert!(s.rows().contains(&Row::Browsers) && s.notice.is_none());
+        }
+    }
+
     mod keep_awake {
         use super::*;
 
@@ -1663,7 +1721,8 @@ mod tests {
                     Row::Detail(Detail::Memory),
                     Row::Notifications,
                     Row::Updates,
-                    Row::Prefix
+                    Row::Prefix,
+                    Row::Remote
                 ]
             );
         }

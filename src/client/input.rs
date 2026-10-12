@@ -26,7 +26,7 @@ pub(super) enum Decoded {
 }
 
 #[derive(Default)]
-pub(super) struct Parser {
+pub(crate) struct Parser {
     pending: Vec<u8>,
     since: Option<Instant>,
     replies_until: Option<Instant>,
@@ -38,7 +38,7 @@ impl Parser {
         Self { replies_until: probe_timed_out.then(|| Instant::now() + REPLY_WAIT), ..Self::default() }
     }
 
-    pub(super) fn feed(&mut self, bytes: &[u8], full: bool, emit: &mut impl FnMut(Event) -> bool) -> bool {
+    pub(crate) fn feed(&mut self, bytes: &[u8], full: bool, emit: &mut impl FnMut(Event) -> bool) -> bool {
         self.feed_with(bytes, full, emit, &mut parse::parse_event)
     }
 
@@ -123,7 +123,7 @@ impl Parser {
         true
     }
 
-    pub(super) fn idle(&mut self, emit: &mut impl FnMut(Event) -> bool) -> bool {
+    pub(crate) fn idle(&mut self, emit: &mut impl FnMut(Event) -> bool) -> bool {
         if self.since.is_some_and(|since| since.elapsed() >= ESC_WAIT) && self.pending == b"\x1b" {
             self.reset();
             return emit(Event::Key(crossterm::event::KeyCode::Esc.into()));

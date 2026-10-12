@@ -36,6 +36,7 @@ use crate::picker::Picker;
 use crate::pointer;
 use crate::process;
 use crate::project::{Group, Phase, Project, Tab, Workspace, move_before, shift_active};
+use crate::protocol;
 use crate::restart;
 use crate::search::{self, Candidate, Goto, Kind, Search};
 use crate::secrets;
@@ -45,6 +46,7 @@ use crate::split::{self, Dir};
 use crate::state::{
     self, AgentState, ChangesState, IssuesState, PaneState, ProjectState, State, TabState, WorkspaceState,
 };
+use crate::tailscale;
 use crate::term::{SpawnOptions, Term};
 use crate::todo::{self, Todos};
 use crate::ui::changes::{self as panel, Action as HunkAction, Hit as PanelHit};
@@ -53,12 +55,14 @@ use crate::update::{self, Install, Release, Updates};
 use crate::upstream;
 use crate::usage;
 use crate::vscode;
+use crate::web::{self, Web};
 use crate::worktree;
 
 mod control;
 mod events;
 mod files_panel;
 mod images;
+mod remote_access;
 mod shortcuts;
 mod todo_panel;
 mod trace;
@@ -175,6 +179,8 @@ pub enum AppEvent {
         key: encode::Key,
         result: Result<Vec<u8>>,
     },
+    Web(web::Event),
+    Tailscale(std::result::Result<tailscale::Node, tailscale::Problem>),
 }
 
 impl AppEvent {
@@ -204,6 +210,8 @@ impl AppEvent {
             Self::Usage(..) => "usage",
             Self::LastMessage { .. } => "last message",
             Self::Encoded { .. } => "image encoded",
+            Self::Web(_) => "web",
+            Self::Tailscale(_) => "tailscale",
         }
     }
 }
@@ -358,6 +366,7 @@ enum Overlay {
     Update(UpdateStep),
     Restart,
     Usage,
+    Remote,
     Branches(BranchPicker),
     Keys(Option<KeysGroup>),
 }
@@ -382,6 +391,7 @@ impl Overlay {
             Self::Search(_) => "search",
             Self::Update(_) => "update",
             Self::Usage => "usage",
+            Self::Remote => "remote",
             Self::Branches(_) => "branches",
             Self::Restart => "restart",
             Self::Keys(_) => "keys",
@@ -685,6 +695,7 @@ pub struct App {
     claude_dir: Option<PathBuf>,
     watched: Option<Instant>,
     awake: Awake,
+    remote: remote_access::Remote,
     usage: usage::State,
     usage_page: usage::Page,
     stats: crate::stats::Stats,
@@ -734,6 +745,7 @@ impl App {
         let secrets_path = secrets::path(&config_path);
         let home = std::env::var_os("HOME").map(PathBuf::from);
         let claude_dir = activity::claude_dir(home.as_deref());
+        let web = Web::new(web::devices_path(&config_path), protocol::socket_path(), tx.clone());
         Self {
             groups: Vec::new(),
             projects: Vec::new(),
@@ -795,6 +807,7 @@ impl App {
             claude_dir,
             watched: None,
             awake: Awake::new(awake::tools()),
+            remote: remote_access::Remote::new(web),
             usage: usage::State::default(),
             usage_page: usage::Page::default(),
             stats: crate::stats::Stats::new(SystemTime::now()),
@@ -966,6 +979,7 @@ impl App {
         self.drive_launches(now);
         self.watch_agents(now);
         self.keep_awake(now);
+        self.sync_remote();
         self.check_requests(now);
         self.check_updates(now);
         self.refresh_files(now);
@@ -1823,6 +1837,8 @@ impl App {
             AppEvent::Usage(agent, result) => self.usage.answered(agent, result, Instant::now()),
             AppEvent::LastMessage { request, result } => self.message_read(request, result),
             AppEvent::Encoded { key, result } => self.encoded(key, result),
+            AppEvent::Web(event) => self.web_event(event),
+            AppEvent::Tailscale(answer) => self.tailscale_answered(answer),
             AppEvent::Output(id, bytes) => {
                 for launch in self.launches.iter_mut().filter(|l| l.term == id) {
                     launch.output(Instant::now());
@@ -3817,6 +3833,13 @@ impl App {
             }
             return Ok(());
         }
+        if matches!(self.overlay, Some(Overlay::Remote)) {
+            let done = ui::remote_done(area, &self.remote_view());
+            if ev.kind == MouseEventKind::Down(MouseButton::Left) && done.contains(pos) {
+                self.overlay = None;
+            }
+            return Ok(());
+        }
         if let Some(Overlay::GroupStyle { group }) = self.overlay {
             self.group_style_mouse(group, ev, pos, area);
             return Ok(());
@@ -4045,7 +4068,7 @@ impl App {
                 self.add_group(input.trim().to_string());
                 None
             }
-            Overlay::GroupStyle { .. } | Overlay::Usage => None,
+            Overlay::GroupStyle { .. } | Overlay::Usage | Overlay::Remote => None,
             Overlay::RemoveWorkspace { project, workspace, check, lock } => {
                 self.confirm_removal(project, workspace, check, lock.is_some())
             }
@@ -4085,11 +4108,14 @@ impl App {
 
     fn footer_mouse(&mut self, areas: &ui::Areas, pos: Position, left: bool) -> bool {
         let update = self.update_label().is_some_and(|label| ui::update_button(areas.settings, &label).contains(pos));
-        let hit = update || [areas.quit, areas.usage, areas.settings].iter().any(|r| r.contains(pos));
+        let remote = self.remote_button().is_some_and(|on| ui::remote_button(areas.usage, on).contains(pos));
+        let hit = update || remote || [areas.quit, areas.usage, areas.settings].iter().any(|r| r.contains(pos));
         if hit && left {
             self.nav = None;
             if update {
                 self.open_update();
+            } else if remote {
+                self.open_remote();
             } else if areas.quit.contains(pos) {
                 self.detach = true;
             } else if areas.usage.contains(pos) {
@@ -4371,6 +4397,8 @@ impl App {
             .collect();
         let mut settings = Settings::new(self.config.clone(), self.home.clone(), tokens, self.settings_page);
         settings.awake = self.awake.state().note();
+        settings.remote = self.remote.note();
+        settings.browsers = self.remote.web.paired();
         self.overlay = Some(Overlay::Settings(Box::new(settings)));
     }
 
@@ -4454,6 +4482,12 @@ impl App {
                 self.set_config(*config);
             }
             settings::Action::CheckToken(source, token) => self.check_token(source, token),
+            settings::Action::ForgetBrowsers => {
+                let forgotten = self.forget_browsers();
+                if let Some(Overlay::Settings(s)) = &mut self.overlay {
+                    s.notice = Some(forgotten.map_or_else(|e| e, String::from));
+                }
+            }
             settings::Action::RemoveToken(source) => {
                 let removed = source.secret_key().map(|key| secrets::remove(&self.secrets_path, key));
                 let Some(Overlay::Settings(s)) = &mut self.overlay else { return };
@@ -4800,6 +4834,7 @@ impl App {
             toast: self.toast.as_ref().map(Toast::view),
             nav: self.nav,
             update: self.update_label(),
+            remote: self.remote_button(),
             changes: if self.changes_shown() { self.panel_view() } else { None },
             changes_button: self.changes_label().map(|label| ui::ChangesButton { label, open: self.changes.open }),
             todo: self.todo.open.then(|| self.todo_view(self.layout(area).shown(self.nav).changes)),
@@ -4951,6 +4986,7 @@ impl App {
             Overlay::Update(step) => self.update_view(step, area),
             Overlay::Restart => self.restart_view(area),
             Overlay::Usage => ui::Overlay::Usage(self.usage_view()),
+            Overlay::Remote => ui::Overlay::Remote(self.remote_view()),
             Overlay::Branches(picker) => Self::branches_view(picker),
         })
     }
@@ -10132,7 +10168,8 @@ rm -f "$1/sessions/$$.json"
                     Row::Detail(Detail::Memory),
                     Row::Notifications,
                     Row::Updates,
-                    Row::Prefix
+                    Row::Prefix,
+                    Row::Remote
                 ]
             );
         }
@@ -12669,7 +12706,13 @@ rm -f "$1/sessions/$$.json"
                 s.app.check_token(Source::Plane, Secret("k3y".into()));
 
                 let event = s.rx.recv_timeout(Duration::from_secs(10)).expect("the answer arrives");
-                let AppEvent::TokenChecked { result, .. } = event else { panic!("not a token check") };
+                let result = std::iter::once(event)
+                    .chain(std::iter::from_fn(|| s.rx.recv_timeout(Duration::from_secs(10)).ok()))
+                    .find_map(|event| match event {
+                        AppEvent::TokenChecked { result, .. } => Some(result),
+                        _ => None,
+                    })
+                    .expect("a token check");
                 assert_eq!(result.err().map(|e| e.to_string()).as_deref(), Some("set the Plane workspace first"));
             }
         }
@@ -13183,6 +13226,255 @@ rm -f "$1/sessions/$$.json"
                 send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
             }
             assert!(app.overlay.is_none());
+        }
+    }
+
+    mod remote_access {
+        use std::io::{Read as _, Write as _};
+        use std::net::{TcpListener, TcpStream};
+
+        use super::*;
+        use crate::test_util::write_executable;
+
+        const STATUS: &str = r#"{"BackendState":"Running","CertDomains":["mac.tail1234.ts.net"],"Self":{"DNSName":"mac.tail1234.ts.net.","UserID":7},"User":{"7":{"LoginName":"ada@example.com"}}}"#;
+
+        struct Remote {
+            app: App,
+            rx: Receiver<AppEvent>,
+            dir: TempDir,
+            port: u16,
+        }
+
+        fn free_port() -> u16 {
+            static NEXT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
+            let base = 20_000 + u16::try_from(std::process::id() % 5_000).expect("fits") * 2;
+            loop {
+                let port = base + NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if TcpListener::bind(("127.0.0.1", port)).is_ok() {
+                    return port;
+                }
+            }
+        }
+
+        fn with_tailscale(script: Option<&str>) -> Remote {
+            let dir = TempDir::new();
+            let (mut app, rx) = new_app(dir.path().join("config.json"));
+            app.open_here(AREA).expect("open the first project");
+            let program = match script {
+                Some(script) => {
+                    let path = dir.path().join("tailscale");
+                    let log = dir.path().join("calls");
+                    write_executable(&path, &format!("#!/bin/sh\necho \"$@\" >> '{}'\n{script}\n", log.display()));
+                    path
+                }
+                None => dir.path().join("missing").join("tailscale"),
+            };
+            app.remote.tailscale = Some(program);
+            let port = free_port();
+            app.config.remote_port = port;
+            Remote { app, rx, dir, port }
+        }
+
+        fn ready() -> Remote {
+            let mut r = with_tailscale(Some(&format!("[ \"$1\" = status ] && echo '{STATUS}'\nexit 0")));
+            r.app.config.remote = true;
+            r.app.refresh(Instant::now());
+            pump_until(&mut r.app, &r.rx, "tailscale answers", |a| {
+                matches!(a.remote.phase, crate::app::remote_access::Phase::Ready(_))
+            });
+            r
+        }
+
+        fn calls(r: &Remote) -> String {
+            std::fs::read_to_string(r.dir.path().join("calls")).unwrap_or_default()
+        }
+
+        fn get(port: u16, path: &str) -> String {
+            let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+            write!(stream, "GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n").expect("request");
+            let mut answer = String::new();
+            stream.read_to_string(&mut answer).expect("answer");
+            answer
+        }
+
+        fn shown(app: &App) -> Option<ui::RemoteAccess> {
+            match app.overlay_view(app.overlay.as_ref()?, AREA)? {
+                ui::Overlay::Remote(remote) => Some(remote),
+                _ => None,
+            }
+        }
+
+        fn open(r: &mut Remote) -> String {
+            click(&mut r.app, ui::remote_button(areas().usage, false).as_position());
+            let url = shown(&r.app).and_then(|v| v.url).expect("a pairing address");
+            url.split_once("?t=").map(|(_, token)| token.to_string()).expect("a token")
+        }
+
+        #[test]
+        fn is_off_until_switched_on() {
+            let mut r = with_tailscale(Some("exit 0"));
+            r.app.refresh(Instant::now());
+
+            assert_eq!((r.app.remote_button(), r.app.remote.web.listening(), calls(&r)), (None, None, String::new()));
+        }
+
+        #[test]
+        fn switching_it_on_serves_the_port_over_tailscale_and_shows_the_button() {
+            let r = ready();
+
+            assert_eq!(
+                calls(&r),
+                format!("status --json\nserve --bg --yes --https=8443 http://127.0.0.1:{}\n", r.port)
+            );
+            assert_eq!((r.app.remote_button(), r.app.remote.web.listening()), (Some(false), Some(r.port)));
+            assert!(get(r.port, "/").starts_with("HTTP/1.1 401"));
+        }
+
+        #[test]
+        fn the_code_pairs_one_browser_once_then_the_dialog_closes() {
+            let mut r = ready();
+            let token = open(&mut r);
+
+            let first = get(r.port, &format!("{}?t={token}", web::PAIR_PATH));
+            pump_until(&mut r.app, &r.rx, "the pairing is told", |a| a.overlay.is_none());
+            let again = get(r.port, &format!("{}?t={token}", web::PAIR_PATH));
+
+            assert!(first.starts_with("HTTP/1.1 303") && first.contains("Set-Cookie: cornercase="), "{first}");
+            assert!(again.starts_with("HTTP/1.1 403"), "{again}");
+            assert_eq!((toast(&r.app), r.app.remote.web.paired()), (Some("a browser connected"), 1));
+        }
+
+        #[test]
+        fn a_code_stops_working_once_its_dialog_closes() {
+            let mut r = ready();
+            let token = open(&mut r);
+            let done = ui::remote_done(AREA, &shown(&r.app).expect("the dialog"));
+            click(&mut r.app, done.as_position());
+            r.app.refresh(Instant::now());
+
+            assert!(get(r.port, &format!("{}?t={token}", web::PAIR_PATH)).starts_with("HTTP/1.1 403"));
+        }
+
+        #[test]
+        fn switching_it_off_stops_serving() {
+            let mut r = ready();
+            r.app.config.remote = false;
+            r.app.refresh(Instant::now());
+
+            wait_until("tailscale stops serving", || calls(&r).ends_with("serve --https=8443 off\n"));
+            assert_eq!((r.app.remote_button(), r.app.remote.web.listening()), (None, None));
+            assert!(TcpStream::connect(("127.0.0.1", r.port)).is_err());
+        }
+
+        #[test]
+        fn without_tailscale_the_dialog_says_so() {
+            let mut r = with_tailscale(None);
+            r.app.config.remote = true;
+            r.app.refresh(Instant::now());
+            click(&mut r.app, ui::remote_button(areas().usage, false).as_position());
+
+            let first = |a: &App| shown(a).and_then(|v| v.lines.first().cloned());
+            pump_until(&mut r.app, &r.rx, "tailscale is found missing", |a| {
+                first(a).as_deref() != Some("starting Tailscale…")
+            });
+            assert_eq!(first(&r.app).as_deref(), Some("tailscale is not installed on this computer"));
+        }
+
+        #[test]
+        fn a_port_in_use_says_which() {
+            let taken = TcpListener::bind(("127.0.0.1", 0)).expect("bind");
+            let mut r = with_tailscale(Some("exit 0"));
+            r.app.config.remote_port = taken.local_addr().expect("address").port();
+            r.app.config.remote = true;
+            r.app.refresh(Instant::now());
+
+            assert!(r.app.remote.note().contains("is taken"), "{}", r.app.remote.note());
+        }
+
+        fn get_with(port: u16, headers: &str) -> String {
+            let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+            write!(stream, "GET / HTTP/1.1\r\nHost: mac.tail1234.ts.net:8443\r\n{headers}\r\n").expect("request");
+            let mut answer = String::new();
+            stream.read_to_string(&mut answer).expect("answer");
+            answer
+        }
+
+        #[test]
+        fn through_tailscale_only_the_owner_gets_past_the_door() {
+            let r = ready();
+            let forwarded = "X-Forwarded-For: 100.64.0.2\r\n";
+
+            let owner = get_with(r.port, &format!("{forwarded}Tailscale-User-Login: ada@example.com\r\n"));
+            let other = get_with(r.port, &format!("{forwarded}Tailscale-User-Login: bob@example.com\r\n"));
+            let tagged = get_with(r.port, forwarded);
+
+            assert!(owner.starts_with("HTTP/1.1 401"), "{owner}");
+            assert!(other.starts_with("HTTP/1.1 403") && tagged.starts_with("HTTP/1.1 403"), "{other}\n{tagged}");
+        }
+
+        #[test]
+        fn opening_the_dialog_after_a_failure_tries_again_on_the_same_port() {
+            let mut r = with_tailscale(None);
+            let ok = r.dir.path().join("ok");
+            let stopped = STATUS.replace("Running", "Stopped");
+            let script = format!(
+                "[ \"$1\" = status ] || exit 0\nif [ -e '{}' ]; then echo '{STATUS}'; else echo '{stopped}'; fi",
+                ok.display()
+            );
+            let program = r.dir.path().join("tailscale");
+            write_executable(&program, &format!("#!/bin/sh\n{script}\n"));
+            r.app.remote.tailscale = Some(program);
+            r.app.config.remote = true;
+            r.app.refresh(Instant::now());
+            pump_until(&mut r.app, &r.rx, "tailscale is not connected", |a| {
+                matches!(a.remote.phase, crate::app::remote_access::Phase::Failed(_))
+            });
+            std::fs::write(&ok, "").expect("connect tailscale");
+
+            click(&mut r.app, ui::remote_button(areas().usage, false).as_position());
+            pump_until(&mut r.app, &r.rx, "tailscale answers again", |a| {
+                matches!(a.remote.phase, crate::app::remote_access::Phase::Ready(_))
+            });
+
+            assert_eq!(r.app.remote.web.listening(), Some(r.port));
+            assert!(shown(&r.app).and_then(|v| v.url).is_some());
+        }
+
+        #[test]
+        fn switching_quickly_runs_the_tailscale_commands_in_order() {
+            let mut r = with_tailscale(Some(&format!("[ \"$1\" = status ] && echo '{STATUS}'\nexit 0")));
+            for on in [true, false, true] {
+                r.app.config.remote = on;
+                r.app.refresh(Instant::now());
+            }
+
+            let serve = format!("serve --bg --yes --https=8443 http://127.0.0.1:{}", r.port);
+            let expected = format!("status --json\n{serve}\nserve --https=8443 off\nstatus --json\n{serve}\n");
+            let ran = || calls(&r).lines().count() >= 5;
+            wait_until_within("every command ran", Duration::from_secs(20), ran);
+            assert_eq!(calls(&r), expected, "phase {:?}", r.app.remote.phase);
+        }
+
+        #[test]
+        fn forgetting_the_browsers_refuses_their_cookie() {
+            let mut r = ready();
+            let token = open(&mut r);
+            let paired = get(r.port, &format!("{}?t={token}", web::PAIR_PATH));
+            let cookie = paired.lines().find_map(|l| l.strip_prefix("Set-Cookie: ")).and_then(|c| c.split(';').next());
+            let cookie = cookie.expect("a cookie").to_string();
+            let page = |port: u16| {
+                let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+                write!(stream, "GET / HTTP/1.1\r\nHost: x\r\nCookie: {cookie}\r\n\r\n").expect("request");
+                let mut answer = String::new();
+                stream.read_to_string(&mut answer).expect("answer");
+                answer
+            };
+            let before = page(r.port);
+
+            r.app.forget_browsers().expect("forgotten");
+
+            assert!(before.starts_with("HTTP/1.1 200"), "{before}");
+            assert!(page(r.port).starts_with("HTTP/1.1 401"));
         }
     }
 

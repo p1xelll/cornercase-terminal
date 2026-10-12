@@ -1,0 +1,74 @@
+---
+title: From your phone
+description: Open the cornercase running on your computer in your phone's browser, over Tailscale, by scanning a QR code. Answer an agent, see which ones are working, and go back to your desk when you are done.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Your agents keep working after you leave the computer. To answer one that needs you, or to see which ones are still working, open the same cornercase in your phone's browser: no app to configure, no SSH, just a QR code to scan once.
+
+The connection goes through [Tailscale](https://tailscale.com), a private network between your own devices. Nothing is published on the internet: only devices in your tailnet can reach your computer, and cornercase only lets in your own Tailscale account, from a browser you paired. If you share your tailnet with other people, their devices can reach the address, but cornercase refuses them.
+
+```text
+ your phone's browser ── Tailscale ──▶ your computer: tailscale serve ──▶ cornercase server ── shells, agents
+```
+
+## What you need
+
+- **Tailscale on your computer**, logged in. On macOS: `brew install --cask tailscale`, or the app from the App Store, then open it and log in. cornercase uses its `tailscale` command; it never asks for a Tailscale token.
+- **HTTPS certificates turned on** for your tailnet, once: in the [admin console's DNS page](https://login.tailscale.com/admin/dns), keep MagicDNS on and click **Enable** under HTTPS Certificates.
+- **The Tailscale app on your phone**, logged in to the same account, with its connection on.
+
+The personal plan of Tailscale is free.
+
+## Turn it on
+
+In **Settings › UI**, under **Remote**, turn on **remote access**. cornercase starts serving itself to your tailnet (it runs `tailscale serve` on port 8443 for you) and the row's note says when it is ready, at an address such as `https://mac.tail1234.ts.net:8443`, or what is missing.
+
+A **`Remote`** button then shows at the right of the `Usage` row, at the bottom of the sidebar.
+
+## Connect your phone
+
+1. Click **`Remote`**. A dialog shows a QR code, the same address as text, and the account the phone must be logged in with.
+2. Scan the code with your phone's camera and open the link.
+3. The dialog closes and `a browser connected` shows: the phone is paired, and shows your session.
+
+A code works once and for ten minutes, and stops working as soon as you close the dialog. Once paired, the phone keeps opening cornercase from the same address, without a new code; add it to your home screen to open it like an app.
+
+While a browser is attached, the button shows a green **`●`**, so you can see at a glance that a phone can see and type into your terminals.
+
+## Using it on the phone
+
+The phone gets the [compact layout](../small-terminals/), made for small screens: the `≡` menu, three-line rows, `×` always visible. Tap to click, swipe up and down to scroll (a conversation with Claude Code, a long log), and tap the screen to bring up the keyboard: the session shrinks to the room above it, so the line you type on stays in sight.
+
+Like any other window, the phone sets the size of the session while you use it: when you are back at the computer, your next key or click there gives it back its size. See [Several terminals at once](../sessions/#several-terminals-at-once).
+
+When the connection drops (the phone locks, you go into a tunnel, you switch from Wi-Fi to mobile data), the page keeps the last screen and reconnects by itself, at once when you come back to it. Nothing stops on the computer meanwhile. ` Quit ` on the phone detaches it like any window; the page then waits until you tap **reconnect now**.
+
+## Forget a phone
+
+In **Settings › UI**, **paired browsers** says how many browsers are paired. Select it and press `Enter` to forget them all: they are disconnected at once, and each one says it is no longer paired until you scan a new code. Turning **remote access** off stops serving and disconnects every browser, but keeps them paired.
+
+## How it is kept private
+
+- cornercase listens only on your computer (`127.0.0.1`); `tailscale serve` is the only way in from elsewhere, and only from your tailnet.
+- Only the account that owns the computer can pair or connect, even in a tailnet shared with other people; tagged devices (servers set up with Tailscale tags) cannot either.
+- A browser needs to be paired with a code shown on your screen; paired browsers are kept in `browsers.json` next to `config.json`, readable only by you, which holds a hash of each browser's secret rather than the secret itself.
+- Nothing is published on the internet: cornercase never uses Tailscale Funnel.
+
+<Aside type="caution">
+A paired phone can type into every terminal, like you at your keyboard. Keep it locked, and forget the paired browsers if you lose it.
+</Aside>
+
+## Limits
+
+- The computer must be awake and the cornercase server running: if the computer sleeps, nothing answers. [Keep awake](../../reference/agents/#keep-the-computer-awake) keeps it awake while an agent works; closing the lid of a laptop still puts it to sleep.
+- The page shows no pictures from the [files panel](../files/#images) and sends no desktop notifications; the toast in cornercase still shows.
+- The pairing cookie belongs to your computer's Tailscale name, not to the port, so another web service on that same name (another `tailscale serve`) receives it too. Serve only things you trust next to cornercase.
+- If your computer is itself a tagged device in Tailscale, it has no owner to compare with and phones are refused; use a computer logged in as you.
+- Port 8443 of your computer's Tailscale address is used for cornercase; if something else already uses it with `tailscale serve`, cornercase replaces it.
+- The local port is 47681. If something else uses it, the note says so; set another one with [`remote_port`](../../reference/configuration/#remote_port).
+
+## Without a browser
+
+An SSH app on your phone (Termius, Blink…) works too, with Tailscale or on your own network: connect to your computer with `ssh` (turn on **Remote Login** in macOS' Sharing settings) and run `cornercase`, which attaches to the same session in the compact layout. You then reconnect by hand when the connection drops.
