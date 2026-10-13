@@ -24,7 +24,6 @@ const LONG_FILES: &[&str] = &[
     "src/graphics/detect.rs",
     "src/issues/browser.rs",
     "src/settings.rs",
-    "src/ui.rs",
     "tests/e2e.rs",
 ];
 
