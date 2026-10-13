@@ -2,7 +2,7 @@ use rstest::rstest;
 
 use super::*;
 
-const MOODS: [Mood; 6] = [Mood::Idle, Mood::Done, Mood::Working, Mood::Error, Mood::Question, Mood::Needs];
+const MOODS: [Mood; 5] = [Mood::Done, Mood::Working, Mood::Error, Mood::Question, Mood::Needs];
 
 fn ms(n: u64) -> Duration {
     Duration::from_millis(n)
@@ -23,7 +23,6 @@ fn every_frame_is_a_sixteen_by_sixteen_grid_of_palette_colours() {
 }
 
 #[rstest]
-#[case::idle(Mood::Idle, &[2600, 120, 260, 120], true)]
 #[case::working(Mood::Working, &[240, 240, 240, 240], true)]
 #[case::needs(Mood::Needs, &[170, 170, 170, 450], true)]
 #[case::question(Mood::Question, &[900, 650, 400, 650], true)]
@@ -38,7 +37,7 @@ fn each_state_keeps_the_designs_timing(#[case] mood: Mood, #[case] timing: &[u64
 
 #[test]
 fn a_loop_starts_over() {
-    assert_eq!([0, 2599, 2600, 2719, 2720, 3100].map(|n| index(Mood::Idle, ms(n))), [0, 0, 1, 1, 2, 0].map(Some));
+    assert_eq!([0, 239, 240, 479, 480, 960].map(|n| index(Mood::Working, ms(n))), [0, 0, 1, 1, 2, 0].map(Some));
 }
 
 #[test]
@@ -47,19 +46,6 @@ fn a_one_shot_holds_its_last_frame() {
 }
 
 #[test]
-fn the_most_urgent_state_leads() {
-    let order = [Mood::Needs, Mood::Question, Mood::Error, Mood::Working, Mood::Done, Mood::Idle];
-    for (i, mood) in order.iter().enumerate() {
-        assert_eq!(urgent(order[i..].iter().rev().copied()), *mood);
-    }
-    assert_eq!(urgent([]), Mood::Idle);
-}
-
-#[test]
-fn every_state_has_frames_and_its_own_antenna() {
-    let mut antennas: Vec<u32> = MOODS.iter().map(|m| m.antenna()).collect();
-    antennas.dedup();
-
-    assert!(MOODS.iter().all(|m| frame(*m, Duration::ZERO).is_some()));
-    assert_eq!(antennas.len(), MOODS.len());
+fn every_state_rinco_shows_has_frames() {
+    assert!(MOODS.iter().all(|m| frame(*m, ms(0)).is_some()));
 }

@@ -1,14 +1,14 @@
-use serde::{Deserialize, Serialize};
+use std::time::{Duration, Instant};
 
 use super::rinco::Mood;
 use super::{Action, Card, Kind};
 
 const MAX_ANCESTORS: usize = 32;
-const MAX_FULL: usize = 3;
+const DONE_FOR: Duration = Duration::from_millis(3500);
+const EXPAND_FOR: Duration = Duration::from_secs(4);
 const GREEN: u32 = 0x58_e6_a0;
 const YELLOW: u32 = 0xf5_d7_6e;
 const PURPLE: u32 = 0xb2_94_ff;
-const RED: u32 = 0xff_6b_8b;
 const CYAN: u32 = 0x45_d9_e8;
 const PINK: u32 = 0xff_8a_a3;
 
@@ -16,7 +16,6 @@ const PINK: u32 = 0xff_8a_a3;
 pub(crate) enum Press {
     Open(u64),
     Answer(Action),
-    Dismiss,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,25 +24,6 @@ pub(crate) struct Button {
     pub(crate) press: Press,
     pub(crate) fill: u32,
     pub(crate) text: u32,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) enum Tone {
-    Done,
-    Waiting,
-    Question,
-    Critical,
-}
-
-impl Tone {
-    pub(crate) fn rgb(self) -> u32 {
-        match self {
-            Self::Done => GREEN,
-            Self::Waiting => YELLOW,
-            Self::Question => PURPLE,
-            Self::Critical => RED,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,7 +60,6 @@ pub(crate) fn mood(card: &Card) -> Mood {
         Kind::Asks(ask) if ask.question => Mood::Question,
         Kind::Asks(_) | Kind::Waiting => Mood::Needs,
         Kind::Done => Mood::Done,
-        Kind::Working => Mood::Working,
     }
 }
 
@@ -89,46 +68,61 @@ pub(crate) fn rank(card: &Card) -> u8 {
         Kind::Asks(_) => 0,
         Kind::Waiting => 1,
         Kind::Done => 2,
-        Kind::Working => 3,
     }
 }
 
-pub(crate) fn needs_you(card: &Card) -> bool {
-    !matches!(card.kind, Kind::Working)
+pub(crate) fn subtitle(card: &Card) -> &str {
+    if card.title == card.place { "" } else { &card.place }
 }
 
-pub(crate) fn full(cards: &[Card], selected: Option<u64>, answered: &[u64]) -> Vec<bool> {
-    let wanted = |card: &Card| {
-        matches!(card.kind, Kind::Asks(_)) || answered.contains(&card.pane) || selected == Some(card.pane)
-    };
-    let mut full: Vec<bool> = cards.iter().map(wanted).collect();
-    if !full.contains(&true)
-        && let Some(first) = cards.iter().position(needs_you)
-    {
-        full[first] = true;
+pub(crate) fn summary(card: &Card) -> String {
+    match &card.kind {
+        Kind::Asks(ask) if ask.question || ask.detail.is_empty() => format!("{} · {}", card.title, ask.title),
+        Kind::Asks(ask) => format!("{} · {}", card.title, ask.detail),
+        Kind::Waiting => format!("{} needs you", card.title),
+        Kind::Done => format!("{} finished", card.title),
     }
-    let mut shown = 0;
-    for slot in &mut full {
-        shown += usize::from(*slot);
-        *slot &= shown <= MAX_FULL;
-    }
-    full
 }
 
-pub(crate) fn subtitle(card: &Card) -> String {
-    match &card.prompt {
-        Some(prompt) if card.title == card.place => format!("You: {prompt}"),
-        Some(prompt) => format!("{} · You: {prompt}", card.place),
-        None if card.title == card.place => String::new(),
-        None => card.place.clone(),
+pub(crate) fn more(count: usize) -> Option<String> {
+    (count > 1).then(|| format!("+{}", count - 1))
+}
+
+pub(crate) fn arrived(before: &[Card], after: &[Card]) -> bool {
+    after.iter().any(|card| card.kind != Kind::Done && !before.contains(card))
+}
+
+pub(crate) fn lasts(card: &Card) -> Option<Duration> {
+    (card.kind == Kind::Done).then_some(DONE_FOR)
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Expand {
+    hovered: bool,
+    until: Option<Instant>,
+}
+
+impl Expand {
+    pub(crate) fn hover(&mut self, hovered: bool, now: Instant) {
+        if self.hovered && !hovered {
+            self.until = Some(now + EXPAND_FOR);
+        }
+        self.hovered = hovered;
+    }
+
+    pub(crate) fn arrive(&mut self, now: Instant) {
+        self.until = Some(now + EXPAND_FOR);
+    }
+
+    pub(crate) fn at(&self, now: Instant) -> bool {
+        self.hovered || self.until.is_some_and(|until| now < until)
     }
 }
 
 pub(crate) fn status(card: &Card) -> (String, u32) {
     match &card.kind {
-        Kind::Done => ("Done — click to jump".into(), GREEN),
-        Kind::Waiting => ("Needs you — click to jump".into(), YELLOW),
-        Kind::Working => ("Working".into(), CYAN),
+        Kind::Done => ("Finished".into(), GREEN),
+        Kind::Waiting => ("Needs you".into(), YELLOW),
         Kind::Asks(ask) if ask.question => (ask.title.clone(), PURPLE),
         Kind::Asks(ask) if ask.detail.is_empty() => (format!("Wants: {}", ask.title), YELLOW),
         Kind::Asks(ask) => (format!("Wants to run: {}", ask.detail), YELLOW),
@@ -152,8 +146,7 @@ pub(crate) fn buttons(card: &Card) -> Vec<Button> {
     let plain = (0x2e_2d_33, 0xff_ff_ff);
     let open = button("open", Press::Open(card.pane), plain);
     match &card.kind {
-        Kind::Done => vec![open, button("dismiss", Press::Dismiss, plain)],
-        Kind::Waiting | Kind::Working => vec![open],
+        Kind::Done | Kind::Waiting => vec![open],
         Kind::Asks(ask) => ask
             .choices
             .iter()
@@ -178,23 +171,6 @@ pub(crate) fn ago(secs: u64) -> String {
         60..3_600 => format!("{}m", secs / 60),
         3_600..86_400 => format!("{}h", secs / 3_600),
         _ => format!("{}d", secs / 86_400),
-    }
-}
-
-pub(crate) fn left(secs: i64) -> String {
-    let minutes = (secs.max(0) + 59) / 60;
-    match (minutes / 1_440, minutes / 60 % 24, minutes % 60) {
-        (0, 0, minutes) => format!("{minutes}m"),
-        (0, hours, minutes) => format!("{hours}h{minutes}m"),
-        (days, hours, _) => format!("{days}d{hours}h"),
-    }
-}
-
-pub(crate) fn usage_label(label: &str) -> Option<&'static str> {
-    match label {
-        "session (5h)" => Some("5h"),
-        "week" => Some("7d"),
-        _ => None,
     }
 }
 

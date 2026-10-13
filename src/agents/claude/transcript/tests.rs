@@ -71,18 +71,16 @@ mod transcript {
     use super::*;
 
     #[test]
-    fn the_latest_title_and_prompt_claude_wrote_are_kept() {
+    fn the_latest_title_claude_wrote_is_kept() {
         let mut file = Written::new();
 
         file.lines(&[
             r#"{"type":"ai-title","aiTitle":"Colour preference question","sessionId":"s1"}"#.to_string(),
-            r#"{"type":"last-prompt","lastPrompt":"which colour do I prefer","sessionId":"s1"}"#.to_string(),
             assistant("claude-opus-5-5", 1, 0, 9),
-            r#"{"type":"last-prompt","lastPrompt":"  now fix the auth bug ","sessionId":"s1"}"#.to_string(),
+            r#"{"type":"ai-title","aiTitle":"  Fix the auth bug ","sessionId":"s1"}"#.to_string(),
         ]);
 
-        let found = (file.transcript.title.as_deref(), file.transcript.asked.as_deref());
-        assert_eq!(found, (Some("Colour preference question"), Some("now fix the auth bug")));
+        assert_eq!(file.transcript.title.as_deref(), Some("Fix the auth bug"));
     }
 
     #[test]

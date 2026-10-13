@@ -1,21 +1,16 @@
-use std::time::{Duration, Instant, UNIX_EPOCH};
+use std::time::UNIX_EPOCH;
 
 use super::App;
 use super::toast::Toast;
-use crate::agents::Known;
 use crate::agents::activity::Status;
 use crate::agents::ask::Ask;
-use crate::agents::usage::Severity;
-use crate::host::notch::card::{self as notch_card, Tone};
-use crate::host::notch::{Action, Board, Card, Kind, Usage};
+use crate::host::notch::card as notch_card;
+use crate::host::notch::{Action, Board, Card, Kind};
 use crate::log;
 use crate::term::Term;
-use crate::text;
 use crate::ui;
 
 pub(super) const CHANGED: &str = "the agent no longer asks that; answer it here";
-const USAGE_FRESH: Duration = Duration::from_mins(15);
-const MAX_PROMPT: usize = 200;
 
 #[derive(Debug)]
 pub(super) struct Notch {
@@ -48,25 +43,8 @@ impl App {
             let hidden = |tab: u64| !(focused && visible == Some(tab));
             let cards =
                 self.agents.notch.cards.iter().filter(|(_, tab)| hidden(*tab)).map(|(card, _)| card.clone()).collect();
-            Board { cards, usage: self.notch_usage(Instant::now()) }
+            Board { cards }
         })
-    }
-
-    fn notch_usage(&self, now: Instant) -> Vec<Usage> {
-        let Some(report) = self.usage.recent(Known::Claude, now, USAGE_FRESH) else { return Vec::new() };
-        let tone = |severity| match severity {
-            Severity::Normal => Tone::Done,
-            Severity::Warning => Tone::Waiting,
-            Severity::Critical => Tone::Critical,
-        };
-        report
-            .windows
-            .iter()
-            .filter_map(|w| {
-                let label = notch_card::usage_label(&w.label)?;
-                Some(Usage { label: label.into(), percent: w.percent, tone: tone(w.severity), resets_at: w.resets_at })
-            })
-            .collect()
     }
 
     pub(super) fn build_notch(&mut self) {
@@ -116,18 +94,15 @@ impl App {
 }
 
 fn card(term: &Term, name: Option<&str>, place: &str) -> Option<Card> {
-    let agent = term.agent.agent().filter(|agent| agent.notch())?;
+    term.agent.agent().filter(|agent| agent.notch())?;
     let kind = match term.agent.status()? {
         Status::Done => Kind::Done,
         Status::Waiting => asked(term).map_or(Kind::Waiting, Kind::Asks),
-        Status::Working => Kind::Working,
-        Status::Idle => return None,
+        Status::Working | Status::Idle => return None,
     };
     let title = name.or(term.context.title()).unwrap_or(place).to_string();
-    let prompt = term.context.last_prompt().map(|p| p.split_whitespace().collect::<Vec<_>>().join(" "));
-    let prompt = prompt.map(|p| text::truncate_right(&p, MAX_PROMPT));
     let since = term.agent.changed().and_then(|at| at.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_secs());
-    Some(Card { pane: term.id, agent: agent.title().to_string(), title, place: place.to_string(), prompt, since, kind })
+    Some(Card { pane: term.id, title, place: place.to_string(), since, kind })
 }
 
 fn asked(term: &Term) -> Option<Ask> {

@@ -122,13 +122,6 @@ impl Reader {
         }
     }
 
-    fn last_prompt(&self) -> Option<&str> {
-        match self {
-            Self::Claude(reader) => reader.last_prompt(),
-            Self::Codex(_) | Self::Gemini(_) | Self::Opencode(_) | Self::Grok(_) => None,
-        }
-    }
-
     fn conversation(&self) -> Option<&str> {
         match self {
             Self::Claude(reader) => reader.conversation(),
@@ -203,10 +196,6 @@ impl Pane {
 
     pub(crate) fn title(&self) -> Option<&str> {
         self.reader.as_ref()?.title()
-    }
-
-    pub(crate) fn last_prompt(&self) -> Option<&str> {
-        self.reader.as_ref()?.last_prompt()
     }
 }
 

@@ -9,7 +9,6 @@ pub(crate) const SIZE: usize = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) enum Mood {
-    Idle,
     Done,
     Working,
     Error,
@@ -20,23 +19,11 @@ pub(crate) enum Mood {
 impl Mood {
     fn key(self) -> &'static str {
         match self {
-            Self::Idle => "idle",
             Self::Done => "done",
             Self::Working => "working",
             Self::Error => "error",
             Self::Question => "question",
             Self::Needs => "needs",
-        }
-    }
-
-    pub(crate) fn antenna(self) -> u32 {
-        match self {
-            Self::Idle => 0x0b_8f_a3,
-            Self::Done => 0x58_e6_a0,
-            Self::Working => 0x45_d9_e8,
-            Self::Error => 0xff_6b_8b,
-            Self::Question => 0xc9_b8_ff,
-            Self::Needs => 0xf5_d7_6e,
         }
     }
 }
@@ -63,10 +50,6 @@ struct Frame {
 fn kit() -> Option<&'static Kit> {
     static PARSED: OnceLock<Option<Kit>> = OnceLock::new();
     PARSED.get_or_init(|| serde_json::from_str(KIT).ok()).as_ref()
-}
-
-pub(crate) fn urgent(moods: impl IntoIterator<Item = Mood>) -> Mood {
-    moods.into_iter().max().unwrap_or(Mood::Idle)
 }
 
 pub(crate) fn frame(mood: Mood, elapsed: Duration) -> Option<&'static [String]> {

@@ -1,18 +1,12 @@
+use std::time::{Duration, Instant};
+
 use rstest::rstest;
 
 use super::*;
 use crate::agents::ask::{Ask, Choice};
 
 fn card(kind: Kind) -> Card {
-    Card {
-        pane: 7,
-        agent: "Claude Code".into(),
-        title: "Fix the auth bug".into(),
-        place: "shop › main".into(),
-        prompt: Some("fix the auth bug in middleware".into()),
-        since: None,
-        kind,
-    }
+    Card { pane: 7, title: "Fix the auth bug".into(), place: "shop › main".into(), since: None, kind }
 }
 
 fn asks(question: bool) -> Kind {
@@ -36,7 +30,6 @@ fn on(pane: u64, kind: Kind) -> Card {
 #[rstest]
 #[case::done(Kind::Done)]
 #[case::waiting(Kind::Waiting)]
-#[case::working(Kind::Working)]
 #[case::permission(asks(false))]
 #[case::question(asks(true))]
 fn every_card_opens_its_own_pane(#[case] kind: Kind) {
@@ -68,8 +61,8 @@ fn a_choice_answers_with_its_key() {
 }
 
 #[rstest]
-#[case::done(Kind::Done, "Done — click to jump", 0x58_e6_a0)]
-#[case::waiting(Kind::Waiting, "Needs you — click to jump", 0xf5_d7_6e)]
+#[case::done(Kind::Done, "Finished", 0x58_e6_a0)]
+#[case::waiting(Kind::Waiting, "Needs you", 0xf5_d7_6e)]
 #[case::permission(asks(false), "Wants to run: npm test -- auth", 0xf5_d7_6e)]
 #[case::question(asks(true), "Which colour?", 0xb2_94_ff)]
 fn the_status_line_says_what_the_agent_wants(#[case] kind: Kind, #[case] text: &str, #[case] colour: u32) {
@@ -81,7 +74,6 @@ fn the_status_line_says_what_the_agent_wants(#[case] kind: Kind, #[case] text: &
 #[case::waiting(Kind::Waiting, Mood::Needs)]
 #[case::question(asks(true), Mood::Question)]
 #[case::done(Kind::Done, Mood::Done)]
-#[case::working(Kind::Working, Mood::Working)]
 fn rinco_shows_what_each_card_is_about(#[case] kind: Kind, #[case] expected: Mood) {
     assert_eq!(mood(&card(kind)), expected);
 }
@@ -103,53 +95,79 @@ fn an_answer_shows_what_it_did(
     assert_eq!(found, expected);
 }
 
-#[test]
-fn asking_cards_are_full_and_the_rest_are_rows() {
-    let cards = [on(1, Kind::Done), on(2, asks(true)), on(3, asks(false)), on(4, Kind::Working)];
-
-    assert_eq!(full(&cards, None, &[]), [false, true, true, false]);
+#[rstest]
+#[case::question(asks(true), "Fix the auth bug · Which colour?")]
+#[case::permission(asks(false), "Fix the auth bug · npm test -- auth")]
+#[case::waiting(Kind::Waiting, "Fix the auth bug needs you")]
+#[case::done(Kind::Done, "Fix the auth bug finished")]
+fn the_pill_says_it_in_one_line(#[case] kind: Kind, #[case] line: &str) {
+    assert_eq!(summary(&card(kind)), line);
 }
 
 #[test]
-fn without_a_question_the_first_card_that_needs_you_is_full() {
-    let cards = [on(1, Kind::Working), on(2, Kind::Done), on(3, Kind::Waiting)];
-
-    assert_eq!(full(&cards, None, &[]), [false, true, false]);
+fn the_pill_counts_the_others() {
+    assert_eq!([1, 3].map(more), [None, Some("+2".into())]);
 }
 
 #[test]
-fn a_selected_or_answered_card_is_full_and_three_at_most() {
-    let cards = [on(1, asks(true)), on(2, asks(false)), on(3, Kind::Done), on(4, asks(true))];
-
-    assert_eq!(full(&cards, Some(3), &[]), [true, true, true, false]);
-    assert_eq!(full(&[on(5, Kind::Done), on(6, Kind::Done)], None, &[6]), [false, true]);
-}
-
-#[test]
-fn working_agents_alone_do_not_need_you() {
-    assert_eq!((needs_you(&card(Kind::Working)), needs_you(&card(Kind::Done))), (false, true));
-}
-
-#[test]
-fn the_subtitle_names_the_place_and_your_last_prompt() {
+fn the_place_shows_only_when_the_title_is_not_it() {
     let mut card = card(Kind::Done);
-    let both = subtitle(&card);
+    let named = subtitle(&card).to_string();
     card.title.clone_from(&card.place);
-    let prompt = subtitle(&card);
-    card.prompt = None;
 
-    assert_eq!(
-        (both.as_str(), prompt.as_str(), subtitle(&card).as_str()),
-        ("shop › main · You: fix the auth bug in middleware", "You: fix the auth bug in middleware", "")
-    );
+    assert_eq!((named.as_str(), subtitle(&card)), ("shop › main", ""));
 }
 
 #[test]
-fn questions_come_first_then_waiting_then_done_then_working() {
-    let mut ranks: Vec<u8> = [Kind::Working, Kind::Done, asks(true), Kind::Waiting].map(|k| rank(&card(k))).to_vec();
+fn questions_come_first_then_waiting_then_done() {
+    let mut ranks: Vec<u8> = [Kind::Done, asks(true), Kind::Waiting].map(|k| rank(&card(k))).to_vec();
     ranks.sort_unstable();
 
-    assert_eq!(ranks, [0, 1, 2, 3]);
+    assert_eq!(ranks, [0, 1, 2]);
+}
+
+#[test]
+fn only_a_new_card_that_needs_an_answer_opens_the_panel() {
+    let before = [on(1, asks(true))];
+
+    assert!(!arrived(&before, &[on(1, asks(true)), on(2, Kind::Done)]));
+    assert!(arrived(&before, &[on(1, asks(true)), on(2, Kind::Waiting)]));
+    assert!(arrived(&before, &[on(1, asks(false))]));
+}
+
+#[test]
+fn done_flashes_and_the_rest_stay_until_answered() {
+    assert_eq!([Kind::Done, Kind::Waiting, asks(true)].map(|k| lasts(&card(k))), [Some(DONE_FOR), None, None]);
+}
+
+mod expand {
+    use super::*;
+
+    #[test]
+    fn a_new_question_opens_it_for_a_while() {
+        let (mut expand, now) = (Expand::default(), Instant::now());
+
+        expand.arrive(now);
+
+        assert_eq!((expand.at(now + Duration::from_secs(3)), expand.at(now + EXPAND_FOR)), (true, false));
+    }
+
+    #[test]
+    fn hovering_keeps_it_open_and_leaving_closes_it_later() {
+        let (mut expand, now) = (Expand::default(), Instant::now());
+        expand.hover(true, now);
+        let held = expand.at(now + Duration::from_mins(1));
+
+        expand.hover(false, now + Duration::from_mins(1));
+
+        let left = now + Duration::from_mins(1);
+        assert_eq!((held, expand.at(left + EXPAND_FOR / 2), expand.at(left + EXPAND_FOR)), (true, true, false));
+    }
+
+    #[test]
+    fn it_starts_closed() {
+        assert!(!Expand::default().at(Instant::now()));
+    }
 }
 
 #[rstest]
@@ -159,20 +177,6 @@ fn questions_come_first_then_waiting_then_done_then_working() {
 #[case::days(3 * 86_400, "3d")]
 fn ago_is_short(#[case] secs: u64, #[case] text: &str) {
     assert_eq!(ago(secs), text);
-}
-
-#[rstest]
-#[case::minutes(12 * 60, "12m")]
-#[case::hours_and_minutes(4 * 3_600 + 61, "4h2m")]
-#[case::days(2 * 86_400 + 3 * 3_600, "2d3h")]
-#[case::past(-5, "0m")]
-fn left_is_short(#[case] secs: i64, #[case] text: &str) {
-    assert_eq!(left(secs), text);
-}
-
-#[test]
-fn only_the_session_and_the_week_make_the_header() {
-    assert_eq!(["session (5h)", "week", "week · Fable"].map(usage_label), [Some("5h"), Some("7d"), None]);
 }
 
 #[test]

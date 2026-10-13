@@ -18,63 +18,53 @@ use objc2_app_kit::{
 use objc2_foundation::{NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString, NSTimer};
 use parking_lot::Mutex;
 
-use super::card::{self, Outcome, Press};
+use super::card::{self, Expand, Outcome, Press};
 use super::motion::{Frame, Motion, SETTLE, Size};
 use super::rinco::{self, Mood};
-use super::{Action, Board, Card, Usage};
+use super::{Action, Board, Card};
 use crate::process;
 
-const WIDTH: f64 = 380.0;
-const SIDE: f64 = 14.0;
-const BOTTOM: f64 = 14.0;
+const WIDTH: f64 = 340.0;
+const PILL_MIN: f64 = 200.0;
+const PILL_WINGS: f64 = 26.0;
+const PILL_ROW: f64 = 24.0;
+const PILL_SIDE: f64 = 14.0;
+const PILL_MASCOT: f64 = 16.0;
+const PILL_GAP: f64 = 8.0;
+const SIDE: f64 = 10.0;
+const BOTTOM: f64 = 10.0;
 const BELOW_NOTCH: f64 = 6.0;
-const NO_NOTCH_TOP: f64 = 20.0;
-const GAP: f64 = 7.0;
-const RADIUS: f64 = 22.0;
-const HEADER: f64 = 21.0;
-const HEADER_X: f64 = 4.0;
-const HEADER_GAP: f64 = 7.0;
-const HEADER_MASCOT: f64 = 16.0;
+const NO_NOTCH_TOP: f64 = 4.0;
+const GAP: f64 = 6.0;
+const RADIUS: f64 = 20.0;
 const CARD_RADIUS: f64 = 11.0;
-const CARD_V: f64 = 11.0;
+const CARD_V: f64 = 10.0;
 const CARD_H: f64 = 12.0;
 const MASCOT: f64 = 32.0;
 const MASCOT_GAP: f64 = 10.0;
-const LINE_GAP: f64 = 3.0;
+const LINE_GAP: f64 = 2.0;
 const TITLE: f64 = 17.0;
-const SUBTITLE: f64 = 13.0;
-const STATUS: f64 = 14.0;
-const PILLS_TOP: f64 = 5.0;
-const PILL: f64 = 23.0;
-const PILL_PAD: f64 = 14.0;
-const OPEN_PAD: f64 = 12.0;
-const PILL_GAP: f64 = 6.0;
-const CHIP: f64 = 17.0;
-const CHIP_PAD: f64 = 7.0;
-const CHIP_RADIUS: f64 = 4.0;
+const LINE: f64 = 15.0;
+const PLACE: f64 = 13.0;
+const MORE: f64 = 14.0;
+const PILLS_TOP: f64 = 6.0;
+const PILL: f64 = 20.0;
+const PILL_PAD: f64 = 12.0;
+const OPEN_PAD: f64 = 10.0;
+const PILLS_GAP: f64 = 6.0;
 const META_GAP: f64 = 6.0;
 const TIME: f64 = 26.0;
-const ROW: f64 = 24.0;
-const ROW_TOP: f64 = 4.0;
-const ROW_RADIUS: f64 = 8.0;
-const SQUARE: f64 = 7.0;
-const ROW_GAP: f64 = 9.0;
 const NO_NOTCH_WIDTH: f64 = 120.0;
 const NO_NOTCH_HEIGHT: f64 = 1.0;
-const MAX_CARDS: usize = 5;
-const RESULT_FOR: Duration = Duration::from_millis(2400);
+const MAX_SHOWN: usize = 3;
+const RESULT_FOR: Duration = Duration::from_millis(1200);
 const POLL_EVERY: f64 = 0.1;
 const FRAME_EVERY: f64 = 1.0 / 60.0;
 const MASCOT_EVERY: f64 = 1.0 / 30.0;
-const HEADER_KEY: u64 = u64::MAX;
 const CARD_FILL: u32 = 0x1c_1b_20;
-const CHIP_FILL: u32 = 0x2e_2d_33;
-const CHIP_TEXT: u32 = 0xc4_c0_d6;
+const TIME_TEXT: u32 = 0xc4_c0_d6;
 const WHITE: u32 = 0xff_ff_ff;
 const SUBTLE: u32 = 0x95_91_ab;
-const HEADER_MUTED: u32 = 0x8e_8a_a1;
-const SEPARATOR: u32 = 0x3c_39_49;
-const ROW_HOVER: u32 = 0x14_13_18;
 
 #[derive(Clone, Copy)]
 enum Weight {
@@ -112,23 +102,12 @@ struct Place {
     notch: Size,
 }
 
-#[derive(Clone)]
-enum Click {
-    Press(Press, Box<Card>),
-    Select(u64),
-}
-
-#[derive(Clone, Copy)]
-enum Clock {
-    Since(u64),
-    Resets(i64),
-}
+type Click = (Press, Box<Card>);
 
 #[derive(Debug, Clone, PartialEq)]
 struct Item {
     card: Card,
     outcome: Option<Outcome>,
-    full: bool,
 }
 
 impl Item {
@@ -140,7 +119,7 @@ impl Item {
 #[derive(PartialEq)]
 struct Shown {
     items: Vec<Item>,
-    usage: Vec<Usage>,
+    expanded: bool,
 }
 
 struct Ivars {
@@ -150,10 +129,11 @@ struct Ivars {
     board: RefCell<Board>,
     dismissed: RefCell<Vec<Card>>,
     answered: RefCell<Vec<(Card, Outcome, Instant)>>,
-    selected: Cell<Option<u64>>,
+    appeared: RefCell<Vec<(Card, Instant)>>,
+    expand: Cell<Expand>,
     shown: RefCell<Option<Shown>>,
     clicks: RefCell<Vec<Click>>,
-    clocks: RefCell<Vec<(Retained<NSTextField>, Clock)>>,
+    clocks: RefCell<Vec<(Retained<NSTextField>, u64)>>,
     mascots: RefCell<Vec<Retained<Sprite>>>,
     moods: RefCell<HashMap<(u64, Mood), Instant>>,
     content: RefCell<Option<Retained<NSView>>>,
@@ -200,14 +180,13 @@ define_class!(
             if ended {
                 std::process::exit(0);
             }
-            let expired = self.expire();
+            let now = Instant::now();
             if let Some(board) = board {
-                self.ivars().dismissed.borrow_mut().retain(|c| board.cards.contains(c));
-                *self.ivars().board.borrow_mut() = board;
-                self.render();
-            } else if expired {
-                self.render();
+                self.take(board, now);
             }
+            self.expire(now);
+            self.hover(now);
+            self.render();
             self.update_clocks();
         }
 
@@ -344,7 +323,8 @@ impl Notch {
             board: RefCell::new(Board::default()),
             dismissed: RefCell::new(Vec::new()),
             answered: RefCell::new(Vec::new()),
-            selected: Cell::new(None),
+            appeared: RefCell::new(Vec::new()),
+            expand: Cell::new(Expand::default()),
             shown: RefCell::new(None),
             clicks: RefCell::new(Vec::new()),
             clocks: RefCell::new(Vec::new()),
@@ -365,8 +345,8 @@ impl Notch {
     fn clicked(&self, index: usize) {
         let click = self.ivars().clicks.borrow().get(index).cloned();
         match click {
-            Some(Click::Press(Press::Open(pane), _)) => self.open(pane),
-            Some(Click::Press(Press::Answer(action), card)) => {
+            Some((Press::Open(pane), _)) => self.open(pane),
+            Some((Press::Answer(action), card)) => {
                 send(&action);
                 if let Action::Answer { key, .. } = &action
                     && let Some(outcome) = card::outcome(&card, *key)
@@ -376,20 +356,60 @@ impl Notch {
                     self.ivars().dismissed.borrow_mut().push(*card);
                 }
             }
-            Some(Click::Press(Press::Dismiss, card)) => self.ivars().dismissed.borrow_mut().push(*card),
-            Some(Click::Select(pane)) => self.ivars().selected.set(Some(pane)),
             None => {}
         }
         self.render();
     }
 
-    fn expire(&self) -> bool {
+    fn take(&self, board: Board, now: Instant) {
+        let before: Vec<Card> = self.items().into_iter().map(|item| item.card).collect();
+        if card::arrived(&before, &board.cards) {
+            let mut expand = self.ivars().expand.get();
+            expand.arrive(now);
+            self.ivars().expand.set(expand);
+        }
+        self.ivars().dismissed.borrow_mut().retain(|c| board.cards.contains(c));
+        let mut appeared = self.ivars().appeared.borrow_mut();
+        appeared.retain(|(c, _)| board.cards.contains(c));
+        for c in &board.cards {
+            if !appeared.iter().any(|(seen, _)| seen == c) {
+                appeared.push((c.clone(), now));
+            }
+        }
+        drop(appeared);
+        *self.ivars().board.borrow_mut() = board;
+    }
+
+    fn expire(&self, now: Instant) {
         let mut answered = self.ivars().answered.borrow_mut();
-        let before = answered.len();
-        let (gone, kept): (Vec<_>, Vec<_>) = answered.drain(..).partition(|(_, _, at)| at.elapsed() >= RESULT_FOR);
+        let (gone, kept): (Vec<_>, Vec<_>) =
+            answered.drain(..).partition(|(_, _, at)| now.saturating_duration_since(*at) >= RESULT_FOR);
         *answered = kept;
-        self.ivars().dismissed.borrow_mut().extend(gone.into_iter().map(|(card, _, _)| card));
-        answered.len() != before
+        let mut dismissed = self.ivars().dismissed.borrow_mut();
+        dismissed.extend(gone.into_iter().map(|(card, _, _)| card));
+        if self.ivars().expand.get().at(now) {
+            return;
+        }
+        for (c, at) in self.ivars().appeared.borrow().iter() {
+            let over = card::lasts(c).is_some_and(|lasts| now.saturating_duration_since(*at) >= lasts);
+            if over && !dismissed.contains(c) {
+                dismissed.push(c.clone());
+            }
+        }
+    }
+
+    fn hover(&self, now: Instant) {
+        let inside = self.ivars().size.get().is_some()
+            && self.ivars().panel.get().is_some_and(|panel| {
+                let (at, frame) = (NSEvent::mouseLocation(), panel.frame());
+                at.x >= frame.origin.x
+                    && at.x <= frame.origin.x + frame.size.width
+                    && at.y >= frame.origin.y
+                    && at.y <= frame.origin.y + frame.size.height
+            });
+        let mut expand = self.ivars().expand.get();
+        expand.hover(inside, now);
+        self.ivars().expand.set(expand);
     }
 
     fn open(&self, pane: u64) {
@@ -402,32 +422,22 @@ impl Notch {
     fn items(&self) -> Vec<Item> {
         let (board, dismissed, answered) =
             (self.ivars().board.borrow(), self.ivars().dismissed.borrow(), self.ivars().answered.borrow());
-        let mut items: Vec<(Card, Option<Outcome>)> = board
+        let waiting = board
             .cards
             .iter()
             .filter(|c| !dismissed.contains(c) && !answered.iter().any(|(a, _, _)| a.pane == c.pane))
-            .map(|c| (c.clone(), None))
-            .collect();
-        for (card, outcome, _) in answered.iter().rev() {
-            items.insert(0, (card.clone(), Some(outcome.clone())));
-        }
-        items.truncate(MAX_CARDS);
-        let cards: Vec<Card> = items.iter().map(|(c, _)| c.clone()).collect();
-        let done: Vec<u64> = answered.iter().map(|(c, _, _)| c.pane).collect();
-        let selected = self.ivars().selected.get().filter(|pane| cards.iter().any(|c| c.pane == *pane));
-        let full = card::full(&cards, selected, &done);
-        items.into_iter().zip(full).map(|((card, outcome), full)| Item { card, outcome, full }).collect()
+            .map(|c| Item { card: c.clone(), outcome: None });
+        let results =
+            answered.iter().rev().map(|(card, outcome, _)| Item { card: card.clone(), outcome: Some(outcome.clone()) });
+        results.chain(waiting).collect()
     }
 
     fn render(&self) {
         let Some(panel) = self.ivars().panel.get() else { return };
         let mtm = self.mtm();
-        let mut items = self.items();
-        if !items.iter().any(|i| i.outcome.is_some() || card::needs_you(&i.card)) {
-            items.clear();
-        }
-        let usage = self.ivars().board.borrow().usage.clone();
-        let shown = Shown { items: items.clone(), usage: usage.clone() };
+        let items = self.items();
+        let expanded = self.ivars().expand.get().at(Instant::now());
+        let shown = Shown { items: items.clone(), expanded };
         if self.ivars().shown.borrow().as_ref() == Some(&shown) {
             return;
         }
@@ -436,13 +446,13 @@ impl Notch {
         self.ivars().place.set(Some(place));
         let from = self.ivars().size.get();
         if items.is_empty() {
-            self.ivars().selected.set(None);
             if let Some(from) = from {
                 self.animate(Motion { from, to: place.notch, opening: false, fresh: false });
             }
             return;
         }
-        let (content, target) = self.lay_out(mtm, &items, &usage, place.top);
+        let (content, target) =
+            if expanded { self.cards(mtm, &items, place.top) } else { self.pill(mtm, &items, place) };
         if let Some(old) = self.ivars().content.replace(Some(content.clone())) {
             old.removeFromSuperview();
         }
@@ -455,25 +465,66 @@ impl Notch {
         self.animate(Motion { from: from.unwrap_or(place.notch), to: target, opening: true, fresh: from.is_none() });
     }
 
-    fn lay_out(&self, mtm: MainThreadMarker, items: &[Item], usage: &[Usage], top: f64) -> (Retained<NSView>, Size) {
-        let heights: Vec<f64> = items.iter().map(|i| if i.full { card_height(i) } else { ROW }).collect();
-        let below = if top > 0.0 { top + BELOW_NOTCH } else { NO_NOTCH_TOP };
-        let gaps = GAP * f64::from(u32::try_from(heights.len()).unwrap_or(0));
-        let target = Size { width: WIDTH, height: below + HEADER + gaps + heights.iter().sum::<f64>() + BOTTOM };
-        let content: Retained<NSView> =
-            unsafe { msg_send![NSView::alloc(mtm), initWithFrame: rect(0.0, 0.0, target.width, target.height)] };
+    fn fresh_content(&self, mtm: MainThreadMarker, target: Size) -> Retained<NSView> {
         self.ivars().clicks.borrow_mut().clear();
         self.ivars().clocks.borrow_mut().clear();
         self.ivars().mascots.borrow_mut().clear();
+        unsafe { msg_send![NSView::alloc(mtm), initWithFrame: rect(0.0, 0.0, target.width, target.height)] }
+    }
+
+    fn pill(&self, mtm: MainThreadMarker, items: &[Item], place: Place) -> (Retained<NSView>, Size) {
+        let below = if place.top > 0.0 { place.top } else { NO_NOTCH_TOP };
+        let width = (place.notch.width + 2.0 * PILL_WINGS).clamp(PILL_MIN, WIDTH);
+        let target = Size { width, height: below + PILL_ROW };
+        let content = self.fresh_content(mtm, target);
+        let first = &items[0];
+        let view = shape(mtm, rect(0.0, 0.0, width, PILL_ROW), None, 0.0);
+        self.clickable(&view, (Press::Open(first.card.pane), Box::new(first.card.clone())), None);
         let mut used = Vec::new();
-        let mut y = target.height - below - HEADER;
-        let head = rinco::urgent(items.iter().map(Item::mood));
-        self.header(mtm, &content, usage, y, &self.sprite(mtm, (HEADER_KEY, head), 1.0, &mut used));
-        for (item, height) in items.iter().zip(heights) {
+        let sprite = self.sprite(mtm, (first.card.pane, first.mood()), 1.0, &mut used);
+        let middle = (PILL_ROW - PILL_MASCOT) / 2.0;
+        sprite.setFrameOrigin(NSPoint::new(PILL_SIDE, middle));
+        view.addSubview(&sprite);
+        let mut right = width - PILL_SIDE;
+        if let Some(more) = card::more(items.len()) {
+            let field = label(mtm, &more, 11.0, Weight::Semibold, SUBTLE);
+            let room = field.fittingSize().width;
+            right -= room;
+            field.setFrame(rect(right, (PILL_ROW - LINE) / 2.0, room, LINE));
+            view.addSubview(&field);
+            right -= PILL_GAP;
+        }
+        let x = PILL_SIDE + PILL_MASCOT + PILL_GAP;
+        let line = first.outcome.as_ref().map_or_else(|| card::summary(&first.card), |outcome| outcome.line().0);
+        let field = label(mtm, &line, 11.5, Weight::Medium, WHITE);
+        field.setFrame(rect(x, (PILL_ROW - LINE) / 2.0, right - x, LINE));
+        view.addSubview(&field);
+        content.addSubview(&view);
+        self.ivars().moods.borrow_mut().retain(|key, _| used.contains(key));
+        (content, target)
+    }
+
+    fn cards(&self, mtm: MainThreadMarker, items: &[Item], top: f64) -> (Retained<NSView>, Size) {
+        let shown = &items[..items.len().min(MAX_SHOWN)];
+        let more = items.len() - shown.len();
+        let heights: Vec<f64> = shown.iter().map(card_height).collect();
+        let below = if top > 0.0 { top + BELOW_NOTCH } else { NO_NOTCH_TOP };
+        let gaps = GAP * f64::from(u32::try_from(heights.len().saturating_sub(1)).unwrap_or(0));
+        let extra = if more > 0 { GAP + MORE } else { 0.0 };
+        let target = Size { width: WIDTH, height: below + gaps + heights.iter().sum::<f64>() + extra + BOTTOM };
+        let content = self.fresh_content(mtm, target);
+        let mut used = Vec::new();
+        let mut y = target.height - below + GAP;
+        for (item, height) in shown.iter().zip(heights) {
             y -= GAP + height;
-            let frame = rect(SIDE, y, WIDTH - 2.0 * SIDE, height);
-            let view = if item.full { self.full(mtm, item, frame, &mut used) } else { self.row(mtm, item, frame) };
+            let view = self.full(mtm, item, rect(SIDE, y, WIDTH - 2.0 * SIDE, height), &mut used);
             content.addSubview(&view);
+        }
+        if more > 0 {
+            let field = label(mtm, &format!("+{more} more"), 10.0, Weight::Medium, SUBTLE);
+            field.setAlignment(NSTextAlignment::Center);
+            field.setFrame(rect(SIDE, y - GAP - MORE, WIDTH - 2.0 * SIDE, MORE));
+            content.addSubview(&field);
         }
         self.ivars().moods.borrow_mut().retain(|key, _| used.contains(key));
         self.update_clocks();
@@ -502,30 +553,6 @@ impl Notch {
         view
     }
 
-    fn header(&self, mtm: MainThreadMarker, content: &NSView, usage: &[Usage], y: f64, mascot: &Sprite) {
-        let mut x = SIDE + HEADER_X;
-        mascot.setFrameOrigin(NSPoint::new(x, y + (HEADER - HEADER_MASCOT) / 2.0));
-        content.addSubview(mascot);
-        x += HEADER_MASCOT + HEADER_GAP;
-        let middle = y + (HEADER - STATUS) / 2.0;
-        for (i, window) in usage.iter().enumerate() {
-            if i > 0 {
-                x = text(mtm, content, "|", (x + 4.0, middle), (11.0, Weight::Semibold, SEPARATOR)) + 4.0 + HEADER_GAP;
-            }
-            x = text(mtm, content, &window.label, (x, middle), (11.0, Weight::Semibold, WHITE)) + HEADER_GAP;
-            let percent = format!("{}%", window.percent);
-            x = text(mtm, content, &percent, (x, middle), (11.0, Weight::Semibold, window.tone.rgb())) + HEADER_GAP;
-            if let Some(at) = window.resets_at {
-                let field = label(mtm, &card::left(at - now()), 11.0, Weight::Medium, HEADER_MUTED);
-                let width = field.fittingSize().width + 8.0;
-                field.setFrame(rect(x, middle, width, STATUS));
-                content.addSubview(&field);
-                self.ivars().clocks.borrow_mut().push((field, Clock::Resets(at)));
-                x += width;
-            }
-        }
-    }
-
     fn clickable(&self, shape: &Shape, click: Click, hover: Option<u32>) {
         let mut clicks = self.ivars().clicks.borrow_mut();
         shape.ivars().click.set(Some(clicks.len()));
@@ -552,7 +579,7 @@ impl Notch {
     fn full(&self, mtm: MainThreadMarker, item: &Item, frame: NSRect, used: &mut Vec<(u64, Mood)>) -> Retained<Shape> {
         let card = &item.card;
         let view = shape(mtm, frame, Some(CARD_FILL), CARD_RADIUS);
-        self.clickable(&view, Click::Press(Press::Open(card.pane), Box::new(card.clone())), None);
+        self.clickable(&view, (Press::Open(card.pane), Box::new(card.clone())), None);
         let width = frame.size.width;
         let top = frame.size.height - CARD_V;
         let mut x = CARD_H;
@@ -560,19 +587,11 @@ impl Notch {
         sprite.setFrameOrigin(NSPoint::new(x, top - MASCOT));
         view.addSubview(&sprite);
         x += MASCOT + MASCOT_GAP;
-        let right = self.meta(mtm, &view, card, width - CARD_H, top - f64::midpoint(TITLE, CHIP), CHIP_FILL);
+        let right = self.time(mtm, &view, card, width - CARD_H, top - TITLE);
         let title = label(mtm, &card.title, 13.0, Weight::Bold, WHITE);
-        title.setFrame(rect(x, top - TITLE, right - META_GAP - x, TITLE));
+        title.setFrame(rect(x, top - TITLE, right - x, TITLE));
         view.addSubview(&title);
-        let mut y = top - TITLE;
-        let subtitle = card::subtitle(card);
-        if !subtitle.is_empty() {
-            y -= LINE_GAP + SUBTITLE;
-            let field = label(mtm, &subtitle, 10.0, Weight::Regular, SUBTLE);
-            field.setFrame(rect(x, y, width - CARD_H - x, SUBTITLE));
-            view.addSubview(&field);
-        }
-        let (status, tint, mono) = item.outcome.as_ref().map_or_else(
+        let (line, tint, mono) = item.outcome.as_ref().map_or_else(
             || {
                 let (line, tint) = card::status(card);
                 (line, tint, false)
@@ -582,11 +601,18 @@ impl Notch {
                 (line, tint, outcome.monospaced())
             },
         );
-        y -= LINE_GAP + STATUS;
+        let mut y = top - TITLE - LINE_GAP - LINE;
         let field =
-            if mono { mono_label(mtm, &status, 10.5, tint) } else { label(mtm, &status, 10.5, Weight::Regular, tint) };
-        field.setFrame(rect(x, y, width - CARD_H - x, STATUS));
+            if mono { mono_label(mtm, &line, 11.0, tint) } else { label(mtm, &line, 11.5, Weight::Regular, tint) };
+        field.setFrame(rect(x, y, width - CARD_H - x, LINE));
         view.addSubview(&field);
+        let place = card::subtitle(card);
+        if !place.is_empty() {
+            y -= LINE_GAP + PLACE;
+            let field = label(mtm, place, 10.0, Weight::Regular, SUBTLE);
+            field.setFrame(rect(x, y, width - CARD_H - x, PLACE));
+            view.addSubview(&field);
+        }
         if item.outcome.is_none() {
             self.pills(mtm, &view, card, x, width - CARD_H, y - PILLS_TOP - PILL);
         }
@@ -603,57 +629,28 @@ impl Notch {
                 break;
             }
             let pill = shape(mtm, rect(x, y, width, PILL), Some(button.fill), PILL / 2.0);
-            self.clickable(&pill, Click::Press(button.press, Box::new(card.clone())), Some(lighter(button.fill)));
+            self.clickable(&pill, (button.press, Box::new(card.clone())), Some(lighter(button.fill)));
             field.setAlignment(NSTextAlignment::Center);
-            field.setFrame(rect(0.0, (PILL - STATUS) / 2.0, width, STATUS));
+            field.setFrame(rect(0.0, (PILL - PLACE) / 2.0, width, PLACE));
             pill.addSubview(&field);
             parent.addSubview(&pill);
-            x += width + PILL_GAP;
+            x += width + PILLS_GAP;
         }
     }
 
-    fn row(&self, mtm: MainThreadMarker, item: &Item, frame: NSRect) -> Retained<Shape> {
-        let card = &item.card;
-        let view = shape(mtm, frame, None, ROW_RADIUS);
-        self.clickable(&view, Click::Select(card.pane), Some(ROW_HOVER));
-        let middle = (ROW - ROW_TOP) / 2.0;
-        let square = shape(mtm, rect(CARD_H, middle - SQUARE / 2.0, SQUARE, SQUARE), Some(item.mood().antenna()), 0.0);
-        view.addSubview(&square);
-        let right = self.meta(mtm, &view, card, frame.size.width - CARD_H, middle - CHIP / 2.0, CARD_FILL);
-        let x = CARD_H + SQUARE + ROW_GAP;
-        let title = label(mtm, &card.title, 11.5, Weight::Regular, WHITE);
-        title.setFrame(rect(x, middle - TITLE / 2.0, right - META_GAP - x, TITLE));
-        view.addSubview(&title);
-        view
-    }
-
-    fn meta(&self, mtm: MainThreadMarker, parent: &NSView, card: &Card, right: f64, y: f64, chip_fill: u32) -> f64 {
-        let mut x = right;
-        if let Some(since) = card.since {
-            let field = label(mtm, &card::ago(elapsed(since)), 10.0, Weight::Regular, CHIP_TEXT);
-            field.setAlignment(NSTextAlignment::Right);
-            field.setFrame(rect(x - TIME, y + (CHIP - STATUS) / 2.0, TIME, STATUS));
-            parent.addSubview(&field);
-            self.ivars().clocks.borrow_mut().push((field, Clock::Since(since)));
-            x -= TIME + META_GAP;
-        }
-        let field = label(mtm, &card.agent, 9.5, Weight::Regular, CHIP_TEXT);
-        let width = field.fittingSize().width + 2.0 * CHIP_PAD;
-        x -= width;
-        let chip = shape(mtm, rect(x, y, width, CHIP), Some(chip_fill), CHIP_RADIUS);
-        field.setAlignment(NSTextAlignment::Center);
-        field.setFrame(rect(0.0, (CHIP - SUBTITLE) / 2.0, width, SUBTITLE));
-        chip.addSubview(&field);
-        parent.addSubview(&chip);
-        x
+    fn time(&self, mtm: MainThreadMarker, parent: &NSView, card: &Card, right: f64, y: f64) -> f64 {
+        let Some(since) = card.since else { return right };
+        let field = label(mtm, &card::ago(elapsed(since)), 10.0, Weight::Regular, TIME_TEXT);
+        field.setAlignment(NSTextAlignment::Right);
+        field.setFrame(rect(right - TIME, y + (TITLE - PLACE) / 2.0, TIME, PLACE));
+        parent.addSubview(&field);
+        self.ivars().clocks.borrow_mut().push((field, since));
+        right - TIME - META_GAP
     }
 
     fn update_clocks(&self) {
-        for (field, clock) in self.ivars().clocks.borrow().iter() {
-            let shown = match clock {
-                Clock::Since(since) => card::ago(elapsed(*since)),
-                Clock::Resets(at) => card::left(at - now()),
-            };
+        for (field, since) in self.ivars().clocks.borrow().iter() {
+            let shown = card::ago(elapsed(*since));
             if field.stringValue().to_string() != shown {
                 field.setStringValue(&NSString::from_str(&shown));
             }
@@ -743,9 +740,9 @@ impl Notch {
 }
 
 fn card_height(item: &Item) -> f64 {
-    let subtitle = if card::subtitle(&item.card).is_empty() { 0.0 } else { LINE_GAP + SUBTITLE };
+    let place = if card::subtitle(&item.card).is_empty() { 0.0 } else { LINE_GAP + PLACE };
     let pills = if item.outcome.is_none() { PILLS_TOP + PILL } else { 0.0 };
-    let column = TITLE + subtitle + LINE_GAP + STATUS + pills;
+    let column = TITLE + LINE_GAP + LINE + place + pills;
     2.0 * CARD_V + column.max(MASCOT)
 }
 
@@ -775,20 +772,6 @@ fn shape(mtm: MainThreadMarker, frame: NSRect, fill: Option<u32>, radius: f64) -
     let ivars = ShapeIvars { fill: Cell::new(fill), radius: Cell::new(radius), ..ShapeIvars::default() };
     let view = Shape::alloc(mtm).set_ivars(ivars);
     unsafe { msg_send![super(view), initWithFrame: frame] }
-}
-
-fn text(
-    mtm: MainThreadMarker,
-    parent: &NSView,
-    shown: &str,
-    (x, y): (f64, f64),
-    (size, weight, rgb): (f64, Weight, u32),
-) -> f64 {
-    let field = label(mtm, shown, size, weight, rgb);
-    let width = field.fittingSize().width;
-    field.setFrame(rect(x, y, width, STATUS));
-    parent.addSubview(&field);
-    x + width
 }
 
 fn label(mtm: MainThreadMarker, shown: &str, size: f64, weight: Weight, rgb: u32) -> Retained<NSTextField> {

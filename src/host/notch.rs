@@ -14,33 +14,21 @@ pub(crate) mod rinco;
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Board {
     pub(crate) cards: Vec<Card>,
-    pub(crate) usage: Vec<Usage>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Card {
     pub(crate) pane: u64,
-    pub(crate) agent: String,
     pub(crate) title: String,
     pub(crate) place: String,
-    pub(crate) prompt: Option<String>,
     pub(crate) since: Option<u64>,
     pub(crate) kind: Kind,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct Usage {
-    pub(crate) label: String,
-    pub(crate) percent: u16,
-    pub(crate) tone: card::Tone,
-    pub(crate) resets_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum Kind {
     Done,
     Waiting,
-    Working,
     Asks(Ask),
 }
 

@@ -226,11 +226,6 @@ impl State {
         self.probes[index(agent)].answered(result, now);
     }
 
-    pub(crate) fn recent(&self, agent: Known, now: Instant, within: Duration) -> Option<&Report> {
-        let (report, at) = self.probes[index(agent)].last.as_ref()?;
-        (now.saturating_duration_since(*at) <= within).then_some(report)
-    }
-
     pub(crate) fn shown(&self) -> impl Iterator<Item = (Known, &Probe)> {
         self.shown.iter().map(|&agent| (agent, &self.probes[index(agent)]))
     }

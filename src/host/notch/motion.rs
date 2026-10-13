@@ -1,9 +1,9 @@
 use std::f64::consts::TAU;
 use std::time::Duration;
 
-pub(crate) const SETTLE: Duration = Duration::from_millis(500);
-const DAMPING: f64 = 0.78;
-const RESPONSE: f64 = 0.42;
+pub(crate) const SETTLE: Duration = Duration::from_millis(300);
+const DAMPING: f64 = 0.9;
+const RESPONSE: f64 = 0.28;
 const FADE_FROM: f64 = 0.35;
 const FADE_OVER: f64 = 0.5;
 const FADE_OUT: f64 = 2.5;

@@ -9,15 +9,15 @@ fn the_spring_starts_still_and_settles_on_its_target() {
 }
 
 #[test]
-fn it_overshoots_a_little_like_a_spring() {
-    let peak = (1..500).map(|ms| spring(f64::from(ms) / 1000.0)).fold(0.0, f64::max);
+fn it_barely_overshoots() {
+    let peak = (1..300).map(|ms| spring(f64::from(ms) / 1000.0)).fold(0.0, f64::max);
 
-    assert!(peak > 1.0 && peak < 1.05, "peak {peak}");
+    assert!(peak < 1.005, "peak {peak}");
 }
 
 #[test]
 fn it_is_nearly_there_before_it_settles() {
-    assert!((spring(0.45) - 1.0).abs() < 0.01);
+    assert!((spring(0.25) - 1.0).abs() < 0.01);
 }
 
 #[test]

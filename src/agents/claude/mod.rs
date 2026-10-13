@@ -157,10 +157,6 @@ impl Reader {
         self.transcript.as_ref()?.title.as_deref()
     }
 
-    pub(in crate::agents) fn last_prompt(&self) -> Option<&str> {
-        self.transcript.as_ref()?.asked.as_deref()
-    }
-
     pub(in crate::agents) fn conversation(&self) -> Option<&str> {
         self.transcript.as_ref().filter(|t| t.len > 0).and_then(|t| t.path.file_stem()?.to_str())
     }
