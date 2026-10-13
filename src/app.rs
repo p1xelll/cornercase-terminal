@@ -35,7 +35,7 @@ use crate::project::{Group, Hierarchy, Project, Tab, group};
 use crate::restart;
 use crate::settings::Page;
 use crate::split::Dir;
-use crate::state::{self, ChangesState, IssuesState, PaneState, ProjectState, State, TabState, WorkspaceState};
+use crate::state::{self, ChangesState, IssuesState, ProjectState, State};
 use crate::todo::{self, Todos};
 use crate::ui::{self};
 use crate::update::Install;
@@ -343,43 +343,7 @@ impl App {
             .projects
             .iter()
             .zip(crate::project::group_indices(&self.projects, &self.groups))
-            .map(|(p, group)| ProjectState {
-                path: p.path.clone(),
-                name: p.name.clone(),
-                group,
-                workspaces: p
-                    .workspaces
-                    .iter()
-                    .map(|w| WorkspaceState {
-                        path: w.path.clone(),
-                        name: w.name.clone(),
-                        worktree: w.worktree,
-                        base: w.base.clone(),
-                        tabs: w
-                            .tabs
-                            .iter()
-                            .map(|t| TabState {
-                                name: t.name.clone(),
-                                panes: t
-                                    .panes
-                                    .iter()
-                                    .map(|term| PaneState {
-                                        cwd: term.cwd(),
-                                        right_clicks: t.right_clicks_to_pane(term.id),
-                                        agent: term.resume.clone(),
-                                    })
-                                    .collect(),
-                                active: t.active,
-                                layout: (t.panes.len() > 1).then(|| t.layout_by_index()).flatten(),
-                            })
-                            .collect(),
-                        active: w.active,
-                        collapsed: w.collapsed,
-                    })
-                    .collect(),
-                active: p.active,
-                collapsed: p.collapsed,
-            })
+            .map(|(p, group)| ProjectState::of(p, group))
             .collect();
         let chosen = self.issues.tab.is_some() || self.issues.closed || self.issues.people != People::default();
         let issues = chosen.then(|| IssuesState {
@@ -442,20 +406,20 @@ impl App {
             if !path.is_dir() || self.projects.iter().any(|p| p.path == path) {
                 continue;
             }
-            let mut project = Project::new(self.take_id(), path, saved_project.name.clone());
-            project.group = saved_project.group.and_then(|g| self.groups.get(first_group + g)).map(|g| g.id);
-            project.collapsed = saved_project.collapsed;
+            let id = self.take_id();
+            let group = saved_project.group.and_then(|g| self.groups.get(first_group + g)).map(|g| g.id);
+            let mut workspaces = Vec::new();
             let mut lost = 0;
             for saved_ws in &saved_project.workspaces {
                 if let Some((workspace, missing)) = self.restore_workspace(saved_ws, area) {
-                    project.workspaces.push(workspace);
+                    workspaces.push(workspace);
                     lost += missing;
                 }
             }
+            let project = saved_project.restore(id, path, group, workspaces);
             if lost > 0 {
                 missed.push((self.project_label(&project), lost));
             }
-            project.active = saved_project.active.min(project.workspaces.len().saturating_sub(1));
             if i <= saved.active {
                 self.active = self.projects.len();
             }
