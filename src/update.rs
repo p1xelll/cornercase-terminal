@@ -1,3 +1,5 @@
+pub mod restart;
+
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -11,8 +13,6 @@ use sha2::{Digest, Sha256};
 use crate::error::{Error, Result};
 use crate::http::{self, Service};
 use crate::text::hex;
-
-pub use crate::version::CURRENT;
 
 use crate::version::newer;
 
