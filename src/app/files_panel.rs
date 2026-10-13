@@ -9,13 +9,14 @@ use ratatui::layout::{Position, Rect};
 use super::input::wheel;
 use super::interaction::Drag;
 use super::layout::Side;
-use super::{App, AppEvent, copy};
+use super::{App, AppEvent};
 use crate::changes::{Checkout, Tints};
 use crate::error::Result;
 use crate::files::search::{self, MAX_MATCHES, MAX_NAMES};
 use crate::files::{self, Mode, Query, disk};
 use crate::log::{self, Job, Level};
 use crate::panics;
+use crate::project::Hierarchy;
 use crate::ui;
 use crate::ui::changes::Action;
 use crate::ui::files::{self as panel, Bar, FileView, Found, Hit, Screen, SearchView, TreeRow, TreeView};
@@ -183,7 +184,7 @@ impl App {
     }
 
     pub(super) fn forget_files(&mut self) {
-        let alive: HashSet<u64> = self.projects.iter().flat_map(|p| &p.workspaces).map(|w| w.id).collect();
+        let alive: HashSet<u64> = self.projects.workspaces().map(|w| w.id).collect();
         self.files.forget(&alive);
     }
 
@@ -507,7 +508,7 @@ impl App {
                     }
                     _ => path,
                 };
-                copy(&mut self.outbox.host_writes, &mut self.toast, &text);
+                self.copy(&text);
             }
         }
         Ok(())

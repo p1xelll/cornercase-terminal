@@ -8,14 +8,14 @@ use super::App;
 use super::event::AppEvent;
 use super::input::wheel;
 use super::layout::Side;
-use super::toast::copy;
 use crate::changes::diff::File as ChangedFile;
 use crate::changes::{self, Checkout, Tints};
 use crate::error::Result;
 use crate::git;
 use crate::log::{Job, Level};
+use crate::project::Hierarchy;
 use crate::ui::changes::{self as panel, Action as HunkAction, Hit as PanelHit};
-use crate::ui::{self, SidebarRow};
+use crate::ui::{self};
 
 mod branches;
 
@@ -155,15 +155,8 @@ impl App {
         self.changes.model(target.workspace, target.base.as_deref()).and_then(|m| m.diff()).cloned()
     }
 
-    fn changes_project_order(&self) -> Vec<usize> {
-        ui::sidebar_rows(&self.project_groups(), &vec![false; self.groups.len()])
-            .into_iter()
-            .filter_map(|row| if let SidebarRow::Project(p) = row { Some(p) } else { None })
-            .collect()
-    }
-
     pub(super) fn every_targets(&self) -> Vec<(Checkout, bool)> {
-        self.changes_project_order()
+        crate::project::sidebar_order(&self.projects, &self.groups)
             .into_iter()
             .flat_map(|p| {
                 let project = &self.projects[p];
@@ -197,7 +190,7 @@ impl App {
         let mut headers = Vec::new();
         let mut error = None;
         let workspaces: HashSet<_> = targets.iter().map(|(t, _)| t.workspace).collect();
-        for p in self.changes_project_order() {
+        for p in crate::project::sidebar_order(&self.projects, &self.groups) {
             let project = &self.projects[p];
             if error.is_none() {
                 error = project.workspaces.iter().filter(|w| workspaces.contains(&w.id)).find_map(|w| {
@@ -346,7 +339,7 @@ impl App {
         let file = |i: usize| {
             let file = diff.as_ref()?.files.get(i)?.clone();
             let workspace = *view.owners.get(i)?;
-            let (p, w) = self.workspace_position(workspace)?;
+            let (p, w) = self.projects.workspace_index(workspace)?;
             let ws = &self.projects[p].workspaces[w];
             Some((Checkout { workspace, dir: ws.path.clone(), base: ws.base.clone() }, file))
         };
@@ -433,7 +426,7 @@ impl App {
         let Some(hunk) = file.hunks.get(h) else { return Ok(()) };
         let (first, last) = hunk.changed();
         match action {
-            HunkAction::Copy => copy(&mut self.outbox.host_writes, &mut self.toast, &hunk.patch()),
+            HunkAction::Copy => self.copy(&hunk.patch()),
             HunkAction::Open => return self.open_in_editor(target, &file.path, first, area),
             HunkAction::Ask => {
                 let lines = if first == last { first.to_string() } else { format!("{first}-{last}") };

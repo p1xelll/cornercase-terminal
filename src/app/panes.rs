@@ -11,11 +11,10 @@ use super::menus::PaneAction;
 use super::overlay::Overlay;
 use super::toast::NOT_READING;
 use super::toast::Toast;
-use super::toast::copy;
 use crate::error::Result;
 use crate::log::{self};
 use crate::mouse;
-use crate::project::Project;
+use crate::project::Hierarchy;
 use crate::split::{self, Dir};
 use crate::ui::{self};
 
@@ -44,7 +43,7 @@ impl App {
         if !continues_inside {
             let Some(id) = under else { return };
             let program_takes_right = tab.right_clicks_to_pane(id)
-                && tab.panes.iter().any(|t| t.id == id && t.emulator.mouse_mode() != mouse::MouseMode::None);
+                && tab.pane_by(id).is_some_and(|t| t.emulator.mouse_mode() != mouse::MouseMode::None);
             if right && !program_takes_right {
                 let rect = tab.rect(area, id);
                 let tab = tab.id;
@@ -102,7 +101,7 @@ impl App {
     fn wheel_pane(&mut self, area: Rect, pos: Position, delta: isize) -> bool {
         let Some(tab) = self.tab_mut() else { return true };
         let Some(id) = tab.pane_at(area, pos) else { return true };
-        let Some(term) = tab.panes.iter_mut().find(|t| t.id == id) else { return true };
+        let Some(term) = tab.pane_by_mut(id) else { return true };
         if term.emulator.mouse_mode() != mouse::MouseMode::None {
             return false;
         }
@@ -125,7 +124,7 @@ impl App {
     fn press_scrollback_badge(&mut self, area: Rect, pos: Position) -> bool {
         let Some(tab) = self.tab_mut() else { return false };
         let Some((id, rect)) = tab.shown(area).into_iter().find(|(_, r)| r.contains(pos)) else { return false };
-        let Some(term) = tab.panes.iter_mut().find(|t| t.id == id) else { return false };
+        let Some(term) = tab.pane_by_mut(id) else { return false };
         if !ui::scrollback_badge(rect, term.emulator.below()).is_some_and(|badge| badge.contains(pos)) {
             return false;
         }
@@ -134,7 +133,7 @@ impl App {
     }
 
     pub(super) fn drag_selection(&mut self, id: u64, mut link: Option<LinkPress>, ev: MouseEvent, pane: Rect) {
-        let Some(term) = self.projects.iter_mut().flat_map(Project::terms_mut).find(|t| t.id == id) else {
+        let Some(term) = self.projects.pane_by_mut(id) else {
             self.drag = None;
             return;
         };
@@ -154,7 +153,7 @@ impl App {
         }
         self.drag = None;
         if let Ok(Some(text)) = term.emulator.finish_selection() {
-            copy(&mut self.outbox.host_writes, &mut self.toast, &text);
+            self.copy(&text);
         }
         if let Some(press) = link.filter(|p| p.term == id && Some(p.at) == at) {
             self.open_link(&press.target);
@@ -251,12 +250,12 @@ impl App {
     }
 
     pub(super) fn pane_action(&mut self, pane: u64, action: PaneAction, area: Rect) -> Result<()> {
-        let Some((_, tab)) = self.tab_with_pane(pane) else { return Ok(()) };
+        let Some((_, tab)) = self.projects.tab_with_pane_mut(pane) else { return Ok(()) };
         match action {
             PaneAction::Split(dir) => return self.split_pane(pane, dir, area, true).map(drop),
             PaneAction::RightClicksToPane | PaneAction::RightClicksToMenu => tab.toggle_right_clicks(pane),
             PaneAction::Close => {
-                if let Some(term) = tab.panes.iter_mut().find(|t| t.id == pane) {
+                if let Some(term) = tab.pane_by_mut(pane) {
                     term.kill();
                 }
             }

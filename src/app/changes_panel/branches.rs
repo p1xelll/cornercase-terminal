@@ -9,6 +9,7 @@ use crate::app::layout::Side;
 use crate::app::overlay::Overlay;
 use crate::changes::{self, BranchPicker, Checkout};
 use crate::log::{Job, Level};
+use crate::project::Hierarchy;
 use crate::ui::{self, PickerHit};
 
 const COMPARE_SUBMIT: &str = "compare";
@@ -83,7 +84,7 @@ impl App {
             return;
         };
         let base = (picker.default() != Some(branch.as_str())).then_some(branch);
-        if let Some((p, w)) = self.workspace_position(picker.workspace) {
+        if let Some((p, w)) = self.projects.workspace_index(picker.workspace) {
             self.projects[p].workspaces[w].base = base;
         }
         self.changes.scroll = 0;
