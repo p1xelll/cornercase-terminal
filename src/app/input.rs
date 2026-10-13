@@ -269,7 +269,8 @@ impl App {
             if update {
                 self.open_update();
             } else if remote {
-                self.open_remote();
+                let actions = vec![super::menus::MenuAction::Browser, super::menus::MenuAction::Away];
+                self.overlay = Some(Overlay::Menu { at: pos, actions });
             } else if areas.quit.contains(pos) {
                 self.outbox.detach = true;
             } else if areas.usage.contains(pos) {

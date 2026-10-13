@@ -48,6 +48,8 @@ pub(crate) enum Row {
     Browsers,
     Kind(String),
     AddAgent,
+    TelegramBot,
+    TelegramChat,
 }
 
 impl Row {
@@ -69,7 +71,8 @@ impl Row {
             | Self::Notifications
             | Self::Updates
             | Self::Prefix => "",
-            Self::Remote | Self::Browsers => "Remote",
+            Self::Remote | Self::Browsers => "Browser",
+            Self::TelegramBot | Self::TelegramChat => "Telegram",
             Self::Token(Source::Jira) | Self::JiraSite | Self::JiraEmail | Self::JiraJql => "Jira",
             Self::Token(Source::Plane) | Self::PlaneWorkspace | Self::PlaneUrl | Self::PlaneFilter => "Plane",
             Self::Token(_) => "Accounts",
@@ -106,9 +109,8 @@ impl Row {
             | Self::Detail(_)
             | Self::Notifications
             | Self::Updates
-            | Self::Prefix
-            | Self::Remote
-            | Self::Browsers => Page::Ui,
+            | Self::Prefix => Page::Ui,
+            Self::Remote | Self::Browsers | Self::TelegramBot | Self::TelegramChat => Page::Remote,
         }
     }
 }
@@ -172,10 +174,11 @@ pub(crate) enum Page {
     Agents,
     Issues,
     Ui,
+    Remote,
 }
 
 impl Page {
-    pub(crate) const ALL: [Self; 4] = [Self::Worktrees, Self::Agents, Self::Issues, Self::Ui];
+    pub(crate) const ALL: [Self; 5] = [Self::Worktrees, Self::Agents, Self::Issues, Self::Ui, Self::Remote];
 
     pub(crate) fn name(self) -> &'static str {
         match self {
@@ -183,6 +186,7 @@ impl Page {
             Self::Agents => "Agents",
             Self::Issues => "Issues",
             Self::Ui => "UI",
+            Self::Remote => "Remote",
         }
     }
 
@@ -206,6 +210,18 @@ pub(crate) enum Action {
     CheckToken(Source, Secret),
     RemoveToken(Source),
     ForgetBrowsers,
+    CheckTelegram(Secret),
+    RemoveTelegram,
+    PairTelegram,
+    ForgetTelegram,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Telegram {
+    pub(crate) bot: Option<String>,
+    pub(crate) chat: Option<String>,
+    pub(crate) note: String,
+    pub(crate) checking: bool,
 }
 
 #[derive(Debug)]
@@ -253,6 +269,7 @@ pub(crate) struct Settings {
     pub(crate) awake: String,
     pub(crate) remote: String,
     pub(crate) browsers: usize,
+    pub(crate) telegram: Telegram,
 }
 
 impl Settings {
@@ -272,11 +289,12 @@ impl Settings {
             awake: String::new(),
             remote: String::new(),
             browsers: 0,
+            telegram: Telegram::default(),
         }
     }
 
     pub(crate) fn busy(&self) -> bool {
-        !self.checking.is_empty()
+        !self.checking.is_empty() || self.telegram.checking
     }
 
     fn shown_tabs(&self) -> Vec<&'static str> {
@@ -340,6 +358,10 @@ impl Settings {
         ]);
         if self.browsers > 0 {
             rows.push(Row::Browsers);
+        }
+        rows.push(Row::TelegramBot);
+        if self.telegram.bot.is_some() {
+            rows.push(Row::TelegramChat);
         }
         rows.retain(|row| row.page() == self.page);
         rows

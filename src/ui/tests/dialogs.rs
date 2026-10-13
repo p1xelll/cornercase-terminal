@@ -18,6 +18,7 @@ fn with(overlay: Overlay) -> View<'static> {
 
 fn remote_access(url: Option<&str>) -> RemoteAccess {
     RemoteAccess {
+        title: remote_access::TITLE,
         url: url.map(String::from),
         code: url.map(remote_access::code).unwrap_or_default(),
         lines: vec![

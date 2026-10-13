@@ -53,6 +53,7 @@ use layout::Focus;
 use layout::{Scrolls, Side};
 use overlay::Overlay;
 use session::not_restored;
+use telegram::{Telegram, TelegramEvent};
 use toast::Toast;
 use update_dialog::{UpdateEvent, UpdateState};
 use worktrees::{SYNC_EVERY, Upstream, WorktreeEvent};
@@ -86,6 +87,7 @@ mod shortcuts;
 mod sidebar;
 mod tab_bar;
 mod tabs;
+mod telegram;
 mod toast;
 mod todo_panel;
 mod trace;
@@ -139,6 +141,7 @@ pub(crate) struct App {
     changes: changes::Panel,
     editor_env: Vec<(String, String)>,
     remote: remote_access::Remote,
+    telegram: Telegram,
     usage: usage::State,
     usage_page: usage::Page,
     usage_timeout: Duration,
@@ -157,6 +160,7 @@ impl App {
         let secrets_path = paths::secrets(&config_path);
         let home = std::env::var_os("HOME").map(PathBuf::from);
         let web = Web::new(paths::browsers(&config_path), paths::socket(), tx.clone());
+        let telegram = Telegram::new(&config_path, secrets_path.clone());
         Self {
             upstream: Upstream::default(),
             scroll: Scrolls::default(),
@@ -190,6 +194,7 @@ impl App {
             changes: changes::Panel::default(),
             editor_env: Vec::new(),
             remote: remote_access::Remote::new(web),
+            telegram,
             usage: usage::State::default(),
             usage_page: usage::Page::default(),
             usage_timeout: usage::TIMEOUT,
@@ -318,7 +323,9 @@ impl App {
         self.drive_launches(now);
         self.watch_agents(now);
         self.keep_awake(now);
+        self.watch_telegram(now);
         self.sync_remote();
+        self.sync_telegram();
         self.check_requests(now);
         self.check_updates(now);
         self.refresh_files(now);
@@ -446,6 +453,7 @@ impl App {
             AppEvent::Encoded { key, result } => self.encoded(key, result),
             AppEvent::Web(event) => self.web_event(event),
             AppEvent::Tailscale(answer) => self.tailscale_answered(answer),
+            AppEvent::Telegram(event) => self.telegram_event(event, area),
         }
         Ok(())
     }
@@ -505,17 +513,7 @@ impl App {
         if !self.drawn.compact() {
             self.nav = None;
         }
-        let projects = self
-            .projects
-            .iter()
-            .zip(crate::project::group_indices(&self.projects, &self.groups))
-            .map(|(p, group)| ui::ProjectEntry {
-                name: self.project_label(p),
-                workspaces: p.workspaces.len(),
-                group,
-                status: activity::attention(p.workspaces.iter().flat_map(|w| &w.tabs).map(Tab::status)),
-            })
-            .collect();
+        let projects = self.project_entries();
         let groups = self.groups.iter().map(|g| g.entry.clone()).collect();
         let (has_project, workspaces, active_workspace, active_tab) = match self.project() {
             Some(p) => (

@@ -46,7 +46,18 @@ impl App {
         settings.awake = self.agents.awake.state().note();
         settings.remote = self.remote.note();
         settings.browsers = self.remote.web.paired();
+        settings.telegram = self.telegram_settings();
         self.overlay = Some(Overlay::Settings(Box::new(settings)));
+    }
+
+    pub(super) fn open_settings_on(&mut self, row: &settings::Row) {
+        self.settings_page = row.page();
+        self.open_settings();
+        if let Some(Overlay::Settings(s)) = &mut self.overlay
+            && let Some(i) = s.rows().iter().position(|r| r == row)
+        {
+            s.select(i);
+        }
     }
 
     fn settings_pick_rows(area: Rect) -> usize {
@@ -78,7 +89,7 @@ impl App {
         let MouseEventKind::Down(MouseButton::Left) = ev.kind else { return };
         let rows_now = s.rows();
         let sections: Vec<&'static str> = rows_now.iter().map(settings::Row::section).collect();
-        let removable: Vec<bool> = (0..rows_now.len()).map(|i| s.removable(i).is_some()).collect();
+        let removable: Vec<bool> = (0..rows_now.len()).map(|i| s.removal(i).is_some()).collect();
         let movable: Vec<bool> = rows_now.iter().map(settings::Row::movable).collect();
         let pick = s.pick.as_ref().map(|p| (s.pick_choices().len(), p.search.scroll()));
         let tabs = Page::ALL.map(Page::name);
@@ -98,9 +109,7 @@ impl App {
                 settings::Action::None
             }
             Some(ui::SettingsHit::Pick(i)) => s.choose(Some(i)),
-            Some(ui::SettingsHit::Remove(i)) => {
-                s.removable(i).map_or(settings::Action::None, settings::Action::RemoveToken)
-            }
+            Some(ui::SettingsHit::Remove(i)) => s.removal(i).unwrap_or(settings::Action::None),
             Some(ui::SettingsHit::MoveUp(i)) => s.move_tab(i, settings::Move::Up),
             Some(ui::SettingsHit::MoveDown(i)) => s.move_tab(i, settings::Move::Down),
             Some(ui::SettingsHit::Row(i)) => {
@@ -133,6 +142,25 @@ impl App {
                 let forgotten = self.forget_browsers();
                 if let Some(Overlay::Settings(s)) = &mut self.overlay {
                     s.notice = Some(forgotten.map_or_else(|e| e, String::from));
+                }
+            }
+            settings::Action::CheckTelegram(token) => self.check_telegram(token),
+            settings::Action::RemoveTelegram => {
+                let removed = self.remove_telegram();
+                if let Some(Overlay::Settings(s)) = &mut self.overlay {
+                    s.notice = Some(removed.map_or_else(|e| e, String::from));
+                }
+            }
+            settings::Action::PairTelegram => {
+                let refused = self.pair_telegram();
+                if let (Some(why), Some(Overlay::Settings(s))) = (refused, &mut self.overlay) {
+                    s.notice = Some(why.into());
+                }
+            }
+            settings::Action::ForgetTelegram => {
+                let forgotten = self.forget_telegram_chat();
+                if let Some(Overlay::Settings(s)) = &mut self.overlay {
+                    s.notice = Some(forgotten.into());
                 }
             }
             settings::Action::RemoveToken(source) => {
@@ -171,7 +199,7 @@ pub(super) fn settings_view(settings: &Settings) -> ui::Settings {
                 value: text.value,
                 note: text.note,
                 dangerous: text.dangerous,
-                removable: settings.removable(i).is_some(),
+                removable: settings.removal(i).is_some(),
                 movable: row.movable(),
             }
         })

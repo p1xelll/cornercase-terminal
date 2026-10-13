@@ -9,6 +9,7 @@ use super::{FORM_WIDTH, View, draw_submit, form_inner, overlay_block, update_but
 use crate::highlight::markdown;
 
 pub(crate) const TITLE: &str = "Remote";
+pub(crate) const TELEGRAM_TITLE: &str = "Telegram";
 pub(crate) const LABEL: &str = "Remote";
 const LIT: &str = " ●";
 const QUIET: usize = 4;
@@ -17,6 +18,7 @@ const LIGHT: Color = Color::Indexed(231);
 const TOO_SMALL: &str = "make this window larger to show the code";
 
 pub(crate) struct RemoteAccess {
+    pub(crate) title: &'static str,
     pub(crate) url: Option<String>,
     pub(crate) code: Vec<Line<'static>>,
     pub(crate) lines: Vec<String>,
@@ -122,7 +124,7 @@ pub(crate) fn done(screen: Rect, remote: &RemoteAccess) -> Rect {
 pub(crate) fn draw(f: &mut Frame, view: &View, remote: &RemoteAccess) {
     let r = area(f.area(), remote);
     f.render_widget(Clear, r);
-    f.render_widget(overlay_block(view.muted, TITLE), r);
+    f.render_widget(overlay_block(view.muted, remote.title), r);
     let [text, _, _] = rows(r);
     let room = f.area().height.saturating_sub(4);
     f.render_widget(Paragraph::new(body(remote, text.width, room, view.muted)), text);

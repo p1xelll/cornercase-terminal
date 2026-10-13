@@ -85,6 +85,8 @@ import { type Node, type PanePlace, beside, fits, hasRoom, moved, placeArea, pla
 import { type Line, folderSlug, seg, slug, truncateRight } from './text';
 import { type Drag, type Frame, Painter, type Region } from './ui';
 
+const REMOTE_NEEDS = 'this needs cornercase on your computer: the demo has neither Tailscale nor Telegram';
+
 export interface SettingsRow {
   id: string;
   section: string;
@@ -2209,7 +2211,15 @@ export class App {
       if (opening) this.addTodo();
     } else if (a.kind === 'settings') this.openSettings();
     else if (a.kind === 'usage') this.openUsage();
+    else if (a.kind === 'away') this.openSettingsOn(4, 'telegram');
     else if (a.kind === 'quit') this.quit();
+  }
+
+  private openSettingsOn(page: number, id: string): void {
+    this.openSettings();
+    this.settingsPage(page);
+    const o = this.overlay;
+    if (o?.kind === 'settings') o.cursor = Math.max(0, this.settingsRows(page).findIndex((row) => row.id === id));
   }
 
   settingsPage(i: number): void {
@@ -2269,6 +2279,12 @@ export class App {
       }
       rows.push({ id: 'add', section: 'How each agent starts', label: '+ another agent…', value: '', note: '' });
       return rows;
+    }
+    if (page === 4) {
+      return [
+        { id: 'remote', section: 'Browser', label: 'remote access', value: '[ ] off', note: "open this computer's cornercase from your phone over Tailscale" },
+        { id: 'telegram', section: 'Telegram', label: 'bot', value: 'not set', note: 'make a bot with @BotFather and paste its token here' },
+      ];
     }
     if (page === 2) {
       const token = (s: Remote, section: string): SettingsRow => {
@@ -2397,6 +2413,8 @@ export class App {
       const listed = this.listedKinds();
       const items = AGENTS.filter(([k]) => !listed.includes(k)).map(([k, bin]) => ({ value: k, note: bin }));
       o.pick = { row: row.id, title: 'Which agent do you want to set up?', items, selected: 0, filter: '' };
+    } else if (row.id === 'remote' || row.id === 'telegram') {
+      o.notice = REMOTE_NEEDS;
     } else if (row.id.startsWith('token:')) {
       const source = row.id.slice(6) as Remote;
       if (c.accounts[source]) o.notice = `${REMOTES[source].name} is connected; delete removes the token`;
@@ -3517,8 +3535,8 @@ export class App {
     o.notice = undefined;
     if (k.key === 'Escape') this.closeOverlay();
     else if (k.key === 'Enter' || k.key === ' ') this.settingsActivate();
-    else if (k.key === 'Tab' || k.key === 'ArrowRight') this.settingsPage((o.page + (k.shift ? 3 : 1)) % 4);
-    else if (k.key === 'ArrowLeft') this.settingsPage((o.page + 3) % 4);
+    else if (k.key === 'Tab' || k.key === 'ArrowRight') this.settingsPage((o.page + (k.shift ? 4 : 1)) % 5);
+    else if (k.key === 'ArrowLeft') this.settingsPage((o.page + 4) % 5);
     else if (k.key === 'ArrowDown') o.cursor = Math.min(o.cursor + 1, rows.length - 1);
     else if (k.key === 'ArrowUp') o.cursor = Math.max(0, o.cursor - 1);
     else if ((k.key === 'Delete' || k.key === 'Backspace') && rows[o.cursor]?.id.startsWith('token:')) {

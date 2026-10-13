@@ -66,7 +66,7 @@ pub(crate) use drop::{Drag, Landing, Spot, sidebar_drop, tree_drop, workspace_dr
 pub use layout::{Areas, Border, COMPACT_PITCH, COMPACT_WIDTH, changes_button, layout, layout_with};
 pub(crate) use layout::{Nav, full_layout};
 pub(crate) use pane::{TabView, scrollback_badge};
-pub(crate) use remote_access::{RemoteAccess, button as remote_button, done as remote_done};
+pub(crate) use remote_access::{RemoteAccess, TELEGRAM_TITLE, button as remote_button, done as remote_done};
 pub use rows::row_close_button;
 #[cfg(test)]
 pub(crate) use rows::row_menu_button;
