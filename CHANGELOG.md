@@ -2,6 +2,10 @@
 
 Every pull request that changes the app adds a section here for its new version. The section becomes the notes of the GitHub Release and shows up in the app's update dialog, so write it for users.
 
+## 0.12.56
+
+- No changes in the app. Session and config types now belong to their models instead of the UI, and group preset and saved-icon rules live with the groups.
+
 ## 0.12.55
 
 - No changes in the app. The plan usage dialog's view is now built in app/usage_dialog.rs instead of in the usage module.
