@@ -34,6 +34,7 @@
   "accept_trust_prompts": true,
   "resume_agents": false,
   "keep_awake": true,
+  "notch": true,
   "trust_prompt_pattern": "Allow this folder",
   "gh": "fake-gh",
   "sidebar": "tree",

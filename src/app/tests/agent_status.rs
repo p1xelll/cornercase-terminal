@@ -605,6 +605,18 @@ fn a_settled_change_notifies_once(
 }
 
 #[rstest]
+fn the_visible_tab_tells_you_while_no_window_looks(
+    #[values(agents::Known::Claude, agents::Known::Codex, agents::Known::Gemini)] agent: agents::Known,
+) {
+    let mut w = Watched::start(agent, false);
+    w.app.set_looking(false);
+
+    w.report("waiting", 6);
+
+    assert_eq!(w.told().1.len(), 1);
+}
+
+#[rstest]
 fn the_visible_tab_stays_quiet(
     #[values(agents::Known::Claude, agents::Known::Codex, agents::Known::Gemini, agents::Known::Grok)]
     agent: agents::Known,
@@ -954,3 +966,5 @@ mod agents_section {
         assert_eq!((nav, app.nav, focus(&app)), (Some(ui::Nav::Agents), None, (0, Some(claude_pane))));
     }
 }
+
+mod notch;

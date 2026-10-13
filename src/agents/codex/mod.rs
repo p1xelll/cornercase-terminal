@@ -19,6 +19,7 @@ pub(in crate::agents) const HOLDS_PROMPTS: bool = true;
 pub(in crate::agents) const LOCAL_COMMAND: bool = false;
 pub(in crate::agents) const INPUT_BOX: Option<bool> = None;
 pub(in crate::agents) const SURVEY: bool = false;
+pub(in crate::agents) const NOTCH: bool = false;
 pub(in crate::agents) const USAGE: Option<crate::agents::usage::Spec> = Some(crate::agents::usage::Spec {
     command: usage::command,
     requests: usage::requests,

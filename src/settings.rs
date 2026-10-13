@@ -9,6 +9,8 @@ pub(crate) const DONE: &str = "done";
 pub(crate) const RESTART: &str = "restart";
 const TAB_IDS: [&str; 6] = ["all", "github", "shortcut", "linear", "jira", "plane"];
 const EXTRA_ARGS: &str = "extra arguments…";
+const NOTCH_UNAVAILABLE: &str = "the notch is only on macOS";
+const NOTCH_NOTE: &str = "when you are not looking: answer Claude Code from there";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Status {
@@ -44,6 +46,7 @@ pub(crate) enum Row {
     Trust,
     Resume,
     KeepAwake,
+    Notch,
     Remote,
     Browsers,
     Kind(String),
@@ -77,7 +80,7 @@ impl Row {
             Self::Token(Source::Plane) | Self::PlaneWorkspace | Self::PlaneUrl | Self::PlaneFilter => "Plane",
             Self::Token(_) => "Accounts",
             Self::Tab(_) => "Sources shown",
-            Self::DefaultAgent | Self::Submit | Self::Trust | Self::Resume | Self::KeepAwake => "Agent",
+            Self::DefaultAgent | Self::Submit | Self::Trust | Self::Resume | Self::KeepAwake | Self::Notch => "Agent",
             Self::Kind(_) | Self::AddAgent => "How each agent starts",
         }
     }
@@ -90,6 +93,7 @@ impl Row {
             | Self::Trust
             | Self::Resume
             | Self::KeepAwake
+            | Self::Notch
             | Self::Kind(_)
             | Self::AddAgent => Page::Agents,
             Self::Token(_)
@@ -338,7 +342,7 @@ impl Settings {
             }
         }
         rows.extend(shown.iter().copied().chain(hidden).map(Row::Tab));
-        rows.extend([Row::DefaultAgent, Row::Submit, Row::Trust, Row::Resume, Row::KeepAwake]);
+        rows.extend([Row::DefaultAgent, Row::Submit, Row::Trust, Row::Resume, Row::KeepAwake, Row::Notch]);
         rows.extend(self.listed_kinds().into_iter().map(Row::Kind));
         rows.extend([
             Row::AddAgent,

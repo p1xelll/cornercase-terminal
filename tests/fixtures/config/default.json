@@ -24,6 +24,7 @@
   "accept_trust_prompts": false,
   "resume_agents": true,
   "keep_awake": false,
+  "notch": false,
   "trust_prompt_pattern": "trust the files|trust this (folder|directory|workspace|repository)|do you trust|yes, proceed",
   "gh": "gh",
   "sidebar": "projects_on_top",

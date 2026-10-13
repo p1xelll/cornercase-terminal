@@ -76,6 +76,7 @@ mod launches;
 mod layout;
 mod links;
 mod menus;
+mod notch;
 mod overlay;
 mod panes;
 mod picker_dialog;

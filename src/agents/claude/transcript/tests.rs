@@ -71,6 +71,30 @@ mod transcript {
     use super::*;
 
     #[test]
+    fn the_latest_title_and_prompt_claude_wrote_are_kept() {
+        let mut file = Written::new();
+
+        file.lines(&[
+            r#"{"type":"ai-title","aiTitle":"Colour preference question","sessionId":"s1"}"#.to_string(),
+            r#"{"type":"last-prompt","lastPrompt":"which colour do I prefer","sessionId":"s1"}"#.to_string(),
+            assistant("claude-opus-5-5", 1, 0, 9),
+            r#"{"type":"last-prompt","lastPrompt":"  now fix the auth bug ","sessionId":"s1"}"#.to_string(),
+        ]);
+
+        let found = (file.transcript.title.as_deref(), file.transcript.asked.as_deref());
+        assert_eq!(found, (Some("Colour preference question"), Some("now fix the auth bug")));
+    }
+
+    #[test]
+    fn a_prompt_that_quotes_the_markers_is_not_a_title() {
+        let mut file = Written::new();
+
+        file.lines(&[user(r#"say \"type\":\"ai-title\""#)]);
+
+        assert_eq!(file.transcript.title, None);
+    }
+
+    #[test]
     fn the_last_reply_names_the_model_and_the_tokens_it_was_sent() {
         let mut file = Written::new();
 

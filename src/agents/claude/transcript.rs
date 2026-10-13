@@ -19,6 +19,8 @@ pub(in crate::agents) const ASSISTANT: &str = r#""type":"assistant""#;
 const COMPACT_BOUNDARY: &str = r#""compact_boundary""#;
 const COMMAND: &str = "<command-name>";
 const SHELL_INPUT: &str = "<bash-input>";
+const AI_TITLE: &str = r#""type":"ai-title""#;
+const LAST_PROMPT: &str = r#""type":"last-prompt""#;
 const NOT_TYPED: [&str; 2] = ["<task-notification>", "<agent-message"];
 const MODEL_FLAG: &str = "--model";
 const MODEL_ENV: &str = "ANTHROPIC_MODEL";
@@ -111,6 +113,8 @@ pub(in crate::agents) struct Transcript {
     pub(in crate::agents) counted: Vec<CountRecord>,
     pub(in crate::agents) reply: Option<Reply>,
     pub(in crate::agents) prompted: Option<SystemTime>,
+    pub(in crate::agents) title: Option<String>,
+    pub(in crate::agents) asked: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -163,7 +167,16 @@ impl Message {
 
 impl Transcript {
     pub(in crate::agents) fn new(path: PathBuf) -> Self {
-        Self { path, len: 0, tail: Tail::default(), counted: Vec::new(), reply: None, prompted: None }
+        Self {
+            path,
+            len: 0,
+            tail: Tail::default(),
+            counted: Vec::new(),
+            reply: None,
+            prompted: None,
+            title: None,
+            asked: None,
+        }
     }
 
     pub(in crate::agents) fn update(&mut self) {
@@ -176,6 +189,8 @@ impl Transcript {
         if batch.reset {
             self.reply = None;
             self.prompted = None;
+            self.title = None;
+            self.asked = None;
         }
         self.len = std::fs::metadata(&self.path).map_or(0, |m| m.len());
         if let Some(mark) = batch.bytes.rsplit(|b| *b == b'\n').find_map(mark) {
@@ -186,6 +201,11 @@ impl Transcript {
         }
         let read_at = SystemTime::now();
         for line in batch.bytes.split(|b| *b == b'\n') {
+            match named(line) {
+                Some(Named::Title(title)) => self.title = Some(title),
+                Some(Named::Asked(asked)) => self.asked = Some(asked),
+                None => {}
+            }
             let Some(entry) = claude_entry(line) else { continue };
             self.prompted = self.prompted.max(prompt(&entry, read_at));
             if let Some(record) = counted_claude(&entry, true) {
@@ -256,6 +276,29 @@ fn counted_claude(entry: &Value, prompts: bool) -> Option<CountRecord> {
         return Some(CountRecord { at, id, usage: CountUsage::Prompt });
     }
     None
+}
+
+#[derive(Deserialize)]
+struct Naming {
+    #[serde(rename = "aiTitle")]
+    title: Option<String>,
+    #[serde(rename = "lastPrompt")]
+    asked: Option<String>,
+}
+
+enum Named {
+    Title(String),
+    Asked(String),
+}
+
+fn named(line: &[u8]) -> Option<Named> {
+    let line = std::str::from_utf8(line).ok()?;
+    if !line.contains(AI_TITLE) && !line.contains(LAST_PROMPT) {
+        return None;
+    }
+    let naming: Naming = serde_json::from_str(line).ok()?;
+    let clean = |text: String| Some(text.trim().to_string()).filter(|t| !t.is_empty());
+    naming.title.and_then(clean).map(Named::Title).or_else(|| naming.asked.and_then(clean).map(Named::Asked))
 }
 
 enum Mark {

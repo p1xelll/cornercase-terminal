@@ -31,7 +31,7 @@ The ` restart ` button next to ` done ` restarts cornercase. It first lists what
 
 <Screen
   name="settings-agents"
-  alt="The Agents tab: default agent auto, the agent in your tab, otherwise ask; send the prompt unticked; trust prompts left to you; conversations resumed after a restart; keep awake off; and how each agent starts: claude, codex and gemini in their default mode, plus another agent"
+  alt="The Agents tab: default agent auto, the agent in your tab, otherwise ask; send the prompt unticked; trust prompts left to you; conversations resumed after a restart; keep awake off; notch off; and how each agent starts: claude, codex and gemini in their default mode, plus another agent"
   crop={[2, 4, 106, 15]}
 />
 
@@ -42,6 +42,7 @@ The ` restart ` button next to ` done ` restarts cornercase. It first lists what
 | **trust prompts** | Off (the default): when an agent cornercase starts asks "do you trust this folder?", you answer, and the prompt waits. On: cornercase answers yes for you, which lets the repository's agent configuration run. |
 | **resume conversations** | On (the default): after a server restart, `kill-server` or a reboot, each pane that ran Claude Code, Codex or Gemini CLI comes back in the same conversation. Off: it comes back as a plain shell. See [Agents resume their conversations](../../guides/sessions/#agents-resume-their-conversations). |
 | **keep awake** | Off (the default): the computer sleeps when idle, as it always does. On: while an agent is working, the computer does not go to sleep on its own. The note says whether it is being kept awake now, or why it can't be on this machine. See [Keep the computer awake](../agents/#keep-the-computer-awake). |
+| **notch** | Off (the default). On, on a Mac: Claude Code agents that need you show at the top centre of the screen while you aren't looking at them, and you can answer their permission prompts and questions from there. Turning it off hides the cards at once. Unavailable on other systems. See [The notch](../agents/#the-notch). |
 | **How each agent starts** | One row per agent: the default agent, the agents with start modes (`claude`, `codex` and `gemini` out of the box) and any you set up. Click one to choose its mode and extra arguments. |
 | **+ another agent…** | Adds one of the other [known agents](../agents/) to the list so you can set it up. |
 
@@ -159,6 +160,7 @@ Every key is optional: a missing key takes its default. Here is a complete file,
   "accept_trust_prompts": false,
   "resume_agents": true,
   "keep_awake": false,
+  "notch": false,
   "trust_prompt_pattern": "trust the files|trust this (folder|directory|workspace|repository)|do you trust|yes, proceed",
   "gh": "gh",
   "sidebar": "projects_on_top",
@@ -200,6 +202,7 @@ Every key is optional: a missing key takes its default. Here is a complete file,
 | [`accept_trust_prompts`](#accept_trust_prompts) | boolean | `false` |
 | [`resume_agents`](#resume_agents) | boolean | `true` |
 | [`keep_awake`](#keep_awake) | boolean | `false` |
+| [`notch`](#notch) | boolean | `false` |
 | [`trust_prompt_pattern`](#trust_prompt_pattern) | string | see below |
 | [`gh`](#gh) | string | `"gh"` |
 | [`sidebar`](#sidebar) | string | `"projects_on_top"` |
@@ -288,6 +291,10 @@ Whether a pane that ran Claude Code, Codex or Gemini CLI comes back in the same 
 #### `keep_awake`
 
 Whether the computer stays awake while an agent is working. Off by default. See [Keep the computer awake](../agents/#keep-the-computer-awake).
+
+#### `notch`
+
+Whether Claude Code agents that need you show in the Mac's notch while you aren't looking at them, with buttons to answer them. Off by default; ignored outside macOS. See [The notch](../agents/#the-notch).
 
 #### `trust_prompt_pattern`
 

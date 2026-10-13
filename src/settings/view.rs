@@ -1,8 +1,9 @@
 use crate::agents;
 use crate::config::{Config, Sidebar, Tabs};
+use crate::host::notch;
 use crate::shortcuts::Prefix;
 
-use super::{Page, Row, RowText, Settings, Status};
+use super::{NOTCH_NOTE, NOTCH_UNAVAILABLE, Page, Row, RowText, Settings, Status};
 
 const RESUME_NOTE: &str = "Claude Code, Codex, Gemini and Grok, in their tabs";
 
@@ -105,6 +106,7 @@ impl Settings {
                 ("resume conversations".into(), value.into(), RESUME_NOTE.into(), false)
             }
             Row::KeepAwake => self.keep_awake_row(),
+            Row::Notch => notch_row(config),
             Row::Prefix => self.prefix_row(),
             Row::Remote => {
                 let value = if config.remote { "[x] over Tailscale" } else { "[ ] off" };
@@ -230,6 +232,15 @@ fn plane_row(config: &Config, row: &Row) -> (String, String, String, bool) {
     };
     let value = if value.is_empty() { empty.to_string() } else { value.clone() };
     (label.into(), value, note.into(), false)
+}
+
+fn notch_row(config: &Config) -> (String, String, String, bool) {
+    let (value, note) = match (notch::available(), config.notch) {
+        (false, _) => ("[ ] unavailable", NOTCH_UNAVAILABLE),
+        (true, true) => ("[x] agents that need you", NOTCH_NOTE),
+        (true, false) => ("[ ] off", NOTCH_NOTE),
+    };
+    ("notch".into(), value.into(), note.into(), false)
 }
 
 fn kind_row(config: &Config, kind: &str) -> (String, String, String, bool) {

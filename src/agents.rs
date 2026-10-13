@@ -1,4 +1,5 @@
 pub(crate) mod activity;
+pub(crate) mod ask;
 pub(crate) mod awake;
 pub mod claude;
 pub(crate) mod codex;

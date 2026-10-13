@@ -13,6 +13,7 @@ use self::status::run_status;
 use crate::client::{self, answer, ask};
 use crate::control::{self, Done, Event, Item, Report, TodoList, Until, What};
 use crate::error::{Error, Result};
+use crate::host::notch;
 use crate::remote::{self, Remote};
 use crate::{log, server, update::restart};
 
@@ -70,6 +71,7 @@ pub fn run(cli: Cli) -> Result<bool> {
         Command::Stats(args) => return print_stats(&args),
         Command::Server => server::run()?,
         Command::Proxy => remote::proxy(client::connect_or_start)?,
+        Command::Notch => notch::run()?,
     }
     Ok(true)
 }

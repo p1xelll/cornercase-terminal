@@ -21,6 +21,7 @@ use signal_hook::iterator::Signals;
 use crate::app::{App, AppEvent, Streamed};
 use crate::control::{self, Ids, What};
 use crate::error::{Error, Result};
+use crate::host::notch;
 use crate::host::notify::Channel;
 use crate::host::pointer;
 use crate::host::theme::HostTheme;
@@ -210,6 +211,9 @@ struct Client {
     out: Outbox,
     writer: JoinHandle<()>,
     dropped: u64,
+    focused: bool,
+    notch: bool,
+    told: Option<(bool, notch::Board)>,
 }
 
 impl Client {
@@ -595,6 +599,23 @@ impl Server {
                 client.send(ServerMessage::Frame(bytes.clone()));
             }
         }
+        for client in clients.iter_mut().filter(|c| c.notch && c.screen.is_some()) {
+            let board = app.notch_cards(client.focused);
+            let told = (board.is_some(), board.clone().unwrap_or_default());
+            if client.told.as_ref() != Some(&told) {
+                let asks = told.1.cards.iter().filter(|c| matches!(c.kind, notch::Kind::Asks(_))).count();
+                log::debug!(
+                    "server",
+                    "notch",
+                    client = client.id,
+                    on = told.0,
+                    cards = told.1.cards.len(),
+                    asks = asks
+                );
+                client.send(ServerMessage::Notch(board));
+                client.told = Some(told);
+            }
+        }
         for notification in app.take_notifications() {
             for client in clients.iter().filter(|c| c.screen.is_some()) {
                 log::info!("server", "notification sent", client = client.id, channel = client.notify.id());
@@ -673,6 +694,10 @@ impl Server {
                     client.graphics.update(graphics);
                 }
             }
+            ServerEvent::Message(id, ClientMessage::Notch(action)) => {
+                log::debug!("server", "notch action", client = id, pane = action.pane());
+                self.app.notch_action(action);
+            }
             ServerEvent::Incompatible(id) => self.reject(id, OTHER_BUILD),
             ServerEvent::Gone(id) => self.remove(id),
         }
@@ -714,6 +739,9 @@ impl Server {
             out,
             writer,
             dropped: 0,
+            focused: true,
+            notch: false,
+            told: None,
         });
     }
 
@@ -736,6 +764,7 @@ impl Server {
             terminal = hello.terminal.as_deref().unwrap_or("unknown"),
             notify = hello.notify.id(),
             pointer = hello.pointer.map_or("none", pointer::Terminal::id),
+            notch = hello.notch,
             background = if hello.theme.background.is_some() { "known" } else { "unknown" },
             truecolor = hello.theme.truecolor,
             images = hello.graphics.images(),
@@ -749,10 +778,12 @@ impl Server {
         client.size = Some((hello.cols, hello.rows));
         client.notify = hello.notify;
         client.pointer = hello.pointer;
+        client.notch = hello.notch;
         let background = hello.theme.background.map(|c| (c.r, c.g, c.b));
         client.graphics = Graphics::new(id, hello.graphics, background);
         self.touch(id);
         self.fit(Some(id));
+        self.look();
         if !self.started {
             self.started = true;
             self.app.set_theme(hello.theme);
@@ -794,6 +825,11 @@ impl Server {
         if let Event::Resize(cols, rows) = ev {
             client.size = Some((cols, rows));
             self.fit(Some(id));
+            return;
+        }
+        if let Event::FocusGained | Event::FocusLost = ev {
+            client.focused = matches!(ev, Event::FocusGained);
+            self.look();
             return;
         }
         if is_use(&ev) {
@@ -857,7 +893,14 @@ impl Server {
         self.clients.retain(|c| c.id != id);
         if self.clients.len() != before {
             self.fit(None);
+            self.look();
         }
+    }
+
+    fn look(&mut self) {
+        let mut windows = self.clients.iter().filter(|c| c.size.is_some()).peekable();
+        let looking = windows.peek().is_none() || windows.any(|c| c.focused);
+        self.app.set_looking(looking);
     }
 
     fn shutdown(&mut self) {

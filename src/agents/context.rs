@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use crate::agents::activity::Activity;
+use crate::agents::ask::Ask;
 use crate::agents::{self, Known, claude, codex, gemini, grok, opencode};
 use crate::error::Result;
 
@@ -107,6 +108,27 @@ impl Reader {
         }
     }
 
+    fn ask(&self, screen: &str) -> Option<Ask> {
+        match self {
+            Self::Claude(reader) => reader.ask(screen),
+            Self::Codex(_) | Self::Gemini(_) | Self::Opencode(_) | Self::Grok(_) => None,
+        }
+    }
+
+    fn title(&self) -> Option<&str> {
+        match self {
+            Self::Claude(reader) => reader.title(),
+            Self::Codex(_) | Self::Gemini(_) | Self::Opencode(_) | Self::Grok(_) => None,
+        }
+    }
+
+    fn last_prompt(&self) -> Option<&str> {
+        match self {
+            Self::Claude(reader) => reader.last_prompt(),
+            Self::Codex(_) | Self::Gemini(_) | Self::Opencode(_) | Self::Grok(_) => None,
+        }
+    }
+
     fn conversation(&self) -> Option<&str> {
         match self {
             Self::Claude(reader) => reader.conversation(),
@@ -173,6 +195,18 @@ impl Pane {
 
     pub(crate) fn conversation(&self) -> Option<&str> {
         self.reader.as_ref()?.conversation()
+    }
+
+    pub(crate) fn ask(&self, screen: &str) -> Option<Ask> {
+        self.reader.as_ref()?.ask(screen)
+    }
+
+    pub(crate) fn title(&self) -> Option<&str> {
+        self.reader.as_ref()?.title()
+    }
+
+    pub(crate) fn last_prompt(&self) -> Option<&str> {
+        self.reader.as_ref()?.last_prompt()
     }
 }
 

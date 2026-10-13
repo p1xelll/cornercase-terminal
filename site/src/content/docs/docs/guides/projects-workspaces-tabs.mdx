@@ -195,7 +195,7 @@ When an agent asks you something or finishes in a tab you aren't looking at, cor
 - a **toast** in the bottom right corner says which agent and where, such as `! claude needs you in web-shop › main` or `✓ codex finished in web-shop › main`;
 - your terminal shows a **desktop notification**, so you find out while you are in another window.
 
-cornercase waits a second before telling you, so a question answered at once stays quiet, and it tells you once each time. The tab on screen doesn't notify you, even while cornercase's window is in the background.
+cornercase waits a second before telling you, so a question answered at once stays quiet, and it tells you once each time. The tab on screen doesn't notify you while you look at it, but it does once cornercase's window is in the background: cornercase asks your terminal to say when its window gains and loses the focus (focus reporting, which Ghostty, iTerm2, kitty, WezTerm and most others support). With several windows attached, the tab on screen counts as seen while any of them has the focus. On a Mac, agents that need you can also [show in the notch](../../reference/agents/#the-notch).
 
 The desktop notification is an escape sequence that cornercase writes to your terminal, the way it [copies to your clipboard](../panes-and-splits/#copy-text), so it also arrives when cornercase runs on another machine over SSH. When cornercase starts, it asks your terminal for its name and looks at variables such as `TERM_PROGRAM`, then picks what that terminal understands:
 

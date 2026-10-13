@@ -56,6 +56,17 @@ ureq = "3.4.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 libc = "0.2.189"
+objc2 = "0.6.5"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = [
+  "std", "libc", "objc2-core-foundation", "objc2-quartz-core", "NSAccessibility", "NSActionCell", "NSApplication",
+  "NSBezierPath", "NSCell", "NSColor", "NSControl", "NSEvent", "NSFont", "NSFontDescriptor", "NSGraphics",
+  "NSLayoutConstraint", "NSPanel", "NSParagraphStyle", "NSResponder", "NSRunningApplication", "NSScreen", "NSText",
+  "NSTextField", "NSTextFieldCell", "NSTrackingArea", "NSView", "NSWindow", "NSWorkspace"
+] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = [
+  "std", "NSArray", "NSDate", "NSEnumerator", "NSGeometry", "NSObject", "NSString", "NSTimer"
+] }
+objc2-quartz-core = { version = "0.3.2", default-features = false, features = ["std", "objc2-core-foundation", "CALayer"] }
 
 [dev-dependencies]
 insta = "1.48.0"

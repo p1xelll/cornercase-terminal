@@ -1,5 +1,5 @@
 use std::ops::RangeInclusive;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use crate::agents::Known;
 
@@ -63,6 +63,7 @@ pub(crate) struct Pane {
     activity: Option<Activity>,
     unseen: bool,
     since: Option<Instant>,
+    changed: Option<SystemTime>,
     notified: bool,
     worked: Option<Instant>,
     moved: Option<Instant>,
@@ -89,6 +90,7 @@ impl Pane {
         let status = self.status();
         if status != before {
             self.since = Some(now);
+            self.changed = Some(SystemTime::now());
             self.notified = false;
         }
         self.notified |= seen;
@@ -107,6 +109,10 @@ impl Pane {
 
     pub(crate) fn agent(&self) -> Option<Known> {
         self.agent
+    }
+
+    pub(crate) fn changed(&self) -> Option<SystemTime> {
+        self.changed
     }
 
     pub(crate) fn reacted(&self, since: Instant) -> bool {

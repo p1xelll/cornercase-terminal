@@ -221,6 +221,7 @@ mod proxy {
             pointer: None,
             graphics: Support::default(),
             probe: String::new(),
+            notch: false,
         };
 
         let message = rebuilt(ClientMessage::Hello(Box::new(hello)), "the server's".into());

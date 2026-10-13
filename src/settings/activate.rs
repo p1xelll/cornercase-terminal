@@ -1,9 +1,9 @@
 use crate::agents;
 use crate::config::{Config, Sidebar, Tabs};
-use crate::host::notify;
+use crate::host::{notch, notify};
 use crate::list::Search;
 
-use super::{Action, EXTRA_ARGS, Edit, Pick, PickItem, Row, Settings, Status};
+use super::{Action, EXTRA_ARGS, Edit, NOTCH_UNAVAILABLE, Pick, PickItem, Row, Settings, Status};
 
 impl Settings {
     fn flip(&mut self, switch: fn(&mut Config) -> &mut bool, [on, off]: [&str; 2]) -> Action {
@@ -82,6 +82,13 @@ impl Settings {
                 |c| &mut c.keep_awake,
                 ["the computer stays awake while an agent works", "the computer sleeps as usual"],
             ),
+            Row::Notch if !notch::available() => {
+                self.notice = Some(NOTCH_UNAVAILABLE.into());
+                Action::None
+            }
+            Row::Notch => {
+                self.flip(|c| &mut c.notch, ["agents that need you show in the notch", "the notch shows nothing"])
+            }
             Row::Kind(kind) => self.pick_mode(kind),
             Row::TelegramBot => self.start_edit(row, String::new()),
             Row::TelegramChat => Action::PairTelegram,

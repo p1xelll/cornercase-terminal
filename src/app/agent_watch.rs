@@ -26,6 +26,7 @@ pub(super) struct AgentRuntime {
     pub(super) watched: Option<Instant>,
     pub(super) awake: Awake,
     pub(super) stats: agents::stats::Stats,
+    pub(super) notch: super::notch::Notch,
 }
 
 impl AgentRuntime {
@@ -37,6 +38,7 @@ impl AgentRuntime {
             watched: None,
             awake: Awake::new(awake::tools()),
             stats: agents::stats::Stats::new(SystemTime::now()),
+            notch: super::notch::Notch::default(),
         }
     }
 }
@@ -45,7 +47,7 @@ pub(super) const WATCH_AGENTS_EVERY: Duration = Duration::from_millis(500);
 
 impl App {
     pub(super) fn watch_agents(&mut self, now: Instant) {
-        let visible = self.visible_tab();
+        let (visible, looking) = (self.visible_tab(), self.agents.notch.looking);
         let read = self.agents.watched.is_none_or(|at| now.duration_since(at) >= WATCH_AGENTS_EVERY);
         let elapsed = self.agents.watched.map_or(Duration::ZERO, |at| now.saturating_duration_since(at));
         let clock = SystemTime::now();
@@ -63,7 +65,7 @@ impl App {
             for workspace in &mut project.workspaces {
                 let measure = config.memory && shown && !(tree && workspace.collapsed);
                 for tab in &mut workspace.tabs {
-                    let seen = visible == Some(tab.id);
+                    let seen = looking && visible == Some(tab.id);
                     for term in &mut tab.panes {
                         if read {
                             let resuming = term.resuming.is_some();
@@ -121,6 +123,9 @@ impl App {
         }
         for (agent, status, project, workspace) in notices {
             self.notify(agent.name(), status, project, workspace);
+        }
+        if read {
+            self.build_notch();
         }
     }
 

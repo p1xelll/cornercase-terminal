@@ -8,8 +8,8 @@ use std::thread;
 use std::time::Duration;
 
 use crossterm::event::{
-    DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture, KeyboardEnhancementFlags,
-    PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+    DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste, EnableFocusChange,
+    EnableMouseCapture, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
 };
 use crossterm::execute;
 use ratatui::{TerminalOptions, Viewport};
@@ -24,6 +24,7 @@ use crate::remote::{Remote, Stderr};
 use crate::{host::pointer, paths, process, protocol, update::restart};
 
 pub(crate) mod input;
+mod notch;
 mod probe;
 mod requests;
 mod server_process;
@@ -190,6 +191,7 @@ fn open(target: &Target, restarted: bool) -> Result<()> {
         stdout(),
         EnableBracketedPaste,
         EnableMouseCapture,
+        EnableFocusChange,
         PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
     );
     install_panic_hook(forget.clone());
@@ -244,11 +246,12 @@ fn write_out(bytes: &[u8]) {
 }
 
 fn restore_input_modes() {
-    let _ = execute!(stdout(), PopKeyboardEnhancementFlags, DisableBracketedPaste, DisableMouseCapture);
+    let _ =
+        execute!(stdout(), PopKeyboardEnhancementFlags, DisableBracketedPaste, DisableMouseCapture, DisableFocusChange);
 }
 
 fn release_screen() {
-    let _ = execute!(stdout(), DisableBracketedPaste, DisableMouseCapture);
+    let _ = execute!(stdout(), DisableBracketedPaste, DisableMouseCapture, DisableFocusChange);
     ratatui::restore();
 }
 

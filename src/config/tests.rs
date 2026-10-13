@@ -42,6 +42,7 @@ mod file {
             accept_trust_prompts: true,
             resume_agents: false,
             keep_awake: true,
+            notch: true,
             trust_prompt_pattern: "Allow this folder".into(),
             gh: "fake-gh".into(),
             sidebar: "tree".into(),

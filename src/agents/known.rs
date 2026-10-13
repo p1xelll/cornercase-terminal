@@ -126,6 +126,16 @@ impl Known {
         }
     }
 
+    pub(crate) fn notch(self) -> bool {
+        match self {
+            Self::Claude => claude::NOTCH,
+            Self::Codex => codex::NOTCH,
+            Self::Gemini => gemini::NOTCH,
+            Self::Opencode => opencode::NOTCH,
+            Self::Grok => grok::NOTCH,
+        }
+    }
+
     pub(crate) fn usage(self) -> Option<usage::Spec> {
         match self {
             Self::Claude => claude::USAGE,

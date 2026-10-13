@@ -133,6 +133,23 @@ mod this_process {
     }
 }
 
+#[cfg(target_os = "macos")]
+mod parent {
+    use super::super::parent;
+
+    #[test]
+    fn is_read_from_a_process_of_another_user() {
+        assert_eq!(parent(1), Some(0));
+    }
+
+    #[test]
+    fn of_this_process_is_its_parent() {
+        let ours = rustix::process::getppid().map(|pid| pid.as_raw_nonzero().get());
+
+        assert_eq!(parent(i32::try_from(std::process::id()).expect("a pid")), ours);
+    }
+}
+
 mod env {
     use super::*;
     use crate::test_util::Sleeper;

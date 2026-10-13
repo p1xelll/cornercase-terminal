@@ -171,6 +171,41 @@ cornercase uses the system's own tool, and stops it to let the computer sleep ag
 
 The row's note says whether the computer is being kept awake now, by which tool, or why it can't be on this machine (no tool, or the system refused). `cornercase status --json` has the same as `keep_awake` (`held`, `by`, `unavailable`) while the setting is on, and `server.log` says when it is taken and released.
 
+## The notch
+
+On a Mac, turn on **settings → Agents → notch** (`notch`). Claude Code agents that need you then show at the top centre of the screen, hanging from the notch (on a Mac without one, at the top centre of the main screen), whenever you aren't looking at them: cornercase's window is in the background, or the agent's tab isn't the one on screen. The panel grows out of the notch when an agent needs you and shrinks back into it when none does, unless **Reduce motion** is on in macOS.
+
+Each agent that asks you something gets a card (a question or a permission first, then one waiting, then one that finished):
+
+- **Rinco**, cornercase's mascot, showing what the agent is about (below), and the conversation's title as Claude Code names it (or the tab's name if you renamed it);
+- where it runs, `project › workspace`, and your last prompt, `You: …`;
+- what it wants, in colour: its question (purple), **Wants to run: `npm test`** (yellow), **Done — click to jump** (green);
+- buttons: **allow** and **deny** for a permission, one per option for a question, **open**, and **dismiss** for one that finished;
+- on the right, `Claude` and how long ago it started waiting or finished.
+
+The other agents, the ones that finished and the ones still working, are rows under the cards, each with a square in its state's colour; click one to make it a card. Working agents alone never open the panel. A click on a card itself, outside its buttons, shows that pane in cornercase and brings your terminal's window forward, as **open** does. After you answer, the card says what happened for a moment (**✓ You picked Green**, **◐ Running npm test…**, **✕ Denied. Claude will try another way.**) and then leaves; a card also goes away once the agent stops waiting, whether you answered in the notch, in the pane or from another window.
+
+**Rinco** (from *rincón*, a corner) is a small 16×16 pixel robot whose hood is cornercase's corner bracket, whose face is a terminal and whose eyes are its cursor. The light on its antenna, and its movement, say the state at a glance, in the same colours as the sidebar:
+
+| State | Antenna | What Rinco does |
+| --- | --- | --- |
+| Needs you (a permission) | yellow | jumps and waves, until you answer |
+| Asking (a question) | lavender | looks up, thinking |
+| Working (after **allow**, and working rows) | cyan | reads code while output scrolls |
+| Done | green | a small jump of joy, once, then rests |
+| Denied (after **deny**) | red | shakes, once, then stops |
+| Idle | teal | blinks like a cursor |
+
+The Rinco at the top of the panel shows the most urgent state of all the cards: needs you, then asking, denied, working, done, idle.
+
+If the **Limits** tab of [Usage](../../guides/projects-workspaces-tabs/#plan-usage) has fetched your Claude plan's limits in the last 15 minutes, a line on top shows it: `5h 11% 4h1m | 7d 2% 6h1m`, each percentage in green, yellow or red as in the modal, and the time until it resets. The notch never asks for them itself; open **Usage → Limits** to fill it.
+
+**Answering from the notch** presses the option's number in the pane, as you would: `1` for allow, the number of the prompt's **No** for deny, the option's number for a question. Before it does, cornercase reads the pane again and checks that Claude Code still waits for that same prompt (its `sessions/<pid>.json` says `waiting`, for a permission prompt or a question, and the prompt on screen is the one the card shows); if anything changed, it presses nothing, shows the pane instead and says so. Only prompts whose shape cornercase knows get buttons, checked with Claude Code 2.1.296: a permission prompt with **Yes** first and a **No**, and a single question with one choice. Several questions at once, several choices, typing your own answer and anything else show **open** only. Codex, Gemini CLI and opencode don't show in the notch yet.
+
+The notch belongs to the window, not the server: each window on a Mac shows the agents its own screen isn't showing, also with [`cornercase remote`](../../guides/remote/), and only one window per Mac draws it. Bringing the terminal forward needs cornercase to run directly in it; inside tmux the notch can't tell which app to bring forward. Elsewhere than macOS the row says it is unavailable. Desktop notifications still go out as before; turn them off in **desktop notifications** if the notch is enough.
+
+Rinco is cornercase's own, not Claude's logo: Anthropic's trademark guidelines allow its marks only with its prior approval.
+
 ## Trust prompts
 
 Many agents ask whether you trust a folder the first time they run in it, and a new worktree is always a new folder. Saying yes lets the agent use the repository's own agent configuration, such as project settings, hooks and MCP servers.

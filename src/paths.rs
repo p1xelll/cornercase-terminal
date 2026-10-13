@@ -5,6 +5,7 @@ pub(crate) const TODOS_FILE: &str = "todos.json";
 const SECRETS_FILE: &str = "secrets.json";
 const LOG_FILE: &str = "server.log";
 const ISSUE_CACHE_FILE: &str = "issues.json";
+const NOTCH_LOCK_FILE: &str = "notch.lock";
 
 pub(crate) fn custom_socket() -> Option<PathBuf> {
     std::env::var_os(SOCKET_ENV).map(PathBuf::from)
@@ -27,6 +28,10 @@ pub(crate) fn socket() -> PathBuf {
         |dir| PathBuf::from(dir).join("cornercase"),
     );
     dir.join("server.sock")
+}
+
+pub(crate) fn notch_lock() -> PathBuf {
+    socket().with_file_name(NOTCH_LOCK_FILE)
 }
 
 pub(crate) fn lock(socket: &Path) -> PathBuf {

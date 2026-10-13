@@ -106,8 +106,19 @@ mod a_bug {
         let _ = server.handle(ServerEvent::Accepted(ours));
         let (version, build, theme) = (protocol::VERSION, version::build_id(), HostTheme::default());
         let (notify, probe) = (Channel::Bell, String::new());
-        let hello =
-            Hello { version, build, cols: COLS, rows: ROWS, theme, notify, terminal: None, pointer, graphics, probe };
+        let hello = Hello {
+            version,
+            build,
+            cols: COLS,
+            rows: ROWS,
+            theme,
+            notify,
+            terminal: None,
+            pointer,
+            graphics,
+            probe,
+            notch: false,
+        };
         let _ = server.handle(ServerEvent::Message(id, ClientMessage::Hello(Box::new(hello))));
         let (frames_tx, frames) = mpsc::channel();
         thread::spawn(move || {
@@ -192,6 +203,10 @@ mod a_bug {
     }
 
     impl Client {
+        pub(super) fn id(&self) -> u64 {
+            self.id
+        }
+
         fn send(&self, ev: ServerEvent) {
             self.tx.send(ev).expect("the server listens");
         }
@@ -301,6 +316,48 @@ mod a_bug {
     }
 }
 
+mod notch {
+    use super::a_bug::Attached;
+    use super::*;
+    use crate::graphics::Support;
+
+    #[test]
+    fn nobody_looks_once_every_window_lost_the_focus() {
+        let mut attached = Attached::new();
+        let first = 1;
+        let looking = |server: &mut Server, id, ev| {
+            let _ = server.handle(ServerEvent::Message(id, ClientMessage::Event(ev)));
+            server.app.looking()
+        };
+
+        let alone = looking(&mut attached.server, first, Event::FocusLost);
+        let second = attached.join(Support::default()).id();
+        let joined = attached.server.app.looking();
+        let both_away = looking(&mut attached.server, second, Event::FocusLost);
+        let back = looking(&mut attached.server, first, Event::FocusGained);
+
+        assert_eq!((alone, joined, both_away, back), (false, true, false, true));
+    }
+
+    #[test]
+    fn a_window_with_a_notch_is_told_once_that_it_is_off() {
+        let mut attached = Attached::new();
+        if let Some(client) = attached.server.client_mut(1) {
+            client.notch = true;
+        }
+
+        attached.server.flush();
+        attached.server.flush();
+        if let Some(client) = attached.server.client_mut(1) {
+            client.send(ServerMessage::Frame(b"marker".to_vec()));
+        }
+
+        let got = attached.received(|msg| matches!(msg, ServerMessage::Frame(frame) if frame == b"marker"));
+        let told: Vec<_> = got.iter().filter(|msg| matches!(msg, ServerMessage::Notch(_))).collect();
+        assert!(matches!(told.as_slice(), [ServerMessage::Notch(None)]));
+    }
+}
+
 mod streaming {
     use super::*;
     use crate::control::{Event, Response};
@@ -323,6 +380,9 @@ mod streaming {
                 out,
                 writer,
                 dropped: 0,
+                focused: true,
+                notch: false,
+                told: None,
             },
             rx,
         )

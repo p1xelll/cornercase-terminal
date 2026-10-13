@@ -13,17 +13,19 @@ use ratatui::layout::{Position, Rect};
 use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM, SIGWINCH};
 use signal_hook::iterator::{Handle, Signals};
 
+use super::notch::Runner;
 use super::probe::{env, finish_tmux_check, start_tmux_check, window_cell};
 use super::{Ending, Guard, Host, INPUT_POLL, Link, Target, input};
 use crate::error::{Error, Result};
 use crate::graphics::Support;
 use crate::graphics::detect::{self, Facts, Outer};
+use crate::host::notch;
 use crate::host::notify::{self, Channel};
 use crate::host::theme::HostTheme;
 use crate::protocol::{self, ClientMessage, Hello, ServerMessage};
 use crate::remote::{self, Stderr};
 use crate::ui::remote::{self as notice, Notice};
-use crate::{host::pointer, version};
+use crate::{host::pointer, paths, version};
 
 enum Incoming {
     Input(Event),
@@ -32,6 +34,7 @@ enum Incoming {
     Linked(u64, Result<Link>),
     Signal,
     Tmux(Option<Outer>),
+    Notch(notch::Action),
 }
 
 enum Received {
@@ -42,6 +45,7 @@ enum Received {
 
 enum Next {
     Show(Vec<u8>),
+    Notch(Option<notch::Board>),
     End(Ending),
     Reconnect,
     Nothing,
@@ -55,6 +59,7 @@ fn next(received: Received, reconnects: bool) -> Result<Next> {
         Received::Message(ServerMessage::Restart(_)) | Received::Ended if reconnects => Next::Reconnect,
         Received::Message(ServerMessage::Restart(_)) => Next::End(Ending::Restart),
         Received::Message(ServerMessage::Response(_)) => Next::Nothing,
+        Received::Message(ServerMessage::Notch(board)) => Next::Notch(board),
         Received::Message(ServerMessage::Detached | ServerMessage::Shutdown) | Received::Ended => {
             Next::End(Ending::Detached)
         }
@@ -134,6 +139,7 @@ struct Window<'a> {
     guard: Option<Guard>,
     lost: Option<Lost>,
     retries: Retries,
+    notch: Runner,
 }
 
 impl Window<'_> {
@@ -146,7 +152,8 @@ impl Window<'_> {
         let (theme, notify, terminal) = (self.theme.clone(), self.notify, self.name.clone());
         let (pointer, graphics, probe) = (self.pointer, self.graphics.clone(), self.probe.clone());
         let (cols, rows) = (size.width, size.height);
-        let hello = Hello { version, build, cols, rows, theme, notify, terminal, pointer, graphics, probe };
+        let notch = notch::available();
+        let hello = Hello { version, build, cols, rows, theme, notify, terminal, pointer, graphics, probe, notch };
         let _ = out.send(ClientMessage::Hello(Box::new(hello)));
         spawn_reader(self.generation, reader, self.tx.clone());
         self.out = Some(out);
@@ -171,6 +178,12 @@ impl Window<'_> {
                 self.tmux_checked(outer);
                 Ok(None)
             }
+            Incoming::Notch(action) => {
+                if let Some(out) = &self.out {
+                    let _ = out.send(ClientMessage::Notch(action));
+                }
+                Ok(None)
+            }
             Incoming::Server(generation, received) if generation == self.generation => {
                 match next(received, self.target.reconnects())? {
                     Next::Show(bytes) => {
@@ -179,6 +192,7 @@ impl Window<'_> {
                         out.write_all(&bytes)?;
                         out.flush()?;
                     }
+                    Next::Notch(board) => self.show_notch(board),
                     Next::End(ending) => return Ok(Some(ending)),
                     Next::Reconnect => self.lose()?,
                     Next::Nothing => {}
@@ -234,6 +248,19 @@ impl Window<'_> {
             _ => {}
         }
         Ok(None)
+    }
+
+    fn show_notch(&mut self, board: Option<notch::Board>) {
+        let Some(board) = board else {
+            self.notch.stop();
+            return;
+        };
+        let lock = paths::notch_lock();
+        if !self.notch.running() && protocol::check_socket_dir(&lock).is_err() {
+            return;
+        }
+        let tx = self.tx.clone();
+        self.notch.show(&board, &lock, move |action| tx.send(Incoming::Notch(action)).is_ok());
     }
 
     fn decide_again(&mut self) -> bool {
@@ -358,6 +385,7 @@ pub(super) fn attach(link: Link, target: &Target, terminal: &mut DefaultTerminal
         guard: None,
         lost: None,
         retries: Retries::default(),
+        notch: Runner::default(),
     };
     window.link(link)?;
     let _threads = Threads::spawn(tx, probe_timed_out)?;

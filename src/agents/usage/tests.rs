@@ -77,3 +77,24 @@ fn a_missing_agent_fails() {
     let error = probe(Known::Codex, "/nonexistent/codex", TIMEOUT).expect_err("no report");
     assert!(error.to_string().starts_with("could not run /nonexistent/codex"), "{error}");
 }
+
+mod recent {
+    use super::*;
+
+    #[test]
+    fn is_the_last_answer_while_it_is_fresh() {
+        let mut state = State::default();
+        let at = Instant::now();
+        state.answered(Known::Claude, Ok(Report { limited: true, ..Report::default() }), at);
+
+        let fresh = state.recent(Known::Claude, at + Duration::from_secs(60), Duration::from_secs(600));
+        let old = state.recent(Known::Claude, at + Duration::from_secs(601), Duration::from_secs(600));
+
+        assert_eq!((fresh.map(|r| r.limited), old), (Some(true), None));
+    }
+
+    #[test]
+    fn is_nothing_before_any_answer() {
+        assert_eq!(State::default().recent(Known::Claude, Instant::now(), Duration::MAX), None);
+    }
+}

@@ -29,6 +29,15 @@ mod session_file {
     }
 
     #[test]
+    fn says_what_claude_waits_for() {
+        let text = r#"{"pid":7,"status":"waiting","waitingFor":"permission prompt"}"#;
+
+        let found = Session::parse(text, 7).and_then(|s| s.waiting_for);
+
+        assert_eq!(found.as_deref(), Some("permission prompt"));
+    }
+
+    #[test]
     fn names_the_conversation_and_where_it_started() {
         let text = r#"{"pid":7,"sessionId":"a01c","cwd":"/home/a/shop","status":"idle","version":"2.1.289"}"#;
 

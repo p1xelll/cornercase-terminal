@@ -12,12 +12,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
 use crate::graphics::Support;
+use crate::host::notch;
 use crate::host::notify::Channel;
 use crate::host::theme::HostTheme;
 use crate::paths;
 use crate::{host::pointer, process};
 
-pub(crate) const VERSION: u32 = 3;
+pub(crate) const VERSION: u32 = 4;
 pub const NESTED_ENV: &str = "CORNERCASE";
 pub(crate) const RESTARTED_ENV: &str = "CORNERCASE_RESTARTED";
 const MAX_MESSAGE: usize = 64 * 1024 * 1024;
@@ -30,6 +31,7 @@ pub(crate) enum ClientMessage {
     Restart,
     Request(String),
     Graphics(Support),
+    Notch(notch::Action),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -44,6 +46,7 @@ pub(crate) struct Hello {
     pub(crate) pointer: Option<pointer::Terminal>,
     pub(crate) graphics: Support,
     pub(crate) probe: String,
+    pub(crate) notch: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -54,6 +57,7 @@ pub(crate) enum ServerMessage {
     Shutdown,
     Restart(PathBuf),
     Response(String),
+    Notch(Option<notch::Board>),
 }
 
 pub(crate) fn send<T: Serialize>(w: &mut impl Write, msg: &T) -> io::Result<()> {

@@ -7,6 +7,8 @@ use std::thread;
 use rustix::io::Errno;
 use rustix::process::{Pid, test_kill_process};
 
+#[cfg(target_os = "macos")]
+pub(crate) use imp::parent;
 pub(crate) use imp::{all, args, children, cwd, env, footprint, name, open_files, peer_uid, started};
 
 const MAX_DESCENDANTS: usize = 256;
@@ -195,6 +197,11 @@ mod imp {
         let size = c_int::try_from(size_of::<T>()).ok()?;
         let read = unsafe { libc::proc_pidinfo(pid, flavor, 0, (&raw mut info).cast(), size) };
         (read == size).then_some(info)
+    }
+
+    pub(crate) fn parent(pid: i32) -> Option<i32> {
+        let info: libc::proc_bsdshortinfo = pid_info(pid, libc::PROC_PIDT_SHORTBSDINFO)?;
+        i32::try_from(info.pbsi_ppid).ok()
     }
 
     pub(crate) fn cwd(pid: i32) -> Option<PathBuf> {

@@ -536,6 +536,29 @@ mod remote {
     }
 }
 
+mod notch {
+    use super::*;
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn is_a_switch_that_starts_off() {
+        let mut s = settings();
+        let before = s.config.notch;
+        go_to(&mut s, &Row::Notch);
+        let on = saved(press(&mut s, KeyCode::Enter)).notch;
+        assert_eq!((before, on, saved(press(&mut s, KeyCode::Enter)).notch), (false, true, false));
+    }
+
+    #[test]
+    #[cfg(not(target_os = "macos"))]
+    fn is_unavailable_elsewhere() {
+        let mut s = settings();
+        go_to(&mut s, &Row::Notch);
+        assert!(matches!(press(&mut s, KeyCode::Enter), Action::None));
+        assert_eq!(s.notice.as_deref(), Some(super::super::NOTCH_UNAVAILABLE));
+    }
+}
+
 mod keep_awake {
     use super::*;
 

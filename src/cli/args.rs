@@ -54,6 +54,8 @@ Examples:
     Server,
     #[command(hide = true)]
     Proxy,
+    #[command(hide = true)]
+    Notch,
 }
 
 #[derive(Debug, Subcommand)]

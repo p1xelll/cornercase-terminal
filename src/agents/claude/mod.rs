@@ -6,6 +6,7 @@ use serde::Deserialize;
 
 use self::transcript::{Limits, Subagents, Transcript, transcript_path};
 use crate::agents::activity::{Activity, BRAILLE, glyph};
+use crate::agents::ask::Ask;
 use crate::agents::context::counting::Ledger;
 use crate::agents::context::discovery::Job;
 use crate::agents::context::{Context, Look, Record};
@@ -21,6 +22,7 @@ pub(in crate::agents) const MODES: crate::agents::ModeTable = &[
 pub(in crate::agents) const HOLDS_PROMPTS: bool = false;
 pub(in crate::agents) const RUNS_AS: bool = false;
 pub(in crate::agents) const LOCAL_COMMAND: bool = false;
+pub(in crate::agents) const NOTCH: bool = true;
 pub(in crate::agents) const USAGE: Option<crate::agents::usage::Spec> = Some(crate::agents::usage::Spec {
     command: usage::command,
     requests: usage::requests,
@@ -57,6 +59,8 @@ const IDLE: char = '✳';
 struct Session {
     pid: Option<i64>,
     status: Option<String>,
+    #[serde(rename = "waitingFor")]
+    waiting_for: Option<String>,
     #[serde(rename = "sessionId")]
     id: Option<String>,
     cwd: Option<PathBuf>,
@@ -144,6 +148,19 @@ impl Reader {
         Some(Record::Claude(self.transcript.as_ref()?.path.clone()))
     }
 
+    pub(in crate::agents) fn ask(&self, screen: &str) -> Option<Ask> {
+        let session = self.session.as_ref().filter(|s| s.activity() == Some(Activity::Waiting))?;
+        ask::ask(session.waiting_for.as_deref(), screen)
+    }
+
+    pub(in crate::agents) fn title(&self) -> Option<&str> {
+        self.transcript.as_ref()?.title.as_deref()
+    }
+
+    pub(in crate::agents) fn last_prompt(&self) -> Option<&str> {
+        self.transcript.as_ref()?.asked.as_deref()
+    }
+
     pub(in crate::agents) fn conversation(&self) -> Option<&str> {
         self.transcript.as_ref().filter(|t| t.len > 0).and_then(|t| t.path.file_stem()?.to_str())
     }
@@ -170,6 +187,7 @@ fn from_title(title: &str) -> Option<Activity> {
     }
 }
 
+pub(in crate::agents) mod ask;
 pub(in crate::agents) mod message;
 pub(crate) mod screen;
 pub(in crate::agents) mod transcript;

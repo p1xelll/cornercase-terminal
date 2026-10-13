@@ -96,6 +96,7 @@ fn hello(cols: u16, rows: u16, theme: &Theme) -> Hello {
         pointer: None,
         graphics: Support { missing: Some(Missing::Cannot { name: "this browser".into() }), ..Support::default() },
         probe: "web".into(),
+        notch: false,
     }
 }
 
@@ -240,7 +241,7 @@ fn pump(
                         return "connection lost";
                     }
                 }
-                Ok(Some(ServerMessage::Response(_))) => {}
+                Ok(Some(ServerMessage::Response(_) | ServerMessage::Notch(_))) => {}
                 Ok(Some(ServerMessage::Rejected(why))) => return finish(ws, "rejected", &why),
                 Ok(Some(ServerMessage::Detached)) => return finish(ws, "detached", ""),
                 Ok(Some(ServerMessage::Shutdown)) => return finish(ws, "shutdown", ""),
