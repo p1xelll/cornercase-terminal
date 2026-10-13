@@ -1,6 +1,6 @@
 [package]
 name = "cornercase"
-version = "0.12.75"
+version = "0.12.76"
 edition = "2024"
 description = "A terminal multiplexer for projects, git worktrees and coding agents, driven by the mouse"
 license = "MIT OR Apache-2.0"
@@ -67,6 +67,7 @@ vt100 = "0.16.2"
 future_incompatible = { level = "warn", priority = -1 }
 nonstandard_style = { level = "deny", priority = -2 }
 unused_qualifications = "warn"
+unreachable_pub = "warn"
 
 [lints.clippy]
 all = { level = "deny", priority = -1 }
