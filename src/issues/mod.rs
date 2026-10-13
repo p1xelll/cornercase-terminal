@@ -1,7 +1,6 @@
 pub mod browser;
 pub mod cache;
 pub mod github;
-pub mod http;
 pub mod jira;
 pub mod linear;
 pub mod md;
@@ -14,6 +13,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
+use crate::time::{age, parse_time};
 
 pub const LIMIT: usize = 100;
 const SLUG_MAX: usize = 40;
@@ -336,7 +336,7 @@ pub fn branch(issue: &Issue) -> String {
 }
 
 pub fn workspace_name(issue: &Issue) -> String {
-    crate::ui::truncate_right(&format!("{} {}", issue.key, issue.title), NAME_MAX)
+    crate::text::truncate_right(&format!("{} {}", issue.key, issue.title), NAME_MAX)
 }
 
 fn fold(c: char) -> char {
@@ -402,10 +402,6 @@ pub fn prompt(template: &str, issue: &Issue, branch: &str) -> String {
     out
 }
 
-pub fn one_line(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
 pub fn meta(issue: &Issue, now: i64) -> String {
     let state = if issue.source == Source::Github && !issue.closed { "" } else { issue.state.as_str() };
     let labels = issue.labels.join(", ");
@@ -418,58 +414,6 @@ pub fn meta(issue: &Issue, now: i64) -> String {
 
 pub fn age_of(timestamp: &str, now: i64) -> String {
     parse_time(timestamp).map(|t| age(now - t)).unwrap_or_default()
-}
-
-pub fn age(secs: i64) -> String {
-    let minutes = secs.max(0) / 60;
-    let hours = minutes / 60;
-    let days = hours / 24;
-    if minutes < 60 {
-        format!("{minutes}m")
-    } else if hours < 24 {
-        format!("{hours}h")
-    } else if days < 30 {
-        format!("{days}d")
-    } else if days < 365 {
-        format!("{}mo", days / 30)
-    } else {
-        format!("{}y", days / 365)
-    }
-}
-
-pub fn parse_time(text: &str) -> Option<i64> {
-    let field = |from: usize, to: usize| text.get(from..to)?.parse::<i64>().ok();
-    let (year, month, day) = (field(0, 4)?, field(5, 7)?, field(8, 10)?);
-    let (hour, minute, second) = (field(11, 13)?, field(14, 16)?, field(17, 19)?);
-    let local = days_from_civil(year, month, day) * 86_400 + hour * 3_600 + minute * 60 + second;
-    Some(local - offset(text.get(19..).unwrap_or_default()))
-}
-
-fn offset(rest: &str) -> i64 {
-    let zone = rest.trim_start_matches(|c: char| c == '.' || c.is_ascii_digit());
-    let sign = match zone.chars().next() {
-        Some('+') => 1,
-        Some('-') => -1,
-        _ => return 0,
-    };
-    let digits: String = zone.chars().filter(char::is_ascii_digit).collect();
-    let part = |range: std::ops::Range<usize>| digits.get(range).and_then(|d| d.parse::<i64>().ok()).unwrap_or(0);
-    sign * (part(0..2) * 3_600 + part(2..4) * 60)
-}
-
-fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
-    let year = if month <= 2 { year - 1 } else { year };
-    let era = year.div_euclid(400);
-    let year_of_era = year - era * 400;
-    let day_of_year = (153 * ((month + 9) % 12) + 2) / 5 + day - 1;
-    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
-    era * 146_097 + day_of_era - 719_468
-}
-
-pub fn now() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
 }
 
 pub fn checklist(title: &str, items: &[(bool, String)]) -> String {

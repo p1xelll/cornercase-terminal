@@ -12,7 +12,7 @@ use crate::error::{Error, Result};
 use crate::keys;
 use crate::log;
 use crate::remote::{self, Remote};
-use crate::{client, restart, server, ui};
+use crate::{client, restart, server};
 
 mod read;
 
@@ -817,7 +817,7 @@ pub fn run(cli: Cli) -> Result<bool> {
 }
 
 fn print_logs(args: &LogsArgs) -> Result<bool> {
-    let path = log::path();
+    let path = crate::paths::log();
     let mut out = io::stdout().lock();
     if args.path {
         writeln!(out, "{}", path.display())?;
@@ -1156,7 +1156,7 @@ fn cell(value: &Value) -> String {
 
 fn project_lines(lines: &mut Vec<String>, report: &Report, project: &ProjectInfo, depth: usize, home: Option<&Path>) {
     let shown = report.shown;
-    let place = |path: &Path| ui::display_path(path, home);
+    let place = |path: &Path| crate::text::display_path(path, home);
     let marks = |is_shown: bool| if is_shown { vec!["shown"] } else { Vec::new() };
     let parts = [project.name.clone(), place(&project.path)];
     lines.push(line(depth, "project", project.id, &parts, &marks(shown.project == Some(project.id))));
@@ -1221,11 +1221,11 @@ pub struct StatsArgs {
 
 fn print_stats(args: &StatsArgs) -> Result<bool> {
     let now = std::time::SystemTime::now();
-    let path = crate::stats::path(&crate::state::path());
+    let path = crate::paths::stats(&crate::paths::session());
     let view = match ask("stats", control::Command::Stats(control::Stats {})) {
         Ok(value) => {
             let mut view: crate::stats::View = answer(value)?;
-            view.days = log::Stamp::parse(&view.since)
+            view.days = crate::time::Stamp::parse(&view.since)
                 .map_or(0, |since| now.duration_since(since).unwrap_or_default().as_secs() / 86_400);
             view
         }

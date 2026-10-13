@@ -19,17 +19,19 @@ use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
 
 use crate::app::{App, AppEvent, Streamed};
-use crate::config;
 use crate::control::{self, Ids, What};
 use crate::error::{Error, Result};
 use crate::host_theme::HostTheme;
 use crate::log::{self, Level};
 use crate::notify::Channel;
 use crate::panics;
+use crate::paths;
+use crate::persist::{self, Saver};
 use crate::pointer;
 use crate::protocol::{self, ClientMessage, Hello, ServerMessage};
-use crate::state::{self, Saver};
+use crate::state;
 use crate::todo;
+use crate::version;
 
 mod images;
 
@@ -39,7 +41,6 @@ const TICK: Duration = Duration::from_millis(500);
 const SLOW_STEP: Duration = Duration::from_millis(100);
 const FRAME: Duration = Duration::from_millis(16);
 const SAVE_EVERY: Duration = Duration::from_millis(500);
-const ISSUE_CACHE_FILE: &str = "issues.json";
 const WRITE_TIMEOUT: Duration = Duration::from_secs(1);
 const EVENTS_QUEUED: usize = 1024;
 const CLEAR_SCREEN: &[u8] = b"\x1b[H\x1b[2J";
@@ -230,7 +231,7 @@ impl Client {
             return;
         }
         log::warning!("server", "events dropped", client = self.id, count = self.dropped);
-        let time = log::Stamp(SystemTime::now()).to_string();
+        let time = crate::time::Stamp(SystemTime::now()).to_string();
         let notice = control::Event { time, what: What::Dropped { count: self.dropped }, ids: Ids::default() };
         if let Some(text) = notice.streamed() {
             self.send(ServerMessage::Response(text));
@@ -273,7 +274,7 @@ struct Server {
     started: bool,
     build: String,
     session: PathBuf,
-    saver: Saver,
+    saver: Saver<state::State>,
     todo_saver: Saver<todo::Saved>,
     stats_saver: crate::stats::Saver,
     restart: Option<PathBuf>,
@@ -288,11 +289,11 @@ struct Server {
 pub fn run() -> Result<()> {
     panics::log_to_stderr();
     let _ = rustix::process::setsid();
-    let path = protocol::socket_path();
+    let path = paths::socket();
     let (listener, _lock) = bind(&path)?;
     let level = log::level_from_env();
-    if let Err(e) = log::start(&log::path(), level) {
-        eprintln!("cornercase server: cannot write its log to {}: {e}", log::path().display());
+    if let Err(e) = log::start(&paths::log(), level) {
+        eprintln!("cornercase server: cannot write its log to {}: {e}", paths::log().display());
     }
     let (tx, rx) = mpsc::channel();
     spawn_acceptor(listener, tx.clone());
@@ -301,13 +302,13 @@ pub fn run() -> Result<()> {
     spawn_forwarder(app_rx, tx.clone());
 
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
-    let mut app = App::new(shell, HostTheme::default(), config::path(), app_tx);
-    let session = state::path();
+    let mut app = App::new(shell, HostTheme::default(), paths::config(), app_tx);
+    let session = paths::session();
     log::info!(
         "server",
         "started",
-        version = crate::update::CURRENT,
-        build = protocol::build_id(),
+        version = version::CURRENT,
+        build = version::build_id(),
         pid = std::process::id(),
         os = std::env::consts::OS,
         arch = std::env::consts::ARCH,
@@ -315,11 +316,11 @@ pub fn run() -> Result<()> {
         session = session.display(),
         level = format!("{level:?}").to_lowercase(),
     );
-    app.set_issue_cache(session.with_file_name(ISSUE_CACHE_FILE));
-    let todos = todo::load(&todo::path(&session));
-    let todo_saver = Saver::new(todo::path(&session), Some(todos.saved()));
+    app.set_issue_cache(paths::issue_cache(&session));
+    let todos = todo::load(&paths::todos(&session));
+    let todo_saver = Saver::new(paths::todos(&session), Some(todos.saved()));
     app.set_todos(todos);
-    let stats = crate::stats::load(&crate::stats::path(&session), SystemTime::now());
+    let stats = crate::stats::load(&paths::stats(&session), SystemTime::now());
     log::info!(
         "stats",
         "loaded",
@@ -415,7 +416,7 @@ fn spawn_client_reader(id: u64, mut stream: UnixStream, tx: Sender<ServerEvent>)
 
 impl Server {
     fn new(app: App, session: PathBuf, todo_saver: Saver<todo::Saved>, tx: Sender<ServerEvent>) -> Self {
-        let stats_saver = crate::stats::Saver::new(crate::stats::path(&session), app.stats().revision());
+        let stats_saver = crate::stats::Saver::new(paths::stats(&session), app.stats().revision());
         Self {
             app,
             clients: Vec::new(),
@@ -423,7 +424,7 @@ impl Server {
             next_client: 1,
             uses: 0,
             started: false,
-            build: protocol::build_id(),
+            build: version::build_id(),
             saver: Saver::new(session.clone(), None),
             session,
             todo_saver,
@@ -776,7 +777,7 @@ impl Server {
             None => log::info!("server", "no session to restore", path = self.session.display()),
         }
         if !complete {
-            match state::back_up(&self.session) {
+            match persist::back_up(&self.session) {
                 Ok(backup) => log::warning!("server", "the session came back incomplete", copy = backup.display()),
                 Err(e) => log::error!("server", "failed to keep a copy of the session", error = e),
             }
@@ -871,7 +872,7 @@ impl Server {
         }
         if self.restart.is_some()
             && self.started
-            && let Err(e) = state::save(&self.session, &self.app.state())
+            && let Err(e) = persist::save(&self.session, &self.app.state())
         {
             log::error!("server", "failed to save the session", error = e);
         }

@@ -50,12 +50,14 @@ use crate::context::{self};
 use crate::git;
 use crate::issues::browser::{Browser, Screen};
 use crate::issues::{self, Secret};
+use crate::list::Search;
 use crate::mouse;
 use crate::notify::{self};
+use crate::paths;
 use crate::picker::Picker;
 use crate::process;
 use crate::project::{Phase, Workspace};
-use crate::search::{Goto, Kind, Search};
+use crate::search::{Goto, Kind};
 use crate::settings::{Settings, Status};
 use crate::split::{self};
 use crate::state::AgentState;
@@ -65,6 +67,7 @@ use crate::ui::SidebarRow;
 use crate::ui::WorkspaceRow;
 use crate::ui::changes::{self as panel, Action as HunkAction};
 use crate::update::{self, Release};
+use crate::version;
 
 fn drain(app: &mut App, rx: &Receiver<AppEvent>) {
     drain_in(app, rx, AREA);

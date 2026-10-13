@@ -1,12 +1,6 @@
 use std::collections::BTreeMap;
 use std::io;
-use std::path::{Path, PathBuf};
-
-const FILE: &str = "secrets.json";
-
-pub fn path(config_path: &Path) -> PathBuf {
-    config_path.with_file_name(FILE)
-}
+use std::path::Path;
 
 fn load(path: &Path) -> BTreeMap<String, String> {
     std::fs::read_to_string(path).ok().and_then(|text| serde_json::from_str(&text).ok()).unwrap_or_default()
@@ -35,7 +29,7 @@ pub fn remove(path: &Path, key: &str) -> io::Result<()> {
 }
 
 fn store(path: &Path, secrets: &BTreeMap<String, String>) -> io::Result<()> {
-    crate::state::write(path, secrets, true)
+    crate::persist::write(path, secrets, true)
 }
 
 #[cfg(test)]

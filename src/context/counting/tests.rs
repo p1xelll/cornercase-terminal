@@ -3,7 +3,7 @@ use std::time::{Duration, UNIX_EPOCH};
 use super::*;
 
 pub fn since() -> SystemTime {
-    crate::log::Stamp::parse("2026-10-10T12:00:01.000Z").expect("time")
+    crate::time::Stamp::parse("2026-10-10T12:00:01.000Z").expect("time")
 }
 pub fn sum(counted: Counted) -> (usize, Tokens) {
     let mut sum = Tokens::default();

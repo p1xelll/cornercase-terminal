@@ -35,12 +35,14 @@ use crate::graphics::{self, Support};
 use crate::host_theme::{HostTheme, ThemeProbe};
 use crate::log;
 use crate::notify::{self, Channel};
+use crate::paths;
 use crate::pointer;
 use crate::protocol::{self, ClientMessage, Hello, ServerMessage};
 use crate::remote::{self, Remote, Stderr};
 use crate::restart;
 use crate::ui::remote::{self as notice, Notice};
-use crate::update::{self, CURRENT, Install, Outcome};
+use crate::update::{self, Install, Outcome};
+use crate::version::{self, CURRENT};
 
 pub(crate) mod input;
 
@@ -151,7 +153,7 @@ impl Target {
     fn connect(&self, again: bool) -> Result<Link> {
         match self {
             Self::Local => {
-                let path = protocol::socket_path();
+                let path = paths::socket();
                 protocol::check_socket_dir(&path)?;
                 let stream = connect_or_start(&path)?;
                 protocol::check_peer(&stream, protocol::own_uid())?;
@@ -247,7 +249,7 @@ fn open(target: &Target, restarted: bool) -> Result<()> {
 }
 
 fn connect() -> Result<UnixStream> {
-    let path = protocol::socket_path();
+    let path = paths::socket();
     protocol::check_socket_dir(&path)?;
     let stream = UnixStream::connect(&path).map_err(|_| Error::NoServer)?;
     protocol::check_peer(&stream, protocol::own_uid())?;
@@ -336,7 +338,7 @@ pub fn restart_server() -> Result<bool> {
 }
 
 fn stop_server(msg: &ClientMessage) -> Result<Option<bool>> {
-    let path = protocol::socket_path();
+    let path = paths::socket();
     protocol::check_socket_dir(&path)?;
     let Ok(mut stream) = UnixStream::connect(&path) else { return Ok(None) };
     protocol::check_peer(&stream, protocol::own_uid())?;
@@ -412,7 +414,7 @@ pub fn restart(yes: bool, when: When) -> Result<()> {
 }
 
 fn server_running() -> Result<bool> {
-    let path = protocol::socket_path();
+    let path = paths::socket();
     protocol::check_socket_dir(&path)?;
     Ok(UnixStream::connect(&path).is_ok())
 }
@@ -471,7 +473,7 @@ fn restart_when_idle(timeout: Option<f64>, inside: bool) -> Result<()> {
             Ok(None) | Err(_) => return Err(Error::ServerGone),
         }
     }
-    wait_for_exit(&protocol::socket_path());
+    wait_for_exit(&paths::socket());
     println!("{RESTARTED}");
     if let Some(line) = report.as_ref().map(restart::from_report).as_deref().and_then(restart::stopped) {
         println!("{line}");
@@ -491,7 +493,7 @@ fn too_old_to_wait(error: Error) -> Error {
 fn come_back(exe: io::Result<PathBuf>) -> Result<()> {
     restore_input_modes();
     let _ = crossterm::terminal::disable_raw_mode();
-    wait_for_exit(&protocol::socket_path());
+    wait_for_exit(&paths::socket());
     let error = match exe {
         Ok(exe) => Command::new(exe).env(protocol::RESTARTED_ENV, "1").exec(),
         Err(e) => e,
@@ -511,7 +513,7 @@ pub(crate) fn connect_or_start(path: &Path) -> Result<UnixStream> {
     if let Ok(stream) = UnixStream::connect(path) {
         return Ok(stream);
     }
-    let log = log::path();
+    let log = paths::log();
     let start_error = |e| Error::ServerStart { log: log.clone(), source: Some(e) };
     let deadline = Instant::now() + SERVER_START_TIMEOUT;
     let mut server = start_server(&log).map_err(start_error)?;
@@ -703,7 +705,7 @@ impl Window<'_> {
         let Link { reader, writer, guard } = link;
         let size = self.terminal.size()?;
         let out = spawn_writer(writer);
-        let (version, build) = (protocol::VERSION, protocol::build_id());
+        let (version, build) = (protocol::VERSION, version::build_id());
         let (theme, notify, terminal) = (self.theme.clone(), self.notify, self.name.clone());
         let (pointer, graphics, probe) = (self.pointer, self.graphics.clone(), self.probe.clone());
         let (cols, rows) = (size.width, size.height);

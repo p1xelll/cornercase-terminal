@@ -6,8 +6,9 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
 use super::{Account, Detail, Issue, People, Person, Query, Secret, Source, Who, branch, jira, plane, sort_by_updated};
+use crate::list::Search;
 use crate::markdown;
-use crate::search::Search;
+use crate::time;
 use crate::ui::{self, IssuesHit};
 
 const WHEEL_ROWS: isize = 3;
@@ -479,7 +480,7 @@ impl Browser {
         if parts.is_empty() {
             "people".into()
         } else {
-            ui::truncate_right(&format!("people: {}", parts.join(", ")), PEOPLE_LABEL_MAX)
+            crate::text::truncate_right(&format!("people: {}", parts.join(", ")), PEOPLE_LABEL_MAX)
         }
     }
 
@@ -999,7 +1000,7 @@ impl Browser {
         vec![
             row("start", vec![Span::raw(self.start_hint(issue))]),
             row("agent", agent),
-            row("prompt", vec![Span::raw(super::one_line(&prompt)), Span::styled(format!("  ({send})"), dim)]),
+            row("prompt", vec![Span::raw(crate::text::one_line(&prompt)), Span::styled(format!("  ({send})"), dim)]),
         ]
     }
 
@@ -1007,7 +1008,7 @@ impl Browser {
         let Screen::Detail { issue, detail, raw, .. } = &self.screen else { return Vec::new() };
         let width = usize::from(ui::issue_detail(ui::issues_area(area)).width);
         let start = self.start_lines(issue);
-        detail_lines(issue, detail.as_ref().and_then(|d| d.as_ref().ok()), width, super::now(), *raw, start)
+        detail_lines(issue, detail.as_ref().and_then(|d| d.as_ref().ok()), width, time::now(), *raw, start)
     }
 
     fn picker_view(&self) -> (ui::IssuesBody, Option<ui::Note>, String) {

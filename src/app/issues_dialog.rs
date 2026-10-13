@@ -18,12 +18,11 @@ use crate::issues::{
     self, Account, Client, Issue, Listed, Person, Query, Secret, Source, jira, linear, plane, shortcut,
 };
 use crate::launch::{self};
+use crate::list::Search;
 use crate::log::{self, Job, Level};
 use crate::markdown;
 use crate::panics;
-use crate::search::Search;
 use crate::secrets;
-use crate::ui::{self};
 
 pub(super) struct Apis {
     pub(super) shortcut: String,
@@ -157,7 +156,7 @@ impl App {
             starting: false,
             error: None,
             notice: None,
-            secrets_path: ui::display_path(&self.secrets_path, self.home.as_deref()),
+            secrets_path: crate::text::display_path(&self.secrets_path, self.home.as_deref()),
             agents: self.agent_choices(),
             picker: None,
             places,

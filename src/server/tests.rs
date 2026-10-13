@@ -1,5 +1,6 @@
 use super::*;
 use crate::test_util::TempDir;
+use crate::version;
 
 mod lock {
     use super::*;
@@ -101,7 +102,7 @@ mod a_bug {
     ) -> Client {
         let (ours, mut theirs) = UnixStream::pair().expect("a socket pair");
         let _ = server.handle(ServerEvent::Accepted(ours));
-        let (version, build, theme) = (protocol::VERSION, protocol::build_id(), HostTheme::default());
+        let (version, build, theme) = (protocol::VERSION, version::build_id(), HostTheme::default());
         let (notify, probe) = (Channel::Bell, String::new());
         let hello =
             Hello { version, build, cols: COLS, rows: ROWS, theme, notify, terminal: None, pointer, graphics, probe };
@@ -134,7 +135,7 @@ mod a_bug {
 
         fn with_graphics(dir: TempDir, saved: &State, graphics: Support) -> Self {
             let session = dir.path().join("session.json");
-            state::save(&session, saved).expect("save a session");
+            persist::save(&session, saved).expect("save a session");
             let (tx, rx) = mpsc::channel();
             let (app_tx, app_rx) = mpsc::channel();
             spawn_forwarder(app_rx, tx.clone());
@@ -666,7 +667,7 @@ mod drawing {
 
         attached.server.save(t0);
         attached.server.save(t0 + SAVE_EVERY / 2);
-        attached.server.save(t0 + state::SETTLE + SAVE_EVERY);
+        attached.server.save(t0 + persist::SETTLE + SAVE_EVERY);
 
         assert!(session.exists(), "the session settles and is written");
     }

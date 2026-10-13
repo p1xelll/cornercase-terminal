@@ -2,6 +2,10 @@
 
 Every pull request that changes the app adds a section here for its new version. The section becomes the notes of the GitHub Release and shows up in the app's update dialog, so write it for users.
 
+## 0.12.51
+
+- No changes in the app. Helpers that several parts share (the version, file locations, times, saving files, cutting text, lists, HTTP) moved into small modules of their own.
+
 ## 0.12.50
 
 - No changes in the app. The tests of changes, context, files, graphics, issues, todo, usage and web moved into files of their own.

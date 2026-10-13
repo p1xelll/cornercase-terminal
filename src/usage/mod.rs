@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use crate::agents;
 use crate::error::{Error, Result};
-use crate::issues;
+use crate::time;
 use crate::ui;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -197,7 +197,7 @@ fn updated(secs: u64) -> String {
     if secs < 60 {
         "updated just now".into()
     } else {
-        format!("updated {} ago", issues::age(i64::try_from(secs).unwrap_or(i64::MAX)))
+        format!("updated {} ago", time::age(i64::try_from(secs).unwrap_or(i64::MAX)))
     }
 }
 

@@ -6,7 +6,7 @@ use serde_json::Value;
 use super::{Report, Window, window};
 use crate::activity;
 use crate::error::{Error, Result};
-use crate::issues;
+use crate::time;
 
 const ARGS: [&str; 9] = [
     "-p",
@@ -100,7 +100,7 @@ impl Money {
 }
 
 fn time(text: Option<&str>) -> Option<i64> {
-    text.and_then(issues::parse_time)
+    text.and_then(time::parse_time)
 }
 
 fn label(limit: &Limit) -> String {

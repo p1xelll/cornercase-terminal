@@ -1,4 +1,3 @@
-use std::fmt::Write;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -10,9 +9,13 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::error::{Error, Result};
-use crate::issues::http::{self, Service};
+use crate::http::{self, Service};
+use crate::text::hex;
 
-pub const CURRENT: &str = env!("CARGO_PKG_VERSION");
+pub use crate::version::CURRENT;
+
+use crate::version::newer;
+
 pub const LATEST_ENV: &str = "CORNERCASE_RELEASES_URL";
 pub const DEFAULT_LATEST: &str = "https://api.github.com/repos/usecornercase/cornercase-terminal/releases/latest";
 pub const INSTALLER: &str = "curl -fsSL https://usecornercase.dev/install.sh | sh";
@@ -80,18 +83,6 @@ impl Updates {
     pub fn due(&self, now: Instant) -> bool {
         self.enabled && self.checked.is_none_or(|at| now.duration_since(at) >= CHECK_EVERY)
     }
-}
-
-pub fn newer(latest: &str, current: &str) -> bool {
-    matches!((parse(latest), parse(current)), (Some(l), Some(c)) if l > c)
-}
-
-fn parse(version: &str) -> Option<(u64, u64, u64, bool)> {
-    let version = version.trim().trim_start_matches('v');
-    let (core, pre) = version.split_once('-').map_or((version, None), |(core, pre)| (core, Some(pre)));
-    let mut parts = core.split('+').next()?.split('.').map(|p| p.parse::<u64>().ok());
-    let (major, minor, patch) = (parts.next()??, parts.next()??, parts.next()??);
-    parts.next().is_none().then_some((major, minor, patch, pre.is_none()))
 }
 
 pub fn release(json: &Value) -> Option<Release> {
@@ -211,13 +202,6 @@ fn verify(archive: &[u8], sums: &str) -> Result<()> {
     } else {
         Err(Error::Api("the download does not match its checksum".into()))
     }
-}
-
-pub(crate) fn hex(bytes: &[u8]) -> String {
-    bytes.iter().fold(String::with_capacity(bytes.len() * 2), |mut out, b| {
-        let _ = write!(out, "{b:02x}");
-        out
-    })
 }
 
 fn unpack(archive: &[u8], staging: &Path) -> Result<PathBuf> {

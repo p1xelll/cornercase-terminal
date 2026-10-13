@@ -1,12 +1,11 @@
 pub mod editor;
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
 use editor::Editor;
 
-pub const FILE: &str = "todos.json";
 pub const VERSION: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,10 +55,6 @@ pub fn clean(text: &str) -> Option<String> {
     let text: String = text.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
     let text = text.trim();
     (!text.is_empty()).then(|| text.to_string())
-}
-
-pub fn path(state: &Path) -> PathBuf {
-    state.with_file_name(FILE)
 }
 
 pub fn load(path: &Path) -> Todos {

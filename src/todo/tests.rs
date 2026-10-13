@@ -1,6 +1,7 @@
 use rstest::rstest;
 
 use super::*;
+use crate::paths;
 use crate::test_util::TempDir;
 
 fn texts(todos: &Todos) -> Vec<String> {
@@ -167,10 +168,10 @@ mod saving {
     #[test]
     fn the_list_comes_back_from_its_file() {
         let tmp = TempDir::new();
-        let path = tmp.path().join(FILE);
+        let path = tmp.path().join(paths::TODOS_FILE);
         let (mut todos, ids) = with(&["a", "b"]);
         todos.toggle(ids[0]);
-        crate::state::save(&path, &todos.saved()).expect("save");
+        crate::persist::save(&path, &todos.saved()).expect("save");
         assert_eq!(texts(&load(&path)), ["b", "[x] a"]);
     }
 
@@ -195,7 +196,7 @@ mod saving {
     #[case::other_version(Some(r#"{"version": 99, "items": [{"text": "a"}]}"#))]
     fn an_unreadable_file_means_an_empty_list(#[case] content: Option<&str>) {
         let tmp = TempDir::new();
-        let path = tmp.path().join(FILE);
+        let path = tmp.path().join(paths::TODOS_FILE);
         if let Some(content) = content {
             std::fs::write(&path, content).expect("write");
         }

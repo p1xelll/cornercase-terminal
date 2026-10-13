@@ -4,8 +4,8 @@ use rstest::rstest;
 
 use super::*;
 use crate::activity::Session;
-use crate::log::Stamp;
 use crate::test_util::{Sleeper, TempDir};
+use crate::time::Stamp;
 
 fn assistant(model: &str, input: u64, created: u64, read: u64) -> String {
     format!(

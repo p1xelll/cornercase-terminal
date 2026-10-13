@@ -85,11 +85,6 @@ mod prompt {
     fn fills_in_the_issue(#[case] template: &str, #[case] expected: &str) {
         assert_eq!(prompt(template, &gh(7, "it's broken"), "issue-7"), expected);
     }
-
-    #[test]
-    fn one_line_joins_lines_and_spaces() {
-        assert_eq!(one_line(" a\n  b\tc "), "a b c");
-    }
 }
 
 mod meta {
@@ -122,23 +117,6 @@ mod meta {
     #[test]
     fn leaves_out_what_is_missing() {
         assert_eq!(meta(&Issue { author: String::new(), ..gh(1, "x") }, 0), "");
-    }
-
-    #[rstest]
-    #[case::utc("1970-01-02T00:00:10Z", 86_410)]
-    #[case::ahead("1970-01-02T02:00:10.000+0200", 86_410)]
-    #[case::behind_with_a_colon("1970-01-01T19:30:10-04:30", 86_410)]
-    #[case::no_zone("1970-01-02T00:00:10", 86_410)]
-    fn parses_the_time_zone_offset(#[case] text: &str, #[case] expected: i64) {
-        assert_eq!(parse_time(text), Some(expected));
-    }
-
-    #[test]
-    fn parses_timestamps_with_or_without_milliseconds() {
-        assert_eq!(
-            (parse_time("1970-01-02T00:00:10Z"), parse_time("1970-01-02T00:00:10.250Z")),
-            (Some(86_410), Some(86_410))
-        );
     }
 }
 

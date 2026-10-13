@@ -29,7 +29,7 @@ fn the_view_shows_loading_then_the_windows_and_their_age() {
     assert_eq!((loading.sections[0].windows.len(), loading.sections[0].status.as_str()), (0, "loading…"));
 
     state.answered(Agent::Claude, Ok(claude::tests::report(claude::tests::RECORDED)), now);
-    let clock = issues::parse_time("2026-10-04T11:46:59").expect("a time");
+    let clock = time::parse_time("2026-10-04T11:46:59").expect("a time");
     let view = state.view(now + Duration::from_secs(120), clock);
     let section = &view.sections[0];
     assert_eq!(

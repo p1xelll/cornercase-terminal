@@ -1,18 +1,13 @@
-use std::io::{self, Write};
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
 use crate::changes::{Mode, Scope};
 use crate::issues::People;
-use crate::protocol;
 use crate::split::Node;
 use crate::ui::{GroupEntry, Widths};
 
 pub const VERSION: u32 = 5;
-pub const SETTLE: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct State {
@@ -213,17 +208,6 @@ impl From<V1State> for V2State {
     }
 }
 
-pub fn path() -> PathBuf {
-    if let Some(socket) = std::env::var_os(protocol::SOCKET_ENV) {
-        return Path::new(&socket).with_extension("json");
-    }
-    let state_home = std::env::var_os("XDG_STATE_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| Path::new(&home).join(".local").join("state")))
-        .unwrap_or_else(std::env::temp_dir);
-    state_home.join("cornercase").join("session.json")
-}
-
 pub fn load(path: &Path) -> Option<State> {
     let text = std::fs::read_to_string(path).ok()?;
     match serde_json::from_str::<Versioned>(&text).ok()?.version {
@@ -232,81 +216,6 @@ pub fn load(path: &Path) -> Option<State> {
         2 => serde_json::from_str::<V2State>(&text).ok().map(|v2| State::from(v2).folded()),
         1 => serde_json::from_str::<V1State>(&text).ok().map(|v1| State::from(V2State::from(v1)).folded()),
         _ => None,
-    }
-}
-
-pub fn save(path: &Path, value: &impl Serialize) -> io::Result<()> {
-    write(path, value, false)
-}
-
-pub fn write(path: &Path, value: &impl Serialize, private: bool) -> io::Result<()> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    let tmp = path.with_extension("json.tmp");
-    let bytes = if private { serde_json::to_vec(value)? } else { serde_json::to_vec_pretty(value)? };
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(if private { 0o600 } else { 0o666 })
-        .open(&tmp)?;
-    if private {
-        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
-    }
-    file.write_all(&bytes)?;
-    if private {
-        file.sync_all()?;
-    }
-    std::fs::rename(tmp, path)
-}
-
-pub fn back_up(path: &Path) -> io::Result<PathBuf> {
-    let backup = path.with_extension("json.bak");
-    if backup.exists() {
-        std::fs::rename(&backup, path.with_extension("json.bak.1"))?;
-    }
-    std::fs::copy(path, &backup)?;
-    Ok(backup)
-}
-
-#[derive(Debug)]
-pub struct Saver<T = State> {
-    path: PathBuf,
-    saved: Option<T>,
-    pending: Option<(T, Instant)>,
-}
-
-impl<T: PartialEq + Serialize> Saver<T> {
-    pub fn new(path: PathBuf, saved: Option<T>) -> Self {
-        Self { path, saved, pending: None }
-    }
-
-    pub fn observe(&mut self, state: T, now: Instant) -> io::Result<bool> {
-        if self.saved.as_ref() == Some(&state) {
-            self.pending = None;
-            return Ok(false);
-        }
-        match &self.pending {
-            Some((pending, since)) if *pending == state => {
-                if now.duration_since(*since) >= SETTLE {
-                    save(&self.path, &state)?;
-                    self.saved = Some(state);
-                    self.pending = None;
-                    return Ok(true);
-                }
-            }
-            _ => self.pending = Some((state, now)),
-        }
-        Ok(false)
-    }
-
-    pub fn flush(&mut self) -> io::Result<()> {
-        if let Some((state, _)) = self.pending.take() {
-            save(&self.path, &state)?;
-            self.saved = Some(state);
-        }
-        Ok(())
     }
 }
 

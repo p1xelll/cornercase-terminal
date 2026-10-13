@@ -8,9 +8,8 @@ use serde_json::{Map, Value};
 
 use crate::agents;
 use crate::notify;
-use crate::protocol;
+use crate::persist;
 use crate::shortcuts::Prefix;
-use crate::state;
 use crate::ui;
 
 pub const DEFAULT_WORKTREES_DIR: &str = "~/.cornercase/worktrees";
@@ -118,17 +117,6 @@ impl Config {
     }
 }
 
-pub fn path() -> PathBuf {
-    if let Some(socket) = std::env::var_os(protocol::SOCKET_ENV) {
-        return Path::new(&socket).with_file_name("config.json");
-    }
-    let config_home = std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| Path::new(&home).join(".config")))
-        .unwrap_or_else(std::env::temp_dir);
-    config_home.join("cornercase").join("config.json")
-}
-
 pub fn load(path: &Path) -> Config {
     let Some(mut value) = std::fs::read_to_string(path).ok().and_then(|text| serde_json::from_str(&text).ok()) else {
         return Config::default();
@@ -161,7 +149,7 @@ fn migrate(keys: &mut Map<String, Value>) {
 }
 
 pub fn save(path: &Path, config: &Config) -> io::Result<()> {
-    state::save(path, config)
+    persist::save(path, config)
 }
 
 pub fn expand_home(path: &str, home: Option<&Path>) -> PathBuf {

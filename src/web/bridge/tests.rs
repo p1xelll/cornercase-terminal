@@ -22,7 +22,7 @@ fn the_page_theme_becomes_the_host_theme() {
 fn the_hello_carries_this_build_and_no_images() {
     let hello = hello(48, 0, &Theme::default());
 
-    assert_eq!((hello.build, hello.cols, hello.rows), (protocol::build_id(), 48, 1));
+    assert_eq!((hello.build, hello.cols, hello.rows), (version::build_id(), 48, 1));
     assert_eq!(size(u16::MAX, u16::MAX), (MAX_COLS, MAX_ROWS));
     assert!(hello.graphics.protocol.is_none());
 }

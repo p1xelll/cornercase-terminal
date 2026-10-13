@@ -19,6 +19,7 @@ use crate::host_theme::{HostTheme, PALETTE_LEN};
 use crate::log;
 use crate::notify::Channel;
 use crate::protocol::{self, ClientMessage, Hello, ServerMessage};
+use crate::version;
 
 const POLL: Duration = Duration::from_millis(10);
 const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -86,7 +87,7 @@ fn hello(cols: u16, rows: u16, theme: &Theme) -> Hello {
     let (cols, rows) = size(cols, rows);
     Hello {
         version: protocol::VERSION,
-        build: protocol::build_id(),
+        build: version::build_id(),
         cols,
         rows,
         theme: host_theme(theme),

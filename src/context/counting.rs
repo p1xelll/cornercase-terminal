@@ -164,7 +164,7 @@ impl Ledger {
 }
 
 pub(super) fn timestamp(entry: &serde_json::Value) -> Option<SystemTime> {
-    entry["timestamp"].as_str().and_then(crate::log::Stamp::parse)
+    entry["timestamp"].as_str().and_then(crate::time::Stamp::parse)
 }
 
 pub(super) fn tokens(value: &serde_json::Value, input: &str, output: &str, read: &str, write: &str) -> Tokens {
