@@ -2,6 +2,10 @@
 
 Every pull request that changes the app adds a section here for its new version. The section becomes the notes of the GitHub Release and shows up in the app's update dialog, so write it for users.
 
+## 0.12.82
+
+- No changes in the app. Each supported agent now has one reader for its conversation and activity.
+
 ## 0.12.81
 
 - No changes in the app. The saved agent stats file can now hold any number of agents: a file with fewer or more is read instead of discarded.
