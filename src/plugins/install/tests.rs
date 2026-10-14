@@ -130,6 +130,20 @@ mod installing {
     }
 
     #[test]
+    fn a_commit_is_never_taken_for_a_branch_or_tag_of_that_name() {
+        let remote = Remote::new(&manifest("1.0", ""));
+        let reviewed = remote.head();
+        remote.commit(&[("cornercase-plugin.toml", &manifest("6.6", ""))]);
+        for kind in ["refs/heads", "refs/tags"] {
+            let name = format!("{kind}/{reviewed}");
+            git(remote.work.path(), &["push", "--quiet", &remote.url(), &format!("HEAD:{name}")]);
+        }
+        let home = TempDir::new();
+        let fetched = fetch(&remote.origin(Some(&reviewed)), &places(&home)).expect("fetch");
+        assert_eq!((fetched.commit.as_str(), fetched.manifest.version.as_str()), (reviewed.as_str(), "1.0"));
+    }
+
+    #[test]
     fn an_unknown_ref_is_refused() {
         let (remote, home) = (Remote::new(&manifest("1.0", "")), TempDir::new());
         let error = fetch(&remote.origin(Some("nope")), &places(&home)).expect_err("refused");

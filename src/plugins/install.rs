@@ -145,7 +145,9 @@ pub(crate) fn fetch(origin: &Origin, places: &Places) -> Result<Fetched, String>
             checkout.as_os_str(),
         ],
     )?;
+    let pinned = origin.reference.as_ref().filter(|r| is_commit(r)).map(|r| r.to_ascii_lowercase());
     let candidates: Vec<String> = match &origin.reference {
+        Some(_) if let Some(pinned) = &pinned => vec![pinned.clone()],
         Some(r) => vec![format!("refs/remotes/origin/{r}"), format!("refs/tags/{r}"), r.clone()],
         None => vec!["HEAD".into()],
     };
@@ -161,13 +163,24 @@ pub(crate) fn fetch(origin: &Origin, places: &Places) -> Result<Fetched, String>
             Some(r) => format!("{} has no branch, tag or commit `{r}`", origin.repo),
             None => format!("{} has no commits", origin.repo),
         })?;
+    if pinned.as_ref().is_some_and(|pinned| *pinned != commit) {
+        return Err(format!("{} gave {commit} for the commit {}; nothing was installed", origin.repo, origin.spec()));
+    }
     git(origin, Some(&checkout), ["checkout", "--quiet", "--detach", commit.as_str()])?;
+    let head = git(origin, Some(&checkout), ["rev-parse", "--verify", "HEAD^{commit}"])?;
+    if String::from_utf8_lossy(&head).trim() != commit {
+        return Err(format!("the checkout of {} is not at {commit}; nothing was installed", origin.repo));
+    }
     fs::remove_dir_all(checkout.join(".git")).map_err(|e| format!("cannot drop the history: {e}"))?;
     let manifest = Manifest::read(&checkout)?;
     let registry = Registry::load(&places.registry);
     conflict(&registry, &manifest.id, origin)?;
     let replacing = registry.entry(&manifest.id).ok().map(|entry| entry.enabled);
     Ok(Fetched { origin: origin.clone(), commit, manifest, replacing, staging })
+}
+
+fn is_commit(reference: &str) -> bool {
+    reference.len() == 40 && reference.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 fn stage(places: &Places) -> std::io::Result<PathBuf> {
