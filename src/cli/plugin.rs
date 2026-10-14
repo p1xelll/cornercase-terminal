@@ -12,13 +12,17 @@ use crate::plugins::{Places, Plugin, Registry};
 
 pub(super) fn run(action: PluginAction) -> Result<bool> {
     let places = Places::new(&paths::config(), &paths::session());
-    let mut registry = Registry::load(&places.registry);
+    let mut registry = Registry::open(&places.registry).map_err(Error::Plugin)?;
     match action {
         PluginAction::Link { folder } => {
-            let manifest = registry.link(&folder).map_err(Error::Plugin)?;
+            let (manifest, enabled) = registry.link(&folder).map_err(Error::Plugin)?;
             registry.save()?;
-            println!("linked {} {} ({}), turned off", manifest.name, manifest.version, manifest.id);
-            println!("turn it on with `cornercase plugin enable {}`", manifest.id);
+            if enabled {
+                println!("linked {} {} ({}), still on", manifest.name, manifest.version, manifest.id);
+            } else {
+                println!("linked {} {} ({}), turned off", manifest.name, manifest.version, manifest.id);
+                println!("it {}; turn it on with `cornercase plugin enable {}`", manifest.asks(), manifest.id);
+            }
         }
         PluginAction::Unlink { id } => {
             if !registry.unlink(&id) {

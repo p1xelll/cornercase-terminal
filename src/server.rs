@@ -760,6 +760,7 @@ impl Server {
             if let Err(e) = self.open_first_terminals() {
                 log::error!("server", "could not open a first terminal", error = e);
             }
+            self.app.start_plugins();
         }
     }
 
@@ -787,7 +788,6 @@ impl Server {
         if self.app.is_empty() || !(complete || self.app.has_terms()) {
             self.app.open_here(area)?;
         }
-        self.app.start_plugins();
         Ok(())
     }
 

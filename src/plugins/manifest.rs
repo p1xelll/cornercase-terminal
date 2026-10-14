@@ -4,6 +4,7 @@ use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Component, Path, PathBuf};
 
 use rustix::fs::OFlags;
+use rustix::process::getgid;
 use serde::{Deserialize, Serialize};
 
 use crate::version;
@@ -125,8 +126,9 @@ impl Manifest {
             if meta.uid() != crate::protocol::own_uid() {
                 return Err(format!("{what} belongs to another user; a plugin runs as you"));
             }
-            if meta.mode() & 0o002 != 0 {
-                return Err(format!("anyone can write to {what}; a plugin runs as you"));
+            let shared_group = meta.mode() & 0o020 != 0 && meta.gid() != getgid().as_raw();
+            if meta.mode() & 0o002 != 0 || shared_group {
+                return Err(format!("other users can write to {what}; a plugin runs as you"));
             }
         }
         let mut text = String::new();

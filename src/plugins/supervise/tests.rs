@@ -80,8 +80,8 @@ fn stopping_the_supervisor_stops_every_service() {
 #[test]
 fn nothing_runs_until_the_plugin_is_turned_on() {
     let fixture = Fixture::new(false);
-    let _supervisor = Supervisor::start(Kind::Service, fixture.places.clone(), Vec::new());
-    thread::sleep(CHECK_EVERY * 3);
+    let supervisor = Supervisor::start(Kind::Service, fixture.places.clone(), Vec::new());
+    wait_until("the supervisor looked twice", || supervisor.steps() >= 2);
     assert_eq!(fixture.pids(), Vec::<i32>::new());
     fixture.switch(true);
     fixture.running();
@@ -91,7 +91,7 @@ fn nothing_runs_until_the_plugin_is_turned_on() {
 fn window_processes_are_not_services() {
     let fixture = Fixture::new(true);
     let windows = Supervisor::start(Kind::Window, fixture.places.clone(), Vec::new());
-    thread::sleep(CHECK_EVERY * 3);
+    wait_until("the supervisor looked twice", || windows.steps() >= 2);
     drop(windows);
     assert_eq!(fixture.pids(), Vec::<i32>::new());
 }

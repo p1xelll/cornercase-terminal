@@ -302,9 +302,11 @@ impl App {
     }
 
     pub(super) fn switch_plugin(&mut self, id: &str, on: bool) {
-        let mut registry = Registry::load(&self.plugins.places.registry);
-        let notice = match registry.set_enabled(id, on) {
-            Ok(plugin) => match registry.save() {
+        let notice = match Registry::open(&self.plugins.places.registry).and_then(|mut registry| {
+            let plugin = registry.set_enabled(id, on)?;
+            Ok((registry, plugin))
+        }) {
+            Ok((registry, plugin)) => match registry.save() {
                 Ok(()) => {
                     log::info!("plugins", if on { "enabled" } else { "disabled" }, plugin = id);
                     self.reload_plugins();

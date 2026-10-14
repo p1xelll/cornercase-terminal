@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::process::Child;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -62,6 +63,8 @@ pub(crate) struct Supervisor {
     stop: Option<Sender<()>>,
     thread: Option<JoinHandle<()>>,
     notes: Notes,
+    #[cfg_attr(not(test), expect(dead_code, reason = "tests wait until the supervisor has looked"))]
+    steps: Arc<AtomicUsize>,
 }
 
 impl Supervisor {
@@ -69,6 +72,8 @@ impl Supervisor {
         let (tx, rx) = mpsc::channel();
         let notes = Notes::default();
         let shared = notes.clone();
+        let steps = Arc::new(AtomicUsize::new(0));
+        let stepped = steps.clone();
         let thread = thread::spawn(move || {
             let mut state =
                 State { kind, places, env, notes: shared, running: BTreeMap::new(), waiting: BTreeMap::new() };
@@ -79,6 +84,7 @@ impl Supervisor {
                     wanted = state.wanted(&plugins);
                 }
                 let _ = panics::contain(|| state.step(&wanted, Instant::now()));
+                stepped.fetch_add(1, Ordering::SeqCst);
                 match rx.recv_timeout(CHECK_EVERY) {
                     Err(RecvTimeoutError::Timeout) => {}
                     Ok(()) | Err(RecvTimeoutError::Disconnected) => break,
@@ -86,7 +92,12 @@ impl Supervisor {
             }
             state.stop_all();
         });
-        Self { stop: Some(tx), thread: Some(thread), notes }
+        Self { stop: Some(tx), thread: Some(thread), notes, steps }
+    }
+
+    #[cfg(test)]
+    fn steps(&self) -> usize {
+        self.steps.load(Ordering::SeqCst)
     }
 
     pub(crate) fn note(&self, plugin: &str) -> Option<String> {

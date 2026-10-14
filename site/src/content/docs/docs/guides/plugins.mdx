@@ -19,14 +19,14 @@ Plugins are linked from a folder on your machine for now. Installing from GitHub
 
 ```sh
 cornercase plugin link ~/code/my-plugin    # adds it, turned off
-cornercase plugin enable my-plugin         # shows what it asks for, then runs it
+cornercase plugin enable my-plugin         # turns it on, then says what it asks for
 cornercase plugin list                     # every plugin, on or off, and what it runs
 cornercase plugin logs my-plugin -f        # what its commands print
 cornercase plugin disable my-plugin        # stops its service and window processes
 cornercase plugin unlink my-plugin         # forgets it; the folder stays
 ```
 
-A linked plugin starts **off**: nothing in it runs until you turn it on. You can also turn plugins on and off in **Settings › Plugins**: each row shows the plugin's name and version, whether it is on, and what it asks for. `Enter` switches it.
+A linked plugin starts **off**: nothing in it runs until you turn it on. `plugin list` and Settings show what it asks for before you do. You can also turn plugins on and off in **Settings › Plugins**: each row shows the plugin's name and version, whether it is on, and what it asks for. `Enter` switches it.
 
 A running server notices changes within a second: turning a plugin on starts its service, turning it off stops it, and editing the manifest of a linked plugin reloads it. No restart is needed.
 

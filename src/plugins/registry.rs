@@ -82,6 +82,24 @@ impl Registry {
         Self { path: path.to_path_buf(), entries }
     }
 
+    pub(crate) fn open(path: &Path) -> Result<Self, String> {
+        let unreadable = |why: &dyn std::fmt::Display| {
+            format!("cannot read {}: {why}; fix or remove it, cornercase will not write over it", path.display())
+        };
+        let bytes = match std::fs::read(path) {
+            Ok(bytes) => bytes,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                return Ok(Self { path: path.to_path_buf(), entries: Vec::new() });
+            }
+            Err(e) => return Err(unreadable(&e)),
+        };
+        let saved: Saved = serde_json::from_slice(&bytes).map_err(|e| unreadable(&e))?;
+        if saved.version != VERSION {
+            return Err(unreadable(&format!("it is version {}, this cornercase reads {VERSION}", saved.version)));
+        }
+        Ok(Self { path: path.to_path_buf(), entries: saved.plugins })
+    }
+
     pub(crate) fn save(&self) -> io::Result<()> {
         persist::write(&self.path, &Saved { version: VERSION, plugins: self.entries.clone() }, true)
     }
@@ -93,18 +111,21 @@ impl Registry {
             .collect()
     }
 
-    pub(crate) fn link(&mut self, folder: &Path) -> Result<Manifest, String> {
+    pub(crate) fn link(&mut self, folder: &Path) -> Result<(Manifest, bool), String> {
         let path = folder.canonicalize().map_err(|e| format!("cannot open {}: {e}", folder.display()))?;
         let manifest = Manifest::load(&path)?;
         let source = Source::Link { path };
-        match self.entries.iter_mut().find(|entry| entry.id == manifest.id) {
-            Some(entry) if entry.source == source => {}
+        let enabled = match self.entries.iter_mut().find(|entry| entry.id == manifest.id) {
+            Some(entry) if entry.source == source => entry.enabled,
             Some(entry) => {
                 return Err(format!("a plugin called `{}` is already {}", manifest.id, entry.source.describe()));
             }
-            None => self.entries.push(Entry { id: manifest.id.clone(), source, enabled: false }),
-        }
-        Ok(manifest)
+            None => {
+                self.entries.push(Entry { id: manifest.id.clone(), source, enabled: false });
+                false
+            }
+        };
+        Ok((manifest, enabled))
     }
 
     pub(crate) fn unlink(&mut self, id: &str) -> bool {

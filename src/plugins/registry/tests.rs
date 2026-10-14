@@ -33,8 +33,8 @@ fn linking_the_same_folder_again_changes_nothing() {
     let (home, folder) = (TempDir::new(), TempDir::new());
     let mut registry = linked(&home, &folder);
     registry.set_enabled("acme.notes", true).expect("on");
-    registry.link(folder.path()).expect("link again");
-    assert_eq!((registry.entries.len(), registry.entries[0].enabled), (1, true));
+    let (_, enabled) = registry.link(folder.path()).expect("link again");
+    assert_eq!((registry.entries.len(), registry.entries[0].enabled, enabled), (1, true, true));
 }
 
 #[test]
@@ -92,4 +92,15 @@ fn the_watch_answers_once_per_change() {
     assert_eq!(watch.changed(), None);
     std::fs::write(folder.path().join(manifest::FILE), "id = 3").expect("edit the manifest");
     assert!(watch.changed().is_some_and(|p| p[0].manifest.is_err()));
+}
+
+#[test]
+fn a_registry_that_cannot_be_read_is_never_written_over() {
+    let home = TempDir::new();
+    let path = home.path().join("plugins.json");
+    assert_eq!(Registry::open(&path).expect("missing is empty").entries, []);
+    std::fs::write(&path, "{").expect("corrupt");
+    assert!(Registry::open(&path).expect_err("refused").contains("will not write over it"));
+    std::fs::write(&path, r#"{"version":9,"plugins":[]}"#).expect("newer");
+    assert!(Registry::open(&path).expect_err("refused").contains("version 9"));
 }

@@ -170,7 +170,9 @@ mod owners {
         let dir = TempDir::new();
         std::fs::write(dir.path().join(FILE), with("")).expect("manifest");
         std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o777)).expect("chmod");
-        assert!(Manifest::load(dir.path()).expect_err("refused").contains("anyone can write to the plugin's folder"));
+        assert!(
+            Manifest::load(dir.path()).expect_err("refused").contains("other users can write to the plugin's folder")
+        );
     }
 
     #[test]
@@ -180,7 +182,9 @@ mod owners {
         std::fs::write(&path, with("")).expect("manifest");
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o666)).expect("chmod");
         assert!(
-            Manifest::load(dir.path()).expect_err("refused").contains("anyone can write to cornercase-plugin.toml")
+            Manifest::load(dir.path())
+                .expect_err("refused")
+                .contains("other users can write to cornercase-plugin.toml")
         );
     }
 }
