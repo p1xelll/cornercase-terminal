@@ -35,14 +35,12 @@ fn alive(pid: i32) -> bool {
 }
 
 fn wait_for_pid(path: &Path, what: &str) -> i32 {
-    let deadline = Instant::now() + TIMEOUT;
-    loop {
-        if let Some(pid) = pid_in(path).filter(|pid| alive(*pid)) {
-            return pid;
-        }
-        assert!(Instant::now() < deadline, "timed out waiting for: {what}");
-        thread::sleep(POLL);
-    }
+    let mut found = None;
+    wait_until(what, || {
+        found = pid_in(path).filter(|pid| alive(*pid));
+        found.is_some()
+    });
+    found.expect("a live pid")
 }
 
 #[test]
@@ -68,11 +66,7 @@ fn a_linked_plugin_runs_once_it_is_enabled_and_stops_once_disabled() {
     assert!(app.session.says(&["plugin", "logs", "acme.e2e"]).contains("service started"));
 
     app.session.says(&["plugin", "disable", "acme.e2e"]);
-    let deadline = Instant::now() + TIMEOUT;
-    while alive(service) || alive(window) {
-        assert!(Instant::now() < deadline, "the plugin's processes keep running");
-        thread::sleep(POLL);
-    }
+    wait_until("the plugin's processes stop", || !alive(service) && !alive(window));
     let _ = std::fs::remove_dir_all(&folder);
 }
 

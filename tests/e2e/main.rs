@@ -483,6 +483,14 @@ fn temp_dir(name: &str) -> PathBuf {
     dir.canonicalize().expect("canonicalize temp dir")
 }
 
+fn wait_until(what: &str, mut cond: impl FnMut() -> bool) {
+    let deadline = Instant::now() + TIMEOUT;
+    while !cond() {
+        assert!(Instant::now() < deadline, "timed out waiting for: {what}");
+        thread::sleep(POLL);
+    }
+}
+
 fn finish_within(mut child: std::process::Child, timeout: Duration) -> std::process::Output {
     let deadline = Instant::now() + timeout;
     while child.try_wait().expect("check the process").is_none() && Instant::now() < deadline {
