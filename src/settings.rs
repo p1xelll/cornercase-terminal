@@ -9,7 +9,7 @@ pub(crate) const DONE: &str = "done";
 pub(crate) const RESTART: &str = "restart";
 const TAB_IDS: [&str; 6] = ["all", "github", "shortcut", "linear", "jira", "plane"];
 const EXTRA_ARGS: &str = "extra arguments…";
-const NO_PLUGINS: &str = "`cornercase plugin link <folder>` adds one, then enter turns it on here";
+const NO_PLUGINS: &str = "`cornercase plugin install <owner/repo>` adds one, then enter turns it on here";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Status {
