@@ -14,9 +14,12 @@ impl Settings {
         ("keep awake".into(), value.into(), self.awake.clone(), false)
     }
 
-    fn plugin_row(&self, id: &str) -> (String, String, String, bool) {
-        let Some(plugin) = self.plugins.iter().find(|plugin| plugin.id == id) else {
-            return (id.into(), String::new(), String::new(), false);
+    fn plugin_row(&self, row: &Row) -> (String, String, String, bool) {
+        let Row::Plugin(id) = row else {
+            return ("no plugins yet".into(), String::new(), NO_PLUGINS.into(), false);
+        };
+        let Some(plugin) = self.plugins.iter().find(|plugin| plugin.id == *id) else {
+            return (id.clone(), String::new(), String::new(), false);
         };
         let value = match (plugin.broken, plugin.on) {
             (true, _) => "cannot run",
@@ -136,8 +139,7 @@ impl Settings {
             Row::Kind(kind) => kind_row(config, kind),
             Row::AddAgent => ("+ another agent…".into(), String::new(), String::new(), false),
             Row::TelegramBot | Row::TelegramChat => self.telegram_row(row),
-            Row::Plugin(id) => self.plugin_row(id),
-            Row::NoPlugins => ("no plugins yet".into(), String::new(), NO_PLUGINS.into(), false),
+            Row::Plugin(_) | Row::NoPlugins => self.plugin_row(row),
         };
         RowText { label, value, note, dangerous }
     }
