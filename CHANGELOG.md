@@ -2,6 +2,12 @@
 
 Every pull request that changes the app adds a section here for its new version. The section becomes the notes of the GitHub Release and shows up in the app's update dialog, so write it for users.
 
+## 0.12.91
+
+- Plugins: a folder with a `cornercase-plugin.toml` can add entries to the ` ⋯ ` and right-click menus of projects, workspaces, tabs and panes, run a command on every event `cornercase events` prints, keep a service running in the server (restarted if it stops), and keep a process running next to each window on this computer. Plugins talk back through the cornercase commands, so they can be written in any language.
+- `cornercase plugin link <folder>` adds a plugin, turned off; `enable`, `disable`, `list`, `logs` and `unlink` do the rest, and Settings has a new Plugins tab to turn them on and off.
+- A plugin runs as you and can do anything you can, including typing into every terminal. What it asks for is shown before you turn it on, but not enforced: only turn on plugins you trust.
+
 ## 0.12.90
 
 - On Telegram, answering a question from its buttons now brings the agent's next question, with its own buttons, when it asks several in a row or shows another permission prompt right away. Before, only the first one came.
