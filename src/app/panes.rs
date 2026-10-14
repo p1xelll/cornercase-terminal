@@ -247,10 +247,10 @@ impl App {
             .map(PaneAction::Split)
             .chain([right_clicks])
             .map(|a| MenuAction::Pane(pane, a))
-            .chain(self.plugin_menu(Spot::Pane(pane)))
             .collect();
         actions.extend(self.mark_action(Marked::Pane(pane)));
         actions.push(MenuAction::Pane(pane, PaneAction::Close));
+        actions.extend(self.plugin_menu(Spot::Pane(pane)));
         self.overlay = Some(Overlay::Menu { at, actions });
     }
 
