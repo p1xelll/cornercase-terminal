@@ -142,6 +142,13 @@ mod a_bug {
             Self::with_graphics(dir, &saved, graphics)
         }
 
+        pub(super) fn configured(config: &str) -> Self {
+            let dir = TempDir::new();
+            std::fs::write(dir.path().join("config.json"), config).expect("write the config");
+            let saved = one_shell_in(dir.path());
+            Self::with_graphics(dir, &saved, Support::default())
+        }
+
         pub(super) fn with(dir: TempDir, saved: &State) -> Self {
             Self::with_graphics(dir, saved, Support::default())
         }
@@ -355,6 +362,26 @@ mod notch {
         let got = attached.received(|msg| matches!(msg, ServerMessage::Frame(frame) if frame == b"marker"));
         let told: Vec<_> = got.iter().filter(|msg| matches!(msg, ServerMessage::Notch(_))).collect();
         assert!(matches!(told.as_slice(), [ServerMessage::Notch(None)]));
+    }
+
+    #[test]
+    fn an_unchanged_board_is_sent_once_however_often_the_loop_turns() {
+        let mut attached = Attached::configured(r#"{"notch": true}"#);
+        if let Some(client) = attached.server.client_mut(1) {
+            client.notch = true;
+        }
+
+        for _ in 0..20 {
+            let _ = attached.server.step(Step::Refresh);
+            attached.server.flush();
+        }
+        if let Some(client) = attached.server.client_mut(1) {
+            client.send(ServerMessage::Frame(b"marker".to_vec()));
+        }
+
+        let got = attached.received(|msg| matches!(msg, ServerMessage::Frame(frame) if frame == b"marker"));
+        let told: Vec<_> = got.iter().filter(|msg| matches!(msg, ServerMessage::Notch(_))).collect();
+        assert!(matches!(told.as_slice(), [ServerMessage::Notch(Some(board))] if board.cards.is_empty()), "{told:?}");
     }
 }
 
