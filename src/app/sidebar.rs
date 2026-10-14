@@ -9,6 +9,7 @@ use super::menus::Marked;
 use super::menus::MenuAction;
 use super::menus::Target;
 use super::overlay::Overlay;
+use super::plugins::Spot;
 use crate::agents::Known;
 use crate::error::Result;
 use crate::git;
@@ -208,6 +209,7 @@ impl App {
         if !self.groups.is_empty() {
             actions.push(MenuAction::MoveToGroup(id));
         }
+        actions.extend(self.plugin_menu(Spot::Project(id)));
         actions
     }
 

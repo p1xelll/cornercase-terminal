@@ -120,6 +120,21 @@ cornercase logs --path       # print only where the log is
 
 When the log is short since it last [moved to `server.log.1`](../files-and-environment/#files), the lines before come from there. Without a log yet, it says so and exits with status 1.
 
+### `cornercase plugin`
+
+Adds, lists and turns on and off [plugins](../../guides/plugins/). It reads and writes `plugins.json` directly, so it works with no server running; a running server picks up the change within a second.
+
+```sh
+cornercase plugin link ~/code/my-plugin   # add the plugin in that folder, turned off
+cornercase plugin unlink my-plugin        # forget it; its folder stays
+cornercase plugin list                    # every plugin, on or off, and what it runs (--json for scripts)
+cornercase plugin enable my-plugin        # turn it on: says what it asks for, then runs it
+cornercase plugin disable my-plugin       # turn it off: its service and window processes stop
+cornercase plugin logs my-plugin          # what its commands printed; -n, --follow and --path as for logs
+```
+
+A plugin whose manifest cannot be read is listed with the reason, and cannot be turned on. An unknown id exits with status 1.
+
 ### `cornercase --version`
 
 Prints the version, such as `cornercase 0.1.0`, and exits. It doesn't touch the server.

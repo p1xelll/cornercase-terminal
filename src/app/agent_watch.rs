@@ -57,7 +57,7 @@ impl App {
         let active = self.project().map(|p| p.id);
         let open = self.tree_open();
         let (config, dir, tree) = (&self.config, self.agents.claude_dir.as_deref(), self.drawn.tree);
-        let jobs = self.events.listening();
+        let jobs = self.following();
         let mut notices = Vec::new();
         for (project, open) in self.projects.iter_mut().zip(open) {
             let shown = if tree { open } else { active == Some(project.id) };

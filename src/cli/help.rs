@@ -279,3 +279,18 @@ pub(super) const BY_BRANCH: &str =
 
 #[cfg(test)]
 mod tests;
+
+pub(super) const PLUGIN_HELP: &str =
+    "A plugin is a folder with a cornercase-plugin.toml that declares commands: actions in the \
+row menus, hooks on events, services the server keeps running and processes each local window keeps running. Its \
+commands talk back through these same commands.
+
+A plugin runs as you and can do anything you can, including typing into every terminal. What it asks for is shown \
+before you turn it on, not enforced. A running server picks up changes within a second.
+
+Examples:
+  cornercase plugin link ~/code/my-plugin
+  cornercase plugin enable my-plugin
+  cornercase plugin list
+  cornercase plugin logs my-plugin --follow
+  cornercase plugin disable my-plugin";

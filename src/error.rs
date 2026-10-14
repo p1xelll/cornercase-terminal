@@ -52,6 +52,8 @@ pub enum Error {
     Api(String),
     #[error("{0}")]
     Usage(String),
+    #[error("{0}")]
+    Plugin(String),
     #[error("cannot read `{}`: {reason}", path.display())]
     CodeWorkspace { path: PathBuf, reason: String },
     #[error("cannot read `{}`: {cause}", path.display())]

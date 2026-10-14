@@ -71,6 +71,7 @@ export default defineConfig({
             { label: 'From your phone', slug: 'docs/guides/phone' },
             { label: 'On Telegram', slug: 'docs/guides/telegram' },
             { label: 'Small terminals', slug: 'docs/guides/small-terminals' },
+            { label: 'Plugins', slug: 'docs/guides/plugins' },
           ],
         },
         {

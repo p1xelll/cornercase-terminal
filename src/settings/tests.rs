@@ -68,8 +68,8 @@ mod pages {
     #[rstest]
     #[case::tab(KeyCode::Tab, KeyModifiers::NONE, Page::Agents)]
     #[case::right(KeyCode::Right, KeyModifiers::NONE, Page::Agents)]
-    #[case::shift_tab_wraps(KeyCode::BackTab, KeyModifiers::SHIFT, Page::Remote)]
-    #[case::left_wraps(KeyCode::Left, KeyModifiers::NONE, Page::Remote)]
+    #[case::shift_tab_wraps(KeyCode::BackTab, KeyModifiers::SHIFT, Page::Plugins)]
+    #[case::left_wraps(KeyCode::Left, KeyModifiers::NONE, Page::Plugins)]
     fn are_switched_with_keys(#[case] code: KeyCode, #[case] modifiers: KeyModifiers, #[case] expected: Page) {
         let mut s = settings();
         key(&mut s, code, modifiers);

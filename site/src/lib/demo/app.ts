@@ -88,6 +88,7 @@ import { type Node, type PanePlace, beside, fits, hasRoom, moved, placeArea, pla
 import { type Line, folderSlug, seg, slug, truncateRight } from './text';
 import { type Drag, type Frame, Painter, type Region } from './ui';
 
+const NO_PLUGINS = '`cornercase plugin link <folder>` adds one, then enter turns it on here';
 const REMOTE_NEEDS = 'this needs cornercase on your computer: the demo has neither Tailscale nor Telegram';
 
 const ICON_BAR_NEEDS = 'this needs cornercase in your terminal: the demo has no Nerd Font';
@@ -2337,6 +2338,9 @@ export class App {
       rows.push({ id: 'add', section: 'How each agent starts', label: '+ another agent…', value: '', note: '' });
       return rows;
     }
+    if (page === 5) {
+      return [{ id: 'plugins', section: 'Installed', label: 'no plugins yet', value: '', note: NO_PLUGINS }];
+    }
     if (page === 4) {
       return [
         { id: 'remote', section: 'Browser', label: 'remote access', value: '[ ] off', note: "open this computer's cornercase from your phone over Tailscale" },
@@ -2393,6 +2397,7 @@ export class App {
     if (o.capturing) return 'press the keys you want · backspace turns them off · esc cancels';
     if (o.edit) return 'enter saves · esc cancels';
     if (o.pick) return 'enter picks · type to filter · esc goes back';
+    if (o.page === 5) return 'plugins run as you and can do what you can; what they ask for is shown, not enforced';
     return 'enter changes the selected setting · tab or ←→ switches tabs · every change is saved at once';
   }
 
@@ -2479,6 +2484,8 @@ export class App {
       o.notice = REMOTE_NEEDS;
     } else if (row.id === 'iconBar') {
       o.notice = ICON_BAR_NEEDS;
+    } else if (row.id === 'plugins') {
+      o.notice = NO_PLUGINS;
     } else if (row.id.startsWith('token:')) {
       const source = row.id.slice(6) as Remote;
       if (c.accounts[source]) o.notice = `${REMOTES[source].name} is connected; delete removes the token`;
@@ -3602,8 +3609,8 @@ export class App {
     o.notice = undefined;
     if (k.key === 'Escape') this.closeOverlay();
     else if (k.key === 'Enter' || k.key === ' ') this.settingsActivate();
-    else if (k.key === 'Tab' || k.key === 'ArrowRight') this.settingsPage((o.page + (k.shift ? 4 : 1)) % 5);
-    else if (k.key === 'ArrowLeft') this.settingsPage((o.page + 4) % 5);
+    else if (k.key === 'Tab' || k.key === 'ArrowRight') this.settingsPage((o.page + (k.shift ? 5 : 1)) % 6);
+    else if (k.key === 'ArrowLeft') this.settingsPage((o.page + 5) % 6);
     else if (k.key === 'ArrowDown') o.cursor = Math.min(o.cursor + 1, rows.length - 1);
     else if (k.key === 'ArrowUp') o.cursor = Math.max(0, o.cursor - 1);
     else if ((k.key === 'Delete' || k.key === 'Backspace') && rows[o.cursor]?.id.startsWith('token:')) {

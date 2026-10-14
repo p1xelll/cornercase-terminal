@@ -52,6 +52,7 @@ use launches::LAUNCH_EVERY;
 use layout::Focus;
 use layout::{Scrolls, Side};
 use overlay::Overlay;
+use plugins::{PluginEvent, Plugins};
 use session::not_restored;
 use telegram::{Telegram, TelegramEvent};
 use toast::Toast;
@@ -79,6 +80,7 @@ mod menus;
 mod overlay;
 mod panes;
 mod picker_dialog;
+mod plugins;
 mod remote_access;
 mod search_dialog;
 mod session;
@@ -154,6 +156,7 @@ pub(crate) struct App {
     requests: control::Requests,
     events: events::Events,
     seen: trace::Seen,
+    plugins: Plugins,
 }
 
 impl App {
@@ -162,6 +165,7 @@ impl App {
         let home = std::env::var_os("HOME").map(PathBuf::from);
         let web = Web::new(paths::browsers(&config_path), paths::socket(), tx.clone());
         let telegram = Telegram::new(&config_path, secrets_path.clone());
+        let plugins = Plugins::new(crate::plugins::Places::new(&config_path, &config_path));
         Self {
             upstream: Upstream::default(),
             scroll: Scrolls::default(),
@@ -208,6 +212,7 @@ impl App {
             requests: control::Requests::default(),
             events: events::Events::default(),
             seen: trace::Seen::default(),
+            plugins,
         }
     }
 
@@ -334,6 +339,7 @@ impl App {
         self.watch_telegram(now);
         self.sync_remote();
         self.sync_telegram();
+        self.watch_plugins(now);
         self.check_requests(now);
         self.check_updates(now);
         self.refresh_files(now);
@@ -462,6 +468,7 @@ impl App {
             AppEvent::Web(event) => self.web_event(event),
             AppEvent::Tailscale(answer) => self.tailscale_answered(answer),
             AppEvent::Telegram(event) => self.telegram_event(event, area),
+            AppEvent::Plugin(event) => self.plugin_answered(event),
         }
         Ok(())
     }

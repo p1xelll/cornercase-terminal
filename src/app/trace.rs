@@ -254,7 +254,7 @@ fn changes(before: Place, now: Place) -> Vec<Change> {
 impl App {
     pub(crate) fn trace(&mut self) {
         let logged = log::enabled(Level::Info);
-        if logged || self.events.listening() {
+        if logged || self.following() {
             self.publish(logged);
         }
     }
@@ -265,13 +265,14 @@ impl App {
             notes.iter().for_each(Note::write);
         }
         self.events.publish(&events);
+        self.run_hooks(&events);
     }
 
     pub(super) fn observe(&mut self) -> (Vec<Note>, Vec<control::Event>) {
         let changes = self.observe_items();
         let mut notes: Vec<Note> = changes.iter().filter_map(Change::note).collect();
         notes.extend(self.observe_ui());
-        if changes.is_empty() || !self.events.listening() {
+        if changes.is_empty() || !self.following() {
             return (notes, Vec::new());
         }
         let time = crate::time::Stamp(SystemTime::now()).to_string();

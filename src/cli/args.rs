@@ -5,9 +5,9 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use super::help::{
     ABOUT, AFTER_HELP, AWAY_HELP, BY_BRANCH, CLOSE_HELP, COMMAND_HELP, EVENTS_HELP, FOCUS_HELP, HERE_PANE,
     HERE_WORKSPACE, KEY_NAMES, KEYS_HELP, LOGS_HELP, LONG_ABOUT, MARK_HELP, NEW_TAB_HELP, NEW_WORKSPACE_HELP,
-    NOTIFY_HELP, OPEN_HELP, READ_HELP, REMOTE_HELP, RENAME_HELP, RESTART_HELP, RESTART_TIMEOUT, SEND_HELP, SKILL_HELP,
-    SPLIT_HELP, START_HELP, STATUS_HELP, TODO_HELP, UNTIL_AFTER, UPDATE_HELP, WAIT_HELP, WAIT_PANE, WAIT_TAB,
-    WHEN_IDLE,
+    NOTIFY_HELP, OPEN_HELP, PLUGIN_HELP, READ_HELP, REMOTE_HELP, RENAME_HELP, RESTART_HELP, RESTART_TIMEOUT, SEND_HELP,
+    SKILL_HELP, SPLIT_HELP, START_HELP, STATUS_HELP, TODO_HELP, UNTIL_AFTER, UPDATE_HELP, WAIT_HELP, WAIT_PANE,
+    WAIT_TAB, WHEN_IDLE,
 };
 use crate::control::Until;
 use crate::term::keys;
@@ -51,6 +51,8 @@ Examples:
   cornercase stats --share"
     )]
     Stats(StatsArgs),
+    #[command(about = "Add, list, turn on and off the plugins that extend cornercase", after_help = PLUGIN_HELP)]
+    Plugin(PluginArgs),
     #[command(hide = true)]
     Server,
     #[command(hide = true)]
@@ -493,6 +495,45 @@ pub(crate) struct LogsArgs {
     pub(crate) follow: bool,
     #[arg(long, conflicts_with_all = ["lines", "follow"], help = "Print only where the log is")]
     pub(crate) path: bool,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct PluginArgs {
+    #[command(subcommand)]
+    pub(crate) action: PluginAction,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum PluginAction {
+    #[command(about = "Add the plugin in a folder of yours, turned off; for writing one")]
+    Link {
+        #[arg(value_name = "FOLDER", help = "The folder holding cornercase-plugin.toml")]
+        folder: PathBuf,
+    },
+    #[command(about = "Forget a linked plugin; its folder stays as it is")]
+    Unlink {
+        #[arg(value_name = "ID")]
+        id: String,
+    },
+    #[command(about = "List the plugins, whether they are on, and what they run")]
+    List(Print),
+    #[command(about = "Turn a plugin on: it runs as you, with access to every terminal")]
+    Enable {
+        #[arg(value_name = "ID")]
+        id: String,
+    },
+    #[command(about = "Turn a plugin off, stopping what it runs")]
+    Disable {
+        #[arg(value_name = "ID")]
+        id: String,
+    },
+    #[command(about = "Print what a plugin's commands wrote, and when cornercase started and stopped them")]
+    Logs {
+        #[arg(value_name = "ID")]
+        id: String,
+        #[command(flatten)]
+        logs: LogsArgs,
+    },
 }
 
 #[derive(Debug, Args)]

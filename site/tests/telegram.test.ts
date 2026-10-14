@@ -25,6 +25,7 @@ test('the Remote tab holds the browser and Telegram, which need a real cornercas
   const app = new App(); app.virtual = true; app.resize(110, 38); world(app, { scripted: true });
   app.openSettings();
   inputKey(app, key('ArrowLeft'));
+  inputKey(app, key('ArrowLeft'));
   assert.equal(app.overlay?.kind === 'settings' && app.overlay.page, 4);
   const rows = app.settingsRows(4);
   assert.deepEqual(rows.map((row) => row.section), ['Browser', 'Telegram']);

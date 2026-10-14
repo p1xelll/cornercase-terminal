@@ -416,6 +416,7 @@ mod keys;
 mod lock_text;
 mod muted_text;
 mod picker;
+mod plugins;
 mod projects;
 mod remove_worktree;
 mod rename;

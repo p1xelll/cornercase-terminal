@@ -1,6 +1,6 @@
 use crossterm::event::Event;
 
-use super::{ChangesEvent, FilesEvent, IssueEvent, TelegramEvent, UpdateEvent, WorktreeEvent};
+use super::{ChangesEvent, FilesEvent, IssueEvent, PluginEvent, TelegramEvent, UpdateEvent, WorktreeEvent};
 use crate::agents::context::{self};
 use crate::agents::launch::{self};
 use crate::agents::usage;
@@ -26,6 +26,7 @@ pub(crate) enum AppEvent {
     Web(web::Event),
     Tailscale(std::result::Result<tailscale::Node, tailscale::Problem>),
     Telegram(TelegramEvent),
+    Plugin(PluginEvent),
 }
 
 impl AppEvent {
@@ -45,6 +46,7 @@ impl AppEvent {
             Self::Web(_) => "web",
             Self::Tailscale(_) => "tailscale",
             Self::Telegram(event) => event.name(),
+            Self::Plugin(event) => event.name(),
         }
     }
 }

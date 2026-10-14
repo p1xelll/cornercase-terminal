@@ -3,6 +3,7 @@ use ratatui::layout::{Position, Rect};
 
 use super::App;
 use super::overlay::Overlay;
+use super::plugins::Spot;
 use crate::error::Result;
 use crate::log::{self};
 use crate::project::Hierarchy;
@@ -88,6 +89,7 @@ pub(super) enum MenuAction {
     Mark(Marked, bool),
     Browser,
     Away,
+    Plugin { spot: Spot, index: u16, revision: u32 },
 }
 
 impl App {
@@ -131,6 +133,7 @@ impl App {
             MenuAction::Away if !self.telegram.ready() => "set up Telegram…".into(),
             MenuAction::Away if self.telegram.away => "stop messaging on Telegram".into(),
             MenuAction::Away => "continue on Telegram".into(),
+            MenuAction::Plugin { index, .. } => self.plugin_label(index),
         }
     }
 
@@ -139,7 +142,15 @@ impl App {
             Target::Tab(_, _, tab) => self.mark_action(Marked::Tab(tab)),
             _ => None,
         };
-        std::iter::once(MenuAction::Rename(target)).chain(mark).collect()
+        let spot = match target {
+            Target::Group(_) => None,
+            Target::Project(project) => Some(Spot::Project(project)),
+            Target::Workspace(project, workspace) => Some(Spot::Workspace(project, workspace)),
+            Target::Tab(project, workspace, tab) => Some(Spot::Tab(project, workspace, tab)),
+        };
+        let mut actions: Vec<MenuAction> = std::iter::once(MenuAction::Rename(target)).chain(mark).collect();
+        actions.extend(spot.map(|spot| self.plugin_menu(spot)).unwrap_or_default());
+        actions
     }
 
     pub(super) fn menu_action(&mut self, action: MenuAction, at: Position, area: Rect) -> Result<()> {
@@ -189,6 +200,7 @@ impl App {
             MenuAction::Browser if self.config.remote => self.open_remote(),
             MenuAction::Browser => self.open_settings_on(&settings::Row::Remote),
             MenuAction::Away => self.toggle_away(),
+            MenuAction::Plugin { spot, index, revision } => self.run_plugin_action(spot, index, revision),
         }
         Ok(())
     }

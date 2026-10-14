@@ -1,0 +1,166 @@
+---
+title: Plugins
+description: Extend cornercase with a folder and a manifest. A plugin adds entries to the row and pane menus, runs commands on events, keeps a service running in the server and a process next to each window, and talks back through the cornercase commands.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A plugin is a folder with a `cornercase-plugin.toml` that declares commands. cornercase runs those commands at the right moments: when you pick an entry in a menu, when something happens in the server, or for as long as the server or a window runs. The commands talk back to cornercase through the same [commands for scripts and agents](../scripts-and-agents/) you use in a shell (`cornercase status --json`, `events --json`, `send`, `notify`, `todo`…), so a plugin can be written in any language: a shell script, Python, a compiled binary.
+
+There is no SDK and no runtime inside cornercase. Whatever the commands can do, a plugin can do.
+
+<Aside type="caution" title="A plugin runs as you">
+A plugin's commands run with your user's rights. They can read and write your files and type into every terminal in cornercase, including the ones running agents. A manifest lists the `permissions` it asks for, and cornercase shows them before you turn a plugin on, but **it does not enforce them**. Only turn on plugins whose code you have read or whose author you trust.
+</Aside>
+
+## Add, turn on and off
+
+Plugins are linked from a folder on your machine for now. Installing from GitHub and a catalogue come later.
+
+```sh
+cornercase plugin link ~/code/my-plugin    # adds it, turned off
+cornercase plugin enable my-plugin         # shows what it asks for, then runs it
+cornercase plugin list                     # every plugin, on or off, and what it runs
+cornercase plugin logs my-plugin -f        # what its commands print
+cornercase plugin disable my-plugin        # stops its service and window processes
+cornercase plugin unlink my-plugin         # forgets it; the folder stays
+```
+
+A linked plugin starts **off**: nothing in it runs until you turn it on. You can also turn plugins on and off in **Settings › Plugins**: each row shows the plugin's name and version, whether it is on, and what it asks for. `Enter` switches it.
+
+A running server notices changes within a second: turning a plugin on starts its service, turning it off stops it, and editing the manifest of a linked plugin reloads it. No restart is needed.
+
+## The manifest
+
+```toml
+id = "acme.notes"                  # lower-case letters, digits, . _ -; at most 64 characters
+name = "Notes"
+version = "1.0.0"
+description = "A notes file per workspace"
+min_cornercase = "0.12.87"         # optional: refused by an older cornercase
+api = 1                            # optional: the plugin API it was written for
+platforms = ["macos", "linux"]     # optional: where it runs; empty means everywhere
+permissions = ["read", "send"]     # shown before turning it on, not enforced
+
+[[actions]]                        # an entry in the row and pane menus
+id = "open"
+title = "open notes"
+contexts = ["workspace", "pane"]   # project, workspace, tab, pane
+command = ["bin/notes", "open"]
+
+[[events]]                         # a command run on each event
+on = "status"                      # opened, closed, status, exited
+command = ["bin/notes", "on-status"]
+
+[[service]]                        # kept running by the server
+id = "sync"
+command = ["bin/notes", "sync"]
+
+[[window]]                         # kept running by each window on this machine
+id = "panel"
+command = ["bin/notes", "panel"]
+```
+
+Fields cornercase doesn't know are ignored, so a manifest written for a newer cornercase still loads. A manifest that cannot be read shows in `plugin list` and in Settings with the reason, and never hides the other plugins.
+
+### Commands
+
+A `command` is a list: the program, then its arguments. It never goes through a shell, so nothing in it is expanded or split. A program with a `/` in its name, like `bin/notes`, is looked up in the plugin's folder and must stay inside it: `..`, and symbolic links that lead out of the folder, are refused. A bare name, like `python3`, is looked up on the `PATH`.
+
+Each command's output, and its errors, go to the plugin's log, with a line from cornercase when a service or window process starts, stops or exits. `cornercase plugin logs <id>` prints it.
+
+### Actions
+
+Each action shows at the bottom of the menus for its `contexts`: the ` ⋯ ` and right-click menus of project, workspace and tab rows, the tab bar, and the right-click menu of a pane. It runs in the folder of the workspace you clicked (the project's folder for a project), and gets the ids of what you clicked in `CORNERCASE_PROJECT`, `CORNERCASE_WORKSPACE`, `CORNERCASE_TAB` and, for a pane, `CORNERCASE_PANE`. With `CORNERCASE_PANE` set, commands like `cornercase send` and `read` act on that pane by default. An action that fails shows its exit status in the window. It is stopped after 5 minutes.
+
+### Event hooks
+
+A hook runs once for every matching event, the same events [`cornercase events`](../scripts-and-agents/#follow-events) prints. The event is in `CORNERCASE_EVENT`, as the JSON line `events --json` prints, with the ids of the item and its parents:
+
+```json
+{"time":"2026-10-14T11:18:24.210Z","event":"status","agent":"claude","from":"working","to":"waiting","project":4,"workspace":3,"tab":6,"pane":5}
+```
+
+| `on` | When |
+| --- | --- |
+| `opened` | A project, workspace, tab or pane opened (`kind` says which) |
+| `closed` | One closed |
+| `status` | An agent's state changed: `working`, `shell`, `waiting`, `done`, `idle`, or `null` when the agent left |
+| `exited` | The program in a pane's foreground ended (`program` names it) |
+
+A hook is stopped after 60 seconds. At most 16 hooks run at once; past that, events are dropped and the server log says so. For a long-running reaction, use a service that follows `cornercase events --json`.
+
+### Services
+
+A service runs in the server for as long as the plugin is on. It starts once the session has come back, so the commands it runs find your projects. If it ends, it starts again after 1 second, then 2, 4… up to a minute between tries; one that ran for a minute counts as healthy again. It is stopped with the server, on `kill-server` and on restart (the new server starts it again). The Settings row says whether it runs or when it starts again.
+
+Keep a service in the foreground: don't detach it with `nohup`, `setsid` or `&` and exit. cornercase stops a service by stopping its process group, and a process that left it keeps running after the plugin is turned off.
+
+### Window processes
+
+A window process runs on the machine that shows the window, for as long as that window is open: two windows run two copies. It runs only in local windows, never in one opened with [`cornercase remote`](../remote/), which has no socket on its machine.
+
+## What every command gets
+
+| Variable | Holds |
+| --- | --- |
+| `CORNERCASE_BIN` | The running `cornercase` binary, to call commands with the same version |
+| `CORNERCASE_PLUGIN_ID` | The plugin's `id` |
+| `CORNERCASE_PLUGIN_ROOT` | The plugin's folder |
+| `CORNERCASE_PLUGIN_CONFIG` | A folder for its settings, private to you |
+| `CORNERCASE_PLUGIN_STATE` | A folder for its data, private to you; the log lives there too |
+| `CORNERCASE_EVENT` | For hooks: the event, as JSON |
+| `CORNERCASE_PLUGIN_ACTION`, `CORNERCASE_CONTEXT` | For actions: which action, and whether a `project`, `workspace`, `tab` or `pane` was clicked |
+| `CORNERCASE_PROJECT`, `CORNERCASE_WORKSPACE`, `CORNERCASE_TAB`, `CORNERCASE_PANE` | For actions: the ids of what was clicked |
+
+Commands also inherit the server's environment (or the window's, for window processes), including `CORNERCASE_SOCKET` when it is set, so `cornercase` reaches the right server. Claude Code's session variables are removed, as they are from panes.
+
+## An example
+
+A plugin that sends a desktop notification when an agent needs you, and adds **copy pane id** to the pane menu:
+
+```toml
+# ~/code/nudge/cornercase-plugin.toml
+id = "nudge"
+name = "Nudge"
+version = "0.1.0"
+permissions = ["notify"]
+
+[[events]]
+on = "status"
+command = ["./on-status"]
+
+[[actions]]
+id = "id"
+title = "show pane id"
+contexts = ["pane"]
+command = ["./show-id"]
+```
+
+```sh
+#!/bin/sh
+# ~/code/nudge/on-status
+case "$CORNERCASE_EVENT" in
+  *'"to":"waiting"'*) "$CORNERCASE_BIN" notify "an agent needs you" ;;
+esac
+```
+
+```sh
+#!/bin/sh
+# ~/code/nudge/show-id
+"$CORNERCASE_BIN" notify "this is pane $CORNERCASE_PANE"
+```
+
+```sh
+chmod +x ~/code/nudge/on-status ~/code/nudge/show-id
+cornercase plugin link ~/code/nudge
+cornercase plugin enable nudge
+```
+
+## Where plugins keep things
+
+| File | Location |
+| --- | --- |
+| Which plugins are linked and on | `plugins.json`, next to `config.json`, readable only by you |
+| A plugin's settings folder | `plugins/config/<id>/`, next to `config.json` |
+| A plugin's data and log | `plugins/state/<id>/`, next to `session.json`; the log is `plugin.log`, moved to `plugin.log.1` past 1 MiB |
