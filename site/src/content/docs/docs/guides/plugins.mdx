@@ -61,7 +61,7 @@ id = "panel"
 command = ["bin/notes", "panel"]
 ```
 
-Fields cornercase doesn't know are ignored, so a manifest written for a newer cornercase still loads. A manifest that cannot be read shows in `plugin list` and in Settings with the reason, and never hides the other plugins.
+Fields cornercase doesn't know are ignored, so a manifest written for a newer cornercase still loads. The plugin's folder and its manifest must be yours and not writable by other users. A manifest that cannot be read shows in `plugin list` and in Settings with the reason, and never hides the other plugins.
 
 ### Commands
 
@@ -113,7 +113,7 @@ A window process runs on the machine that shows the window, for as long as that 
 | `CORNERCASE_PLUGIN_ACTION`, `CORNERCASE_CONTEXT` | For actions: which action, and whether a `project`, `workspace`, `tab` or `pane` was clicked |
 | `CORNERCASE_PROJECT`, `CORNERCASE_WORKSPACE`, `CORNERCASE_TAB`, `CORNERCASE_PANE` | For actions: the ids of what was clicked |
 
-Commands also inherit the server's environment (or the window's, for window processes), including `CORNERCASE_SOCKET` when it is set, so `cornercase` reaches the right server. Claude Code's session variables are removed, as they are from panes.
+Commands also inherit the server's environment (or the window's, for window processes), including `CORNERCASE_SOCKET` when it is set, so `cornercase` reaches the right server. Claude Code's session variables and the issue trackers' token variables (`SHORTCUT_API_TOKEN`, `LINEAR_API_KEY`, `JIRA_API_TOKEN`, `PLANE_API_KEY`) are removed.
 
 ## An example
 

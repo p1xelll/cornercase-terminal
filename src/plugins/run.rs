@@ -10,6 +10,7 @@ use rustix::process::{Pid, Signal, kill_process_group};
 
 use super::registry::Plugin;
 use crate::control;
+use crate::issues::Source;
 use crate::log::{self, Level};
 use crate::paths;
 
@@ -97,6 +98,9 @@ impl Places {
             .env(STATE_ENV, state)
             .process_group(0);
         for key in crate::agents::claude::CLAUDE_SESSION_ENV {
+            built.env_remove(key);
+        }
+        for key in Source::REMOTE.into_iter().filter_map(Source::token_env) {
             built.env_remove(key);
         }
         built.envs(env.iter().map(|(k, v)| (k, v)));

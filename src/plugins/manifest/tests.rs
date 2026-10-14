@@ -147,3 +147,40 @@ mod programs {
         assert!(error.contains("outside the plugin's folder"), "{error}");
     }
 }
+
+mod pipes {
+    use super::*;
+
+    #[test]
+    fn a_manifest_that_is_a_fifo_is_refused_without_waiting() {
+        let dir = TempDir::new();
+        let made = std::process::Command::new("mkfifo").arg(dir.path().join(FILE)).status().expect("mkfifo");
+        assert!(made.success());
+        assert!(Manifest::load(dir.path()).expect_err("refused").contains("not a file"));
+    }
+}
+
+mod owners {
+    use std::os::unix::fs::PermissionsExt;
+
+    use super::*;
+
+    #[test]
+    fn a_folder_anyone_can_write_to_is_refused() {
+        let dir = TempDir::new();
+        std::fs::write(dir.path().join(FILE), with("")).expect("manifest");
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o777)).expect("chmod");
+        assert!(Manifest::load(dir.path()).expect_err("refused").contains("anyone can write to the plugin's folder"));
+    }
+
+    #[test]
+    fn a_manifest_anyone_can_write_to_is_refused() {
+        let dir = TempDir::new();
+        let path = dir.path().join(FILE);
+        std::fs::write(&path, with("")).expect("manifest");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o666)).expect("chmod");
+        assert!(
+            Manifest::load(dir.path()).expect_err("refused").contains("anyone can write to cornercase-plugin.toml")
+        );
+    }
+}

@@ -1,6 +1,9 @@
 use std::collections::HashSet;
+use std::io::Read as _;
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Component, Path, PathBuf};
 
+use rustix::fs::OFlags;
 use serde::{Deserialize, Serialize};
 
 use crate::version;
@@ -108,14 +111,29 @@ impl Manifest {
     pub(crate) fn load(root: &Path) -> Result<Self, String> {
         let path = root.join(FILE);
         let cannot = |e: &dyn std::fmt::Display| format!("cannot read {}: {e}", path.display());
-        let meta = std::fs::metadata(&path).map_err(|e| cannot(&e))?;
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(OFlags::NONBLOCK.bits().cast_signed())
+            .open(&path)
+            .map_err(|e| cannot(&e))?;
+        let meta = file.metadata().map_err(|e| cannot(&e))?;
         if !meta.is_file() {
             return Err(cannot(&"it is not a file"));
         }
-        if meta.len() > MAX_BYTES {
+        let folder = std::fs::metadata(root).map_err(|e| cannot(&e))?;
+        for (what, meta) in [("the plugin's folder", &folder), (FILE, &meta)] {
+            if meta.uid() != crate::protocol::own_uid() {
+                return Err(format!("{what} belongs to another user; a plugin runs as you"));
+            }
+            if meta.mode() & 0o002 != 0 {
+                return Err(format!("anyone can write to {what}; a plugin runs as you"));
+            }
+        }
+        let mut text = String::new();
+        file.take(MAX_BYTES + 1).read_to_string(&mut text).map_err(|e| cannot(&e))?;
+        if text.len() as u64 > MAX_BYTES {
             return Err(cannot(&format!("it is larger than {} KiB", MAX_BYTES / 1024)));
         }
-        let text = std::fs::read_to_string(&path).map_err(|e| cannot(&e))?;
         Self::parse(&text)
     }
 
