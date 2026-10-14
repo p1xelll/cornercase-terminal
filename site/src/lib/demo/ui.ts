@@ -107,6 +107,7 @@ const SPIN_EVERY = 100;
 const STATUS_ICONS: Record<Exclude<Status, 'working'>, Seg> = {
   idle: seg('○', { fg: 8 }),
   done: seg('✓', { fg: 2, add: BOLD }),
+  pending: seg('●', { fg: 99, add: BOLD }),
   waiting: seg('!', { fg: 208, add: BOLD }),
 };
 const MOON = '◐';
@@ -839,7 +840,8 @@ export class Painter {
       const r = rows.item(i);
       if (isEmpty(r)) return;
       this.agentRow(r, areas.pitch, entry);
-      this.region({ r, click: () => app.jumpToPane(entry.pane), hold: true, cursor: 'pointer' });
+      const right = (x: number, y: number) => app.openAgentMenu({ x, y }, entry.pane);
+      this.region({ r, click: () => app.jumpToPane(entry.pane), right, hold: true, cursor: 'pointer' });
     });
     this.more(list, rows, entries, () => true);
   }
