@@ -103,8 +103,12 @@ impl Fetched {
              read its code or trust its author."
                 .into(),
         );
-        lines
+        lines.iter().map(|line| printable(line)).collect()
     }
+}
+
+fn printable(text: &str) -> String {
+    text.chars().map(|c| if c.is_control() { c.escape_default().to_string() } else { c.to_string() }).collect()
 }
 
 fn shown(command: &[String]) -> String {

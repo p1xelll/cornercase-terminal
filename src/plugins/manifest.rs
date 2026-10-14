@@ -168,6 +168,9 @@ impl Manifest {
 
     fn check(&self) -> Result<(), String> {
         valid_id("id", &self.id)?;
+        if serde_json::to_value(self).is_ok_and(|value| has_control(&value)) {
+            return Err(format!("{FILE}: a text in it holds a control character, such as an escape or a new line"));
+        }
         for (field, value) in [("name", &self.name), ("version", &self.version)] {
             if value.trim().is_empty() {
                 return Err(format!("{FILE}: `{field}` is empty"));
@@ -291,14 +294,22 @@ fn valid_command(what: &str, command: &[String]) -> Result<(), String> {
     let Some(program) = command.first().filter(|program| !program.trim().is_empty()) else {
         return Err(format!("{FILE}: {what} has no command"));
     };
-    if command.iter().any(|arg| arg.contains('\0')) {
-        return Err(format!("{FILE}: {what} has a NUL character in its command"));
-    }
     let path = Path::new(program);
     if path.is_relative() && path.components().any(|part| part == Component::ParentDir) {
         return Err(format!("{FILE}: {what} runs `{program}`, outside the plugin's folder"));
     }
     Ok(())
+}
+
+fn has_control(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::String(text) => text.chars().any(char::is_control),
+        serde_json::Value::Array(items) => items.iter().any(has_control),
+        serde_json::Value::Object(fields) => {
+            fields.iter().any(|(key, value)| key.chars().any(char::is_control) || has_control(value))
+        }
+        _ => false,
+    }
 }
 
 fn valid_download(target: &str, download: &Download) -> Result<(), String> {
