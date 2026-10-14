@@ -2,6 +2,11 @@
 
 Every pull request that changes the app adds a section here for its new version. The section becomes the notes of the GitHub Release and shows up in the app's update dialog, so write it for users.
 
+## 0.12.87
+
+- On a Mac, Claude Code agents that need you can show in the notch, at the top centre of the screen, while you aren't looking at them: cornercase's window is in the background, or the agent's tab isn't on screen. Most of the time it is a small pill around the notch with **Rinco**, cornercase's new pixel mascot, and one line about the agent that needs you most, plus how many others wait. Hover over it, or wait for a new question to arrive, and it expands like the Dynamic Island into cards where you can allow or deny a permission or pick an option of a question; the card tells you what happened and goes. An agent that finishes only flashes in the pill for a few seconds, and agents that are working never show. A click shows that pane and brings your terminal forward. Before it presses anything, cornercase checks that Claude Code still asks the same thing; otherwise it shows you the pane instead. Turn it on in **Settings → Agents → notch** (`notch` in `config.json`), off by default.
+- cornercase now asks your terminal to say when its window gains or loses the focus. The tab on screen notifies you when an agent needs you or finishes while the window is in the background, where before it never did.
+
 ## 0.12.86
 
 - The stats heatmap always shows its 26 weeks: days without agent work are grey squares, also the ones before cornercase started counting, so a few days of work no longer look like loose squares.
