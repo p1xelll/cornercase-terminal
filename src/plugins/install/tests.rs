@@ -98,6 +98,7 @@ mod installing {
         assert!(preview.contains(&remote.head()), "{preview}");
         assert!(preview.contains("service sync: bin/run sync"), "{preview}");
         assert!(preview.contains("asks for read"), "{preview}");
+        assert!(preview.contains("It is installed turned off."), "{preview}");
         let installed = install(fetched, &places).expect("install");
         let entry = Registry::load(&places.registry).entries[0].clone();
         let root = entry.source.root().to_path_buf();
@@ -271,7 +272,9 @@ mod updating {
         registry.save().expect("save");
         remote.commit(&[("cornercase-plugin.toml", &manifest("2.0", ""))]);
         let Ok(Update::Changed(fetched)) = check_update(&places, "acme.notes") else { panic!("an update") };
-        assert!(fetched.preview()[0].contains("Notes 2.0"));
+        let preview = fetched.preview();
+        assert!(preview[0].contains("Notes 2.0"));
+        assert!(preview.join("\n").contains("which is on: its new commands run right away"), "{preview:?}");
         let done = install(*fetched, &places).expect("update");
         let entry = Registry::load(&places.registry).entries[0].clone();
         assert_eq!(

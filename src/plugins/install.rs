@@ -36,6 +36,7 @@ pub(crate) struct Fetched {
     pub(crate) origin: Origin,
     pub(crate) commit: String,
     pub(crate) manifest: Manifest,
+    pub(crate) replacing: Option<bool>,
     staging: Staging,
 }
 
@@ -98,9 +99,13 @@ impl Fetched {
             lines.push("Once on, it runs:".into());
             lines.extend(commands.iter().map(|(what, command)| format!("  {what}: {}", shown(command))));
         }
+        lines.push(match self.replacing {
+            None => "It is installed turned off.".into(),
+            Some(false) => "It replaces the version you have, which is off, and stays off.".into(),
+            Some(true) => "It replaces the version you have, which is on: its new commands run right away.".into(),
+        });
         lines.push(
-            "It is installed turned off. Once on, it runs as you and can do anything you can, in every terminal: \
-             read its code or trust its author."
+            "Once on, it runs as you and can do anything you can, in every terminal: read its code or trust its author."
                 .into(),
         );
         lines.iter().map(|line| printable(line)).collect()
@@ -159,8 +164,10 @@ pub(crate) fn fetch(origin: &Origin, places: &Places) -> Result<Fetched, String>
     git(origin, Some(&checkout), ["checkout", "--quiet", "--detach", commit.as_str()])?;
     fs::remove_dir_all(checkout.join(".git")).map_err(|e| format!("cannot drop the history: {e}"))?;
     let manifest = Manifest::read(&checkout)?;
-    conflict(&Registry::load(&places.registry), &manifest.id, origin)?;
-    Ok(Fetched { origin: origin.clone(), commit, manifest, staging })
+    let registry = Registry::load(&places.registry);
+    conflict(&registry, &manifest.id, origin)?;
+    let replacing = registry.entry(&manifest.id).ok().map(|entry| entry.enabled);
+    Ok(Fetched { origin: origin.clone(), commit, manifest, replacing, staging })
 }
 
 fn stage(places: &Places) -> std::io::Result<PathBuf> {
