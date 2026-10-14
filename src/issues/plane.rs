@@ -41,7 +41,7 @@ pub(crate) fn endpoints(url: &str, api: Option<&str>) -> (String, String) {
 impl Api {
     fn get(&self, path: &str, query: &[(&str, &str)], missing: &str) -> Result<Value> {
         let url = format!("{}{path}", self.base.trim_end_matches('/'));
-        let answer = http::get(&SERVICE, &url, query, &[("X-API-Key", &self.token)])?;
+        let answer = http::get_without_redirects(&SERVICE, &url, query, &[("X-API-Key", &self.token)])?;
         into_json(answer, missing, failure)
     }
 
@@ -253,13 +253,7 @@ pub(crate) fn check_workspace(input: &str) -> std::result::Result<String, &'stat
 }
 
 pub(crate) fn check_url(input: &str) -> std::result::Result<String, &'static str> {
-    let url = input.trim().trim_end_matches('/');
-    let host = url.split_once("://").map(|(scheme, rest)| (scheme, rest.split('/').next().unwrap_or_default()));
-    match host {
-        _ if url.is_empty() => Ok(String::new()),
-        Some(("http" | "https", host)) if !host.is_empty() && !url.contains(char::is_whitespace) => Ok(url.to_string()),
-        _ => Err("a URL starts with https://, such as https://plane.acme.dev"),
-    }
+    super::check_url(input, "a URL starts with https://, such as https://plane.acme.dev")
 }
 
 pub(crate) fn extra_params(filter: &str) -> Vec<(String, String)> {
