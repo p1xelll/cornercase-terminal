@@ -5,10 +5,13 @@ use crate::agents::ask::Ask;
 use crate::error::Error;
 use crate::error::Result;
 
+#[cfg(any(target_os = "macos", test))]
 pub(crate) mod card;
+#[cfg(any(target_os = "macos", test))]
 pub(crate) mod motion;
 #[cfg(target_os = "macos")]
 mod panel;
+#[cfg(any(target_os = "macos", test))]
 pub(crate) mod rinco;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -30,6 +33,16 @@ pub(crate) enum Kind {
     Done,
     Waiting,
     Asks(Ask),
+}
+
+impl Kind {
+    pub(crate) fn rank(&self) -> u8 {
+        match self {
+            Self::Asks(_) => 0,
+            Self::Waiting => 1,
+            Self::Done => 2,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -63,14 +63,6 @@ pub(crate) fn mood(card: &Card) -> Mood {
     }
 }
 
-pub(crate) fn rank(card: &Card) -> u8 {
-    match &card.kind {
-        Kind::Asks(_) => 0,
-        Kind::Waiting => 1,
-        Kind::Done => 2,
-    }
-}
-
 pub(crate) fn subtitle(card: &Card) -> &str {
     if card.title == card.place { "" } else { &card.place }
 }

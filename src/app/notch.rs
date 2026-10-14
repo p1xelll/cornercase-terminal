@@ -4,7 +4,6 @@ use super::App;
 use super::toast::Toast;
 use crate::agents::activity::Status;
 use crate::agents::ask::Ask;
-use crate::host::notch::card as notch_card;
 use crate::host::notch::{Action, Board, Card, Kind};
 use crate::log;
 use crate::term::Term;
@@ -61,7 +60,7 @@ impl App {
                 }
             }
         }
-        cards.sort_by_key(|(card, _)| (notch_card::rank(card), std::cmp::Reverse(card.since)));
+        cards.sort_by_key(|(card, _)| (card.kind.rank(), std::cmp::Reverse(card.since)));
         self.agents.notch.cards = cards;
     }
 

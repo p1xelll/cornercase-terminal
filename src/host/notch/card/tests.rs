@@ -79,19 +79,20 @@ fn rinco_shows_what_each_card_is_about(#[case] kind: Kind, #[case] expected: Moo
 }
 
 #[rstest]
-#[case::picked(asks(true), '2', Outcome::Picked("Green".into()), "✓ You picked Green", Mood::Done)]
-#[case::allowed(asks(false), '1', Outcome::Running("npm test -- auth".into()), "◐ Running npm test -- auth…", Mood::Working)]
-#[case::denied(asks(false), '4', Outcome::Denied, "✕ Denied. Claude will try another way.", Mood::Error)]
+#[case::picked(asks(true), '2', Outcome::Picked("Green".into()), "✓ You picked Green", Mood::Done, false)]
+#[case::allowed(asks(false), '1', Outcome::Running("npm test -- auth".into()), "◐ Running npm test -- auth…", Mood::Working, true)]
+#[case::denied(asks(false), '4', Outcome::Denied, "✕ Denied. Claude will try another way.", Mood::Error, false)]
 fn an_answer_shows_what_it_did(
     #[case] kind: Kind,
     #[case] key: char,
     #[case] expected: Outcome,
     #[case] line: &str,
     #[case] then: Mood,
+    #[case] monospaced: bool,
 ) {
     let found = outcome(&card(kind), key).expect("an outcome");
 
-    assert_eq!((found.line().0.as_str(), found.mood()), (line, then));
+    assert_eq!((found.line().0.as_str(), found.mood(), found.monospaced()), (line, then, monospaced));
     assert_eq!(found, expected);
 }
 
@@ -116,14 +117,6 @@ fn the_place_shows_only_when_the_title_is_not_it() {
     card.title.clone_from(&card.place);
 
     assert_eq!((named.as_str(), subtitle(&card)), ("shop › main", ""));
-}
-
-#[test]
-fn questions_come_first_then_waiting_then_done() {
-    let mut ranks: Vec<u8> = [Kind::Done, asks(true), Kind::Waiting].map(|k| rank(&card(k))).to_vec();
-    ranks.sort_unstable();
-
-    assert_eq!(ranks, [0, 1, 2]);
 }
 
 #[test]

@@ -555,7 +555,7 @@ mod notch {
         let mut s = settings();
         go_to(&mut s, &Row::Notch);
         assert!(matches!(press(&mut s, KeyCode::Enter), Action::None));
-        assert_eq!(s.notice.as_deref(), Some(super::super::NOTCH_UNAVAILABLE));
+        assert_eq!(s.notice.as_deref(), Some(NOTCH_UNAVAILABLE));
     }
 }
 

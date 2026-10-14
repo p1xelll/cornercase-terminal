@@ -24,3 +24,12 @@ fn cards_and_actions_cross_the_pipe_as_json_lines() {
     assert!(!line.contains('\n'));
     assert_eq!(serde_json::from_str::<(Board, Action)>(&line).expect("decode"), (board, action));
 }
+
+#[test]
+fn questions_come_first_then_waiting_then_done() {
+    let ask = Ask { question: true, title: "Which colour?".into(), detail: String::new(), choices: Vec::new() };
+    let mut kinds = vec![Kind::Done, Kind::Asks(ask.clone()), Kind::Waiting];
+    kinds.sort_by_key(Kind::rank);
+
+    assert_eq!(kinds, [Kind::Asks(ask), Kind::Waiting, Kind::Done]);
+}
