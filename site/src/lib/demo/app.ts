@@ -132,7 +132,12 @@ export interface SearchResult {
   context: string;
   keys: string[];
   go: () => void;
+  detail?: string;
+  hit?: [number, number];
 }
+
+const SAID_PER_PANE = 20;
+const SAID_MATCHES = 300;
 
 type Listener = (event: string, detail?: string) => void;
 
@@ -2223,13 +2228,69 @@ export class App {
     this.dirty();
   }
 
-  openSearch(): void {
-    this.overlay = { kind: 'search', query: '', selected: 0, scroll: 0 };
+  openSearch(mode: 'names' | 'sessions' = 'names'): void {
+    this.overlay = { kind: 'search', query: '', selected: 0, scroll: 0, mode };
     this.emit('narrate', this.narration.search);
     this.dirty();
   }
 
-  searchResults(query: string): SearchResult[] {
+  toggleSearchMode(): void {
+    const o = this.overlay;
+    if (o?.kind !== 'search') return;
+    o.mode = o.mode === 'names' ? 'sessions' : 'names';
+    o.selected = 0;
+    o.scroll = 0;
+    this.dirty();
+  }
+
+  saidCapped(query: string): boolean {
+    return this.saidIn(query).capped;
+  }
+
+  private saidIn(query: string): { results: SearchResult[]; capped: boolean } {
+    const q = query.trim().toLowerCase();
+    const results: SearchResult[] = [];
+    let capped = false;
+    if (!q) return { results, capped };
+    for (const [pi, p] of this.projects.entries()) {
+      for (const [wi, w] of p.workspaces.entries()) {
+        if (w.removing) continue;
+        for (const [ti, t] of w.tabs.entries()) {
+          for (const pane of t.panes) {
+            const lines = pane.shell.screen().split('\n');
+            let found = 0;
+            scan: for (let i = lines.length - 1; i >= 0; i--) {
+              const lower = lines[i].toLowerCase();
+              for (let at = lower.indexOf(q); at >= 0; at = lower.indexOf(q, at + q.length)) {
+                if (found === SAID_PER_PANE || results.length === SAID_MATCHES) {
+                  capped = true;
+                  break scan;
+                }
+                found++;
+                const [name, hit] = snippet(lines[i], at, [...q].length);
+                results.push({
+                  kind: 3,
+                  name,
+                  hit,
+                  context: `${projectLabel(p)} › ${workspaceLabel(w)} › ${tabLabel(t)}`,
+                  detail: `${pane.agent ?? pane.shell.fg?.name ?? 'shell'} · screen`,
+                  keys: [],
+                  go: () => {
+                    this.goto(pi, wi, ti);
+                    t.active = pane.id;
+                  },
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+    return { results, capped };
+  }
+
+  searchResults(query: string, mode: 'names' | 'sessions' = 'names'): SearchResult[] {
+    if (mode === 'sessions') return this.saidIn(query).results;
     const q = query.trim().toLowerCase();
     if (!q) return [];
     const all: (SearchResult & { order: number })[] = [];
@@ -2292,7 +2353,7 @@ export class App {
   searchGo(i: number): void {
     const o = this.overlay;
     if (o?.kind !== 'search') return;
-    const r = this.searchResults(o.query)[i];
+    const r = this.searchResults(o.query, o.mode)[i];
     this.overlay = null;
     this.nav = null;
     r?.go();
@@ -2423,6 +2484,7 @@ export class App {
       if (mark.pending) this.notify('marked as pending review', 'pending');
       else this.notify('marked as reviewed');
     } else if (a.kind === 'search') this.openSearch();
+    else if (a.kind === 'findSaid') this.openSearch('sessions');
     else if (a.kind === 'newTab') this.addTab(p, w);
     else if (a.kind === 'split') {
       const area = t && this.panesOf(t, this.areas().pane).find(([id]) => id === t.active)?.[1];
@@ -4033,18 +4095,24 @@ export class App {
       return true;
     }
     if (o.kind === 'search') {
-      const results = this.searchResults(o.query);
+      const results = this.searchResults(o.query, o.mode);
       if (k.key === 'Escape') this.closeOverlay();
+      else if (k.key === 'Tab') this.toggleSearchMode();
       else if (k.key === 'Enter') this.searchGo(Math.min(o.selected, results.length - 1));
       else if (k.key === 'ArrowDown') o.selected = Math.min(o.selected + 1, Math.max(0, results.length - 1));
       else if (k.key === 'ArrowUp') o.selected = Math.max(0, o.selected - 1);
       else if (k.key === 'Backspace') {
         o.query = o.query.slice(0, -1);
         o.selected = 0;
+        o.scroll = 0;
       } else if (ch) {
         o.query += ch;
         o.selected = 0;
+        o.scroll = 0;
       }
+      const visible = Math.max(1, Math.floor(Math.max(0, this.areas().results.h - 2) / (o.mode === 'sessions' ? 2 : 1)));
+      if (o.selected < o.scroll) o.scroll = o.selected;
+      else if (o.selected >= o.scroll + visible) o.scroll = o.selected - visible + 1;
       this.dirty();
       return true;
     }
@@ -4211,4 +4279,25 @@ export class App {
   panesOf(t: Tab, area: Rect): [number, Rect][] {
     return visible(t.layout, area, t.active);
   }
+}
+
+function snippet(line: string, at: number, length: number): [string, [number, number]] {
+  const chars = [...line.replace(/[\u0000-\u001f\u007f]/g, ' ')];
+  const before = [...line.slice(0, at)].length;
+  const lead = Math.max(0, Math.min(chars.findIndex((c) => c.trim() !== ''), before));
+  const start = before - lead;
+  return [chars.slice(lead).join('').trimEnd(), [start, start + length]];
+}
+
+export function crop(text: string, hit: [number, number], width: number): [string, [number, number]] {
+  const chars = [...text];
+  if (chars.length <= width) return [text, hit];
+  const from = Math.min(Math.max(0, hit[0] - Math.floor(width / 4)), chars.length - width);
+  const to = from + width;
+  const lead = from > 0 ? 1 : 0;
+  let shown = chars.slice(from + lead, to - (to < chars.length ? 1 : 0)).join('');
+  if (lead) shown = `…${shown}`;
+  if (to < chars.length) shown += '…';
+  const end = Math.min(hit[1], to - (to < chars.length ? 1 : 0));
+  return [shown, [Math.max(hit[0], from + lead) - from, Math.max(end - from, Math.max(hit[0], from + lead) - from)]];
 }
