@@ -88,8 +88,11 @@ pub(super) enum MenuAction {
     Pane(u64, PaneAction),
     Mark(Marked, bool),
     PullRequest(u64),
+    ShowFlow(u64),
     Browser,
     Away(Via),
+    NewWorkspace(u64),
+    StartFlow(u64),
 }
 
 impl App {
@@ -125,12 +128,15 @@ impl App {
             MenuAction::AddProject(_) => "add project".into(),
             MenuAction::OpenProject => "open project".into(),
             MenuAction::NewGroup => "new group".into(),
+            MenuAction::NewWorkspace(_) => "new workspace".into(),
+            MenuAction::StartFlow(_) => "start a flow…".into(),
             MenuAction::Pane(_, action) => action.label().into(),
             MenuAction::Mark(_, true) => "mark as pending review".into(),
             MenuAction::Mark(_, false) => "mark as reviewed".into(),
             MenuAction::PullRequest(workspace) => {
                 self.pull_request(workspace).map(|p| format!("pull request #{}", p.number)).unwrap_or_default()
             }
+            MenuAction::ShowFlow(_) => "show flow".into(),
             MenuAction::Browser if self.config.remote => "open in your phone's browser".into(),
             MenuAction::Browser => "set up your phone's browser…".into(),
             MenuAction::Away(via) if !self.messenger(via).ready() => format!("set up {}…", via.name()),
@@ -145,7 +151,11 @@ impl App {
             Target::Workspace(_, workspace) => self.pull_request(workspace).map(|_| MenuAction::PullRequest(workspace)),
             Target::Group(_) | Target::Project(_) => None,
         };
-        std::iter::once(MenuAction::Rename(target)).chain(more).collect()
+        let flow = match target {
+            Target::Workspace(_, workspace) => self.run_of(workspace).map(|_| MenuAction::ShowFlow(workspace)),
+            _ => None,
+        };
+        std::iter::once(MenuAction::Rename(target)).chain(more).chain(flow).collect()
     }
 
     pub(super) fn menu_action(&mut self, action: MenuAction, at: Position, area: Rect) -> Result<()> {
@@ -188,11 +198,19 @@ impl App {
                 self.nav = None;
                 self.overlay = Some(Overlay::NewGroup { input: String::new() });
             }
+            MenuAction::NewWorkspace(project) => {
+                if let Some(p) = self.projects.project_index(project) {
+                    self.nav = None;
+                    self.ask_new_workspace(p);
+                }
+            }
+            MenuAction::StartFlow(project) => self.open_start_flow(self.start_flow_in(project)),
             MenuAction::Pane(pane, action) => return self.pane_action(pane, action, area),
             MenuAction::Mark(marked, pending) => {
                 self.mark(marked, pending);
             }
             MenuAction::PullRequest(workspace) => self.open_pull_request(workspace),
+            MenuAction::ShowFlow(workspace) => self.show_flow_of(workspace),
             MenuAction::Browser if self.config.remote => self.open_remote(),
             MenuAction::Browser => self.open_settings_on(&settings::Row::Remote),
             MenuAction::Away(via) => self.toggle_away(via),

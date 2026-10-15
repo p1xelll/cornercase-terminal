@@ -193,6 +193,15 @@ fn canonical(dir: &TempDir) -> PathBuf {
     dir.path().canonicalize().expect("canonicalize")
 }
 
+fn click_button(app: &mut App, area: Rect, labels: &[&str], rects: &[Rect], label: &str) {
+    let i = labels.iter().position(|b| *b == label).unwrap_or_else(|| panic!("no {label} button"));
+    click_in(app, rects[i].as_position(), area);
+}
+
+fn overlay_shown(app: &App, area: Rect) -> ui::Overlay {
+    app.overlay.as_ref().and_then(|o| app.overlay_view(o, area)).expect("a dialog is shown")
+}
+
 fn toast(app: &App) -> Option<&str> {
     app.toast.as_ref().map(|t| t.message.as_str())
 }
@@ -336,6 +345,12 @@ fn new_workspace_pos(app: &App) -> Position {
     ui::new_workspace_button(areas().workspaces_list, areas().pitch, &app.tab_lines()).as_position()
 }
 
+fn click_new_workspace(app: &mut App) {
+    let new = new_workspace_pos(app);
+    click(app, new);
+    pick(app, "new workspace");
+}
+
 fn form_value(app: &App) -> Option<&str> {
     match &app.overlay {
         Some(Overlay::NewWorkspace { input, .. } | Overlay::Rename { input, .. }) => Some(input),
@@ -435,6 +450,7 @@ mod sidebar_clicks;
 mod sidebar_scroll;
 mod splits;
 mod stacked_sidebar;
+mod start_flow_dialog;
 mod tab_bar;
 mod tabs;
 mod tree_sidebar;
@@ -455,6 +471,9 @@ mod changes_panel;
 mod control_requests;
 mod esc_closes_the_side_panel;
 mod files_panel;
+mod flow_panel;
+mod flow_runs;
+mod flows_dialog;
 mod issue_list;
 mod path_links;
 mod pull_requests;

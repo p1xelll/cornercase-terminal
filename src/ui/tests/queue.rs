@@ -120,9 +120,10 @@ fn a_tiny_form_keeps_its_rows_inside_its_border() {
 }
 
 #[test]
-fn a_prompt_with_line_breaks_stays_on_its_rows() {
+fn a_prompt_with_line_breaks_shows_them() {
     let lines = lines(&shown(form("first line\nsecond line", None), 100, 24));
-    assert!(lines.iter().any(|l| l.contains("first line↵second line")), "{lines:#?}");
+    let first = lines.iter().position(|l| l.contains("│ first line ")).expect("the first line");
+    assert!(lines[first + 1].contains("│ second line "), "{lines:#?}");
 }
 
 #[test]

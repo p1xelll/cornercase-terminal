@@ -70,6 +70,7 @@ impl App {
             command: entry.task.command.clone(),
             prompt: Some(entry.task.prompt.clone()),
             submit: entry.task.submit,
+            trusted: false,
         })
     }
 

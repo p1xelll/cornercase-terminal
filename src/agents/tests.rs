@@ -71,6 +71,19 @@ mod modes {
     }
 
     #[test]
+    fn opencode_plans_with_its_plan_agent_and_approves_with_auto() {
+        let kind = Known::Opencode.name();
+        let modes = modes(&config(), kind);
+        let names: Vec<&str> = modes.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(names, ["plan", "auto (dangerous)"]);
+        assert_eq!(mode_of(kind, &strings(&["opencode", "--agent", "plan"]), &modes).as_deref(), Some("plan"));
+        assert_eq!(
+            with_mode(kind, &strings(&["--auto", "-c"]), &modes, Some("plan")),
+            strings(&["--agent", "plan", "-c"])
+        );
+    }
+
+    #[test]
     fn grok_modes_follow_its_permission_flags() {
         let modes = modes(&config(), Known::Grok.name());
         let kind = Known::Grok.name();
@@ -179,6 +192,92 @@ mod arguments {
         let mut c = config();
         c.agent_args.insert("cursor".into(), strings(&["--model", "a b"]));
         assert_eq!(command_line(&c, "cursor"), "cursor-agent --model 'a b'");
+    }
+
+    #[rstest]
+    #[case::added("claude", &["-v"], &["-v", "--model", "opus"])]
+    #[case::replaced("claude", &["--model", "haiku", "-v"], &["-v", "--model", "opus"])]
+    #[case::replaced_with_equals("claude", &["--model=haiku", "-v"], &["-v", "--model", "opus"])]
+    #[case::claude_has_no_short_flag("claude", &["-m", "x"], &["-m", "x", "--model", "opus"])]
+    #[case::short("codex", &["-m", "o3", "--search"], &["--search", "--model", "opus"])]
+    #[case::short_with_equals("gemini", &["-m=pro", "-y"], &["-y", "--model", "opus"])]
+    #[case::every_spelling("grok", &["-m", "a", "--model", "b", "--model=c", "-m=d", "-v"], &["-v", "--model", "opus"])]
+    fn a_model_replaces_every_spelling_of_the_one_in_the_arguments(
+        #[case] kind: &str,
+        #[case] args: &[&str],
+        #[case] expected: &[&str],
+    ) {
+        assert_eq!(with_model(kind, strings(args), Some("opus")), strings(expected));
+        assert_eq!(with_model(kind, strings(args), Some(" ")), strings(args));
+        assert_eq!(with_model("aider", strings(args), Some("opus")), strings(args));
+    }
+
+    #[rstest]
+    #[case::claude("claude", &["--effort", "low", "-v", "--effort=max"], &["-v", "--effort", "high"])]
+    #[case::grok_and_its_alias("grok", &["--reasoning-effort", "low", "--effort=max", "-v"], &["-v", "--reasoning-effort", "high"])]
+    #[case::codex_config(
+        "codex",
+        &["-c", "model_reasoning_effort=low", "-c", "model=o3", "--config=model_reasoning_effort=low", "-cmodel_reasoning_effort=x"],
+        &["-c", "model=o3", "-c", "model_reasoning_effort=high"]
+    )]
+    #[case::codex_long_config("codex", &["--config", "model_reasoning_effort=low"], &["-c", "model_reasoning_effort=high"])]
+    #[case::gemini_has_none("gemini", &["--effort", "low"], &["--effort", "low"])]
+    fn an_effort_replaces_every_spelling_of_the_one_in_the_arguments(
+        #[case] kind: &str,
+        #[case] args: &[&str],
+        #[case] expected: &[&str],
+    ) {
+        assert_eq!(with_effort(kind, strings(args), Some("high")), strings(expected));
+        assert_eq!(with_effort(kind, strings(args), None), strings(args));
+    }
+
+    #[test]
+    fn a_start_takes_an_effort_the_agent_knows() {
+        let c = config();
+        assert_eq!(start_line(&c, "claude", None, None, Some("high")).as_deref(), Ok("claude --effort high"));
+        assert_eq!(
+            start_line(&c, "codex", None, None, Some("high")).as_deref(),
+            Ok("codex -c model_reasoning_effort=high")
+        );
+        assert_eq!(
+            start_line(&c, "claude", None, None, Some("huge")),
+            Err("claude has no effort `huge`; its levels are `low`, `medium`, `high`, `xhigh`, `max`".into())
+        );
+        assert_eq!(start_line(&c, "gemini", None, None, Some("high")), Err("gemini has no effort switch".into()));
+    }
+
+    #[test]
+    fn a_start_picks_a_mode_and_a_model_over_the_settings() {
+        let mut c = config();
+        c.agent_args.insert("claude".into(), strings(&["--permission-mode", "auto", "--model", "haiku", "-v"]));
+        assert_eq!(
+            start_line(&c, "claude", None, None, None).as_deref(),
+            Ok("claude --permission-mode auto --model haiku -v")
+        );
+        assert_eq!(
+            start_line(&c, "claude", Some("plan"), Some("opus"), None).as_deref(),
+            Ok("claude --permission-mode plan -v --model opus")
+        );
+    }
+
+    #[test]
+    fn a_start_with_a_mode_or_model_it_does_not_know_names_what_it_knows() {
+        let c = config();
+        assert_eq!(
+            start_line(&c, "codex", Some("yolo"), None, None),
+            Err("codex has no mode `yolo`; its modes are `read only`, `workspace write`, `no sandbox, no approvals \
+                 (dangerous)`"
+                .into())
+        );
+        assert_eq!(
+            start_line(&c, "aider", Some("plan"), None, None),
+            Err("aider has no modes in cornercase; add some with agent_modes in config.json".into())
+        );
+        let refused = start_line(&c, "aider", None, Some("gpt"), None).expect_err("aider takes no model");
+        assert_eq!(
+            refused,
+            "cornercase passes a model to claude, codex, gemini, opencode, grok only; give aider its model in agent_args"
+        );
     }
 
     #[test]

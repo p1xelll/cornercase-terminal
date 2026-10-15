@@ -2,15 +2,21 @@ use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::{Position, Rect};
 
 use super::App;
+use super::flow_panel::COPY;
+use super::flows_dialog::flows_view;
 use super::issues_dialog::{room, view};
 use super::menus::MenuAction;
 use super::menus::Target;
 use super::pull_requests::{COPY_LINK, DONE};
 use super::settings_dialog::settings_view;
+use super::start_flow_dialog::start_flow_view;
 use super::update_dialog::UpdateStep;
 use super::worktrees::Check;
 use crate::changes::BranchPicker;
 use crate::error::Result;
+use crate::flows::dialog::Dialog;
+use crate::flows::progress::Edge;
+use crate::flows::start::Start;
 use crate::git::worktree;
 use crate::issues::browser::Browser;
 use crate::list::Search;
@@ -57,6 +63,8 @@ pub(super) enum Overlay {
     ClosePane { pane: u64 },
     NewWorkspace { project: u64, input: String, worktree: Option<bool>, error: Option<String>, creating: bool },
     Settings(Box<Settings>),
+    Flows { dialog: Box<Dialog>, back: Option<Box<Overlay>> },
+    StartFlow { start: Box<Start>, back: Option<Box<Overlay>> },
     Rename { target: Target, input: String },
     RemoveWorkspace { project: u64, workspace: u64, check: Check, lock: Option<worktree::Lock> },
     Picker { picker: Picker, group: Option<u64> },
@@ -70,6 +78,7 @@ pub(super) enum Overlay {
     Pairing(Via),
     Branches(BranchPicker),
     PullRequest { workspace: u64, scroll: usize },
+    FlowMessage { workspace: u64, edge: Edge, to: Option<String>, scroll: usize },
     Keys(Option<KeysGroup>),
 }
 
@@ -86,6 +95,8 @@ impl Overlay {
             Self::ClosePane { .. } => "close pane",
             Self::NewWorkspace { .. } => "new workspace",
             Self::Settings(_) => "settings",
+            Self::Flows { .. } => "flows",
+            Self::StartFlow { .. } => "start flow",
             Self::Rename { .. } => "rename",
             Self::RemoveWorkspace { .. } => "remove workspace",
             Self::Picker { .. } => "folder picker",
@@ -99,6 +110,7 @@ impl Overlay {
             Self::Branches(_) => "branches",
             Self::Restart => "restart",
             Self::PullRequest { .. } => "pull request",
+            Self::FlowMessage { .. } => "flow message",
             Self::Keys(_) => "keys",
         }
     }
@@ -119,6 +131,7 @@ impl Overlay {
             Self::Update(UpdateStep::Manual(_)) => COPY_COMMAND_SUBMIT,
             Self::Update(_) => UPDATE_SUBMIT,
             Self::PullRequest { .. } => COPY_LINK,
+            Self::FlowMessage { .. } => COPY,
             _ => CREATE_SUBMIT,
         }
     }
@@ -126,7 +139,7 @@ impl Overlay {
     pub(super) fn cancel_label(&self) -> &'static str {
         match self {
             Self::Update(UpdateStep::Installed) => LATER,
-            Self::PullRequest { .. } => DONE,
+            Self::PullRequest { .. } | Self::FlowMessage { .. } => DONE,
             _ => ui::CANCEL_LABEL,
         }
     }
@@ -152,6 +165,7 @@ impl Overlay {
             || matches!(self, Self::Issues(b) if b.starting)
             || matches!(self, Self::Settings(s) if s.busy())
             || matches!(self, Self::Update(UpdateStep::Updating))
+            || matches!(self, Self::StartFlow { start, .. } if start.waiting)
     }
 }
 
@@ -169,9 +183,12 @@ impl App {
             Some(Overlay::Issues(_)) => return self.issues_mouse(ev, pos, area),
             Some(Overlay::Queue(_)) => self.queue_form_mouse(ev, pos, area),
             Some(Overlay::Settings(_)) => self.settings_mouse(ev, pos, area),
+            Some(Overlay::Flows { .. }) => self.flows_mouse(ev, pos, area),
+            Some(Overlay::StartFlow { .. }) => self.start_flow_mouse(ev, pos, area),
             Some(Overlay::Update(_) | Overlay::Restart) => return self.update_mouse(ev, pos, area),
             Some(Overlay::Usage) => self.usage_mouse(ev, pos, area),
             Some(Overlay::PullRequest { .. }) => self.pull_request_mouse(ev, pos, area),
+            Some(Overlay::FlowMessage { .. }) => self.flow_message_mouse(ev, pos, area),
             Some(Overlay::Remote) => self.remote_mouse(ev, pos, area),
             Some(Overlay::Pairing(via)) => self.pairing_mouse(*via, ev, pos, area),
             Some(Overlay::GroupStyle { group }) => self.group_style_mouse(*group, ev, pos, area),
@@ -202,6 +219,8 @@ impl App {
                 self.new_workspace_view(*project, input, *worktree, error.as_deref(), *creating)
             }
             Overlay::Settings(s) => ui::Overlay::Settings(settings_view(s)),
+            Overlay::Flows { dialog, .. } => flows_view(dialog, area),
+            Overlay::StartFlow { start, .. } => start_flow_view(start, area),
             Overlay::Rename { target, input } => Self::rename_view(*target, input),
             Overlay::RemoveWorkspace { project, workspace, check, lock } => {
                 self.remove_view(*project, *workspace, *check, lock.as_ref(), overlay.submit_label())
@@ -223,6 +242,9 @@ impl App {
             Overlay::Pairing(via) => ui::Overlay::Remote(self.pairing_view(*via)),
             Overlay::Branches(picker) => Self::branches_view(picker),
             Overlay::PullRequest { workspace, scroll } => self.pull_request_view(*workspace, *scroll)?,
+            Overlay::FlowMessage { workspace, edge, to, scroll } => {
+                self.flow_message_view(*workspace, (*edge, to.as_deref()), *scroll, area)?
+            }
         })
     }
 }

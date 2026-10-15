@@ -59,6 +59,7 @@ impl App {
         let (config, dir, tree) = (&self.config, self.agents.claude_dir.as_deref(), self.drawn.tree);
         let jobs = self.events.listening();
         let mut notices = Vec::new();
+        let (members, orchestrators) = (self.run_panes(false), self.run_panes(true));
         for (project, open) in self.projects.iter_mut().zip(open) {
             let shown = if tree { open } else { active == Some(project.id) };
             for workspace in &mut project.workspaces {
@@ -76,6 +77,9 @@ impl App {
                                 term.agent.give_up();
                             }
                             let notice = term.agent.update(activity, seen, now);
+                            if members.contains(&term.id) && term.agent.status() == Some(activity::Status::Done) {
+                                term.agent.see();
+                            }
                             let state = term.agent.state();
                             if let Some(kind) = term.context.kind()
                                 && let Some((pid, _)) = term.context.agent()
@@ -100,6 +104,13 @@ impl App {
                                     to = state.unwrap_or("none"),
                                 );
                             }
+                            let routine = members.contains(&term.id) && notice == Some(activity::Status::Done);
+                            let ended = orchestrators.contains(&term.id)
+                                && !seen
+                                && matches!(before, Some("working" | "shell"))
+                                && state == Some("pending");
+                            let notice =
+                                notice.filter(|_| !routine).or_else(|| ended.then_some(activity::Status::Done));
                             if let Some(status) = notice
                                 && let Some((agent, _)) = found
                             {

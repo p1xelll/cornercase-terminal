@@ -41,6 +41,8 @@ impl App {
             Some(Overlay::Queue(_)) => self.queue_key(key, area),
             Some(Overlay::Issues(_)) => return self.issues_key(key, area),
             Some(Overlay::Settings(_)) => self.settings_key(key, area),
+            Some(Overlay::Flows { .. }) => self.flows_key(key, area),
+            Some(Overlay::StartFlow { .. }) => self.start_flow_key(key, area),
             Some(Overlay::Usage) => {
                 self.usage_key(key);
             }
@@ -86,16 +88,8 @@ impl App {
             self.commit_todo();
             self.files.unfocus();
         }
-        if in_panel {
-            match self.side {
-                Some(Side::Todo) => {
-                    self.todo_mouse(ev, pos, areas.changes, area);
-                    return Ok(());
-                }
-                Some(Side::Files) => return self.files_mouse(ev, pos, areas.changes, area),
-                Some(Side::Changes) => return self.changes_mouse(ev, pos, areas.changes, area),
-                None => {}
-            }
+        if in_panel && let Some(side) = self.side {
+            return self.panel_mouse(side, ev, pos, areas.changes, area);
         }
         if let Some(delta) = wheel(ev.kind)
             && self.scroll_column(&areas, pos, delta)
@@ -165,6 +159,16 @@ impl App {
             return Ok(());
         }
         self.main_mouse(ev, pos, &areas, area)
+    }
+
+    fn panel_mouse(&mut self, side: Side, ev: MouseEvent, pos: Position, panel: Rect, area: Rect) -> Result<()> {
+        match side {
+            Side::Todo => self.todo_mouse(ev, pos, panel, area),
+            Side::Files => return self.files_mouse(ev, pos, panel, area),
+            Side::Changes => return self.changes_mouse(ev, pos, panel, area),
+            Side::Flow => self.flow_mouse(ev, pos, panel),
+        }
+        Ok(())
     }
 
     fn main_mouse(&mut self, ev: MouseEvent, pos: Position, areas: &ui::Areas, area: Rect) -> Result<()> {
@@ -265,6 +269,7 @@ impl App {
             issues: self.issues_available(),
             changes: self.changes_label().is_some(),
             files: self.project().is_some(),
+            flow: self.has_run(),
             update: self.update_label().is_some(),
             remote: self.remote_button().is_some(),
         }
@@ -285,6 +290,7 @@ impl App {
             ui::ActivityItem::Changes => self.toggle_changes(),
             ui::ActivityItem::Files => self.toggle_files(),
             ui::ActivityItem::Todo => self.toggle_todo(),
+            ui::ActivityItem::Flow => self.toggle_flow(),
             ui::ActivityItem::Update => self.open_update(),
             ui::ActivityItem::Remote => self.open_remote_menu(pos),
             ui::ActivityItem::Usage => self.open_usage(),
@@ -321,7 +327,7 @@ impl App {
         hit
     }
 
-    pub(super) fn handle_paste(&mut self, text: &str) {
+    pub(super) fn handle_paste(&mut self, text: &str, area: Rect) {
         if matches!(self.overlay, Some(Overlay::Keys(_))) {
             self.overlay = None;
         }
@@ -350,6 +356,14 @@ impl App {
         }
         if let Some(Overlay::Settings(s)) = &mut self.overlay {
             s.paste(text);
+            return;
+        }
+        if matches!(self.overlay, Some(Overlay::Flows { .. })) {
+            self.flows_paste(text, area);
+            return;
+        }
+        if matches!(self.overlay, Some(Overlay::StartFlow { .. })) {
+            self.start_flow_paste(text, area);
             return;
         }
         if let Some(overlay) = &mut self.overlay {

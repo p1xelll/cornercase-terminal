@@ -144,7 +144,6 @@ fn draw_editor(f: &mut Frame, field: Rect, r: Rect, editor: &Editor, focused: bo
             .text()
             .chars()
             .map(|c| match c {
-                '\n' => '↵',
                 c if c.is_control() => ' ',
                 c => c,
             })

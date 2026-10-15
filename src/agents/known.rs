@@ -46,6 +46,86 @@ impl Known {
         }
     }
 
+    pub(crate) fn effort(self) -> Option<super::Effort> {
+        match self {
+            Self::Claude => claude::EFFORT,
+            Self::Codex => codex::EFFORT,
+            Self::Gemini => gemini::EFFORT,
+            Self::Opencode => opencode::EFFORT,
+            Self::Grok => grok::EFFORT,
+        }
+    }
+
+    pub(crate) fn model_alias(self) -> Option<&'static str> {
+        match self {
+            Self::Claude => claude::MODEL_ALIAS,
+            Self::Codex => codex::MODEL_ALIAS,
+            Self::Gemini => gemini::MODEL_ALIAS,
+            Self::Opencode => opencode::MODEL_ALIAS,
+            Self::Grok => grok::MODEL_ALIAS,
+        }
+    }
+
+    pub(crate) fn model_flag(self) -> &'static str {
+        match self {
+            Self::Claude => claude::MODEL_FLAG,
+            Self::Codex => codex::MODEL_FLAG,
+            Self::Gemini => gemini::MODEL_FLAG,
+            Self::Opencode => opencode::MODEL_FLAG,
+            Self::Grok => grok::MODEL_FLAG,
+        }
+    }
+
+    pub(crate) fn unattended(self) -> &'static [&'static str] {
+        match self {
+            Self::Claude => claude::UNATTENDED,
+            Self::Codex => codex::UNATTENDED,
+            Self::Gemini => gemini::UNATTENDED,
+            Self::Opencode => opencode::UNATTENDED,
+            Self::Grok => grok::UNATTENDED,
+        }
+    }
+
+    pub(crate) fn models(self) -> &'static [&'static str] {
+        match self {
+            Self::Claude => claude::MODELS,
+            Self::Codex => codex::MODELS,
+            Self::Gemini => gemini::MODELS,
+            Self::Opencode => opencode::MODELS,
+            Self::Grok => grok::MODELS,
+        }
+    }
+
+    pub(crate) fn catalogue(self) -> Option<fn() -> Vec<String>> {
+        match self {
+            Self::Claude => claude::CATALOGUE,
+            Self::Codex => codex::CATALOGUE,
+            Self::Gemini => gemini::CATALOGUE,
+            Self::Opencode => opencode::CATALOGUE,
+            Self::Grok => grok::CATALOGUE,
+        }
+    }
+
+    pub(crate) fn status_by_folder(self) -> bool {
+        match self {
+            Self::Claude => claude::STATUS_BY_FOLDER,
+            Self::Codex => codex::STATUS_BY_FOLDER,
+            Self::Gemini => gemini::STATUS_BY_FOLDER,
+            Self::Opencode => opencode::STATUS_BY_FOLDER,
+            Self::Grok => grok::STATUS_BY_FOLDER,
+        }
+    }
+
+    pub(crate) fn record_by_folder(self) -> bool {
+        match self {
+            Self::Claude => claude::RECORD_BY_FOLDER,
+            Self::Codex => codex::RECORD_BY_FOLDER,
+            Self::Gemini => gemini::RECORD_BY_FOLDER,
+            Self::Opencode => opencode::RECORD_BY_FOLDER,
+            Self::Grok => grok::RECORD_BY_FOLDER,
+        }
+    }
+
     pub(crate) fn normalized(self, args: &[String]) -> Vec<String> {
         match self {
             Self::Claude => claude::normalized(args),

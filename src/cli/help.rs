@@ -66,7 +66,10 @@ pub(super) const SPLIT_HELP: &str = "Examples:
   cornercase split -- htop
   cornercase split --pane 7 --down -- tail -f server.log";
 pub(super) const START_HELP: &str =
-    "The agent starts with its command and arguments from settings → agents. If it asks whether
+    "The agent starts with its command and arguments from settings → agents. --mode replaces the mode
+chosen there by another of the agent's modes, --model adds the agent's own model flag and --effort its
+effort (Claude Code, Codex and Grok Build take one; an older server refuses all three rather than
+start the agent without them). If it asks whether
 you trust the folder, the question waits for your answer unless settings → agents accept it for
 you. Once it is ready, the prompt is pasted and
 submitted, and the command prints the pane's id; it fails if the agent never shows up. With
@@ -75,7 +78,8 @@ submitted, and the command prints the pane's id; it fails if the agent never sho
 
 Examples:
   cornercase start claude --worktree fix-login --prompt 'Fix the login form, then commit'
-  cornercase start codex --prompt-file task.md --wait --timeout 1800";
+  cornercase start codex --prompt-file task.md --wait --timeout 1800
+  cornercase start claude --mode plan --model opus --prompt 'Plan the login rework'";
 pub(super) const SEND_HELP: &str =
     "The text goes in as one paste, bracketed when the program asked for it. A pane whose agent
 waits for an answer to a question or a permission prompt is refused, since the text would answer
@@ -194,6 +198,35 @@ Examples:
   cornercase mark
   cornercase mark --pane 12
   cornercase mark --pane 12 --reviewed";
+pub(super) const FLOW_HELP: &str =
+    "A flow is a team of coding agents and the plan they follow: one tab per role in a new
+worktree, every agent started without permission prompts, and an orchestrator agent that sends the
+work from role to role with these commands. The built-in flows come with cornercase; yours live in
+flows/ next to config.json, and a project's in .cornercase/flows/ in its repository.
+
+Examples:
+  cornercase flow list
+  cornercase flow run Quick --prompt 'Fix the login form'
+  cornercase flow run 'Full issue' --prompt-file task.md --worktree fix-login";
+pub(super) const FLOW_RUN_HELP: &str =
+    "It makes the worktree (or uses a worktree already on that branch, if it runs no flow), opens a
+tab per role named after it, the orchestrator first, and starts every agent with its role prompt,
+answering their trust prompts. The orchestrator starts last, with a brief: the task, the team and
+its pane ids, the stages, and how to drive the agents. Nothing is shown in the window unless you
+pass --focus.
+
+Without --worktree, the branch comes from the task's first words, with a short suffix when that
+says nothing, is a default branch or is already taken. A chosen branch that is main, master, the
+project's default or the one its own folder is on is refused: a flow works on a branch of its own.
+
+It prints the workspace's id, then one line per role: its pane's id and the role's name, separated
+by a tab. A name is looked up in yours, then the built-in flows, then the project's: yours replaces
+a built-in flow of its name, and a project's flow never stands in for another of the same name; the
+command says so on stderr when it happens.
+
+Examples:
+  cornercase flow run Quick --prompt 'Fix the login form'
+  cornercase flow run 'Bug, test first' --prompt-file bug.md --worktree fix-crash --json";
 pub(super) const TODO_HELP: &str = "Examples:
   cornercase todo add review the login fix
   cornercase todo list

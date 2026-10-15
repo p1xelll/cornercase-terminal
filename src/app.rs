@@ -68,6 +68,9 @@ mod dialogs;
 mod event;
 mod events;
 mod files_panel;
+mod flow_panel;
+mod flow_runs;
+mod flows_dialog;
 mod hierarchy;
 mod images;
 mod input;
@@ -91,6 +94,7 @@ mod session;
 mod settings_dialog;
 mod shortcuts;
 mod sidebar;
+mod start_flow_dialog;
 mod tab_bar;
 mod tabs;
 mod toast;
@@ -155,6 +159,8 @@ pub(crate) struct App {
     confirm_within: Duration,
     queued: QueueRuntime,
     todos: Todos,
+    runs: Vec<crate::flows::run::Run>,
+    flow: flow_panel::FlowPanel,
     todo: todo::Panel,
     files: files::Panel,
     images: images::Payloads,
@@ -211,6 +217,8 @@ impl App {
             confirm_within: control::CONFIRM_WITHIN,
             queued: QueueRuntime::default(),
             todos: Todos::default(),
+            runs: Vec::new(),
+            flow: flow_panel::FlowPanel::default(),
             todo: todo::Panel::default(),
             files: files::Panel::default(),
             images: images::Payloads::default(),
@@ -331,6 +339,7 @@ impl App {
             drag,
             launch,
             spin,
+            self.flow_frame(now),
             self.next_request(now),
             self.next_pairing(now),
             self.queued.area.and_then(|_| self.queued.queue.next(clock)),
@@ -365,6 +374,7 @@ impl App {
         self.sync_messengers();
         self.pair_by_owner(now);
         self.check_requests(now);
+        self.close_gone_flow_message();
         self.check_updates(now);
         self.refresh_files(now);
         self.refresh_changes(now);
@@ -374,6 +384,7 @@ impl App {
         }
         self.synced = Some(now);
         self.sync_worktrees();
+        self.forget_runs();
         self.forget_files();
         self.count_behind(now);
         self.ask_pull_requests(now);
@@ -388,7 +399,7 @@ impl App {
             .projects
             .iter()
             .zip(crate::project::group_indices(&self.projects, &self.groups))
-            .map(|(p, group)| ProjectState::of(p, group))
+            .map(|(p, group)| ProjectState::of(p, group, &self.runs))
             .collect();
         let chosen = self.issues.tab.is_some() || self.issues.closed || self.issues.people != People::default();
         let issues = chosen.then(|| IssuesState {
@@ -415,6 +426,7 @@ impl App {
             changes,
             todo: self.side == Some(Side::Todo),
             files: self.side == Some(Side::Files),
+            flow: self.side == Some(Side::Flow),
         }
     }
 
@@ -471,6 +483,9 @@ impl App {
             self.projects.push(project);
         }
         self.sync_worktrees();
+        if saved.flow {
+            self.show_flow();
+        }
         if !missed.is_empty() {
             self.toast = Some(Toast::new(not_restored(&missed), ui::ToastIcon::Bug));
         }
@@ -489,6 +504,7 @@ impl App {
             AppEvent::Update(event) => self.update_answered(event),
             AppEvent::Queue(event) => self.queue_prepared(*event),
             AppEvent::Usage(agent, result) => self.usage.answered(agent, result, Instant::now()),
+            AppEvent::FlowModels(agent, models) => self.flow_models(agent, models),
             AppEvent::LastMessage { request, result } => self.message_read(request, result),
             AppEvent::Encoded { key, result } => self.encoded(key, result),
             AppEvent::Web(event) => self.web_event(event),
@@ -502,7 +518,7 @@ impl App {
         match event {
             Event::Key(key) if key.kind == KeyEventKind::Press => self.handle_key(key, area)?,
             Event::Mouse(ev) => self.handle_mouse(ev, area)?,
-            Event::Paste(text) => self.handle_paste(&text),
+            Event::Paste(text) => self.handle_paste(&text, area),
             _ => {}
         }
         Ok(())
@@ -637,6 +653,8 @@ impl App {
                 open: changes_open,
             }),
             todo: (self.side == Some(Side::Todo)).then(|| self.todo_view(self.layout(area).shown(self.nav).changes)),
+            flow: (self.side == Some(Side::Flow)).then(|| self.flow_view(now, spin)).flatten(),
+            flow_run: self.has_run(),
             todo_dot: self.config.todo_dot,
             todo_pending: self.todos.pending() > 0,
             files,

@@ -113,12 +113,14 @@ impl App {
             Action::Changes => self.changes_by_key(),
             Action::Base => self.compare_base(),
             Action::PullRequest => self.pull_request_by_key(),
+            Action::Flow => self.flow_by_key(),
             Action::NewWorkspace => {
                 if self.project().is_some() {
                     self.nav = None;
                     self.ask_new_workspace(self.active);
                 }
             }
+            Action::StartFlow => self.open_start_flow(self.start_flow_here()),
             Action::RenameWorkspace => {
                 let target = self.open_workspace_index().map(|(p, w)| {
                     let project = &self.projects[p];

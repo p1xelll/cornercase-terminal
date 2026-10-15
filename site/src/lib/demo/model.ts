@@ -88,7 +88,10 @@ export type MenuAction =
   | { kind: 'newGroup' }
   | { kind: 'mark'; panes: number[]; pending: boolean }
   | { kind: 'pane'; pane: number; action: PaneAction }
-  | { kind: 'base'; branch: string };
+  | { kind: 'base'; branch: string }
+  | { kind: 'showFlow'; workspace: number }
+  | { kind: 'newWorkspace'; project: number }
+  | { kind: 'startFlow'; project: number };
 
 export interface PickItem {
   value: string;
@@ -152,6 +155,7 @@ export type Overlay =
   | { kind: 'restart'; scroll: number }
   | { kind: 'keys'; group: KeysGroup | null }
   | { kind: 'closePane'; pane: number }
+  | { kind: 'flowMessage'; workspace: number; edge: string; to: string | null; scroll: number }
   | import('./queue').QueueForm
   | SettingsOverlay
   | IssuesOverlay;

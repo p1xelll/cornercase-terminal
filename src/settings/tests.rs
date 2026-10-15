@@ -52,7 +52,7 @@ mod pages {
 
     #[rstest]
     #[case::worktrees(Page::Worktrees, &[""])]
-    #[case::agents(Page::Agents, &["Agent", "How each agent starts"])]
+    #[case::agents(Page::Agents, &["Agent", "How each agent starts", "Flows"])]
     #[case::issues(Page::Issues, &["Accounts", "Sources shown"])]
     #[case::ui(Page::Ui, &[""])]
     #[case::remote(Page::Remote, &["Browser", "Telegram", "Discord"])]
@@ -104,7 +104,7 @@ mod pages {
 
 #[test]
 fn agents_with_modes_are_listed() {
-    assert_eq!(settings().listed_kinds(), ["claude", "codex", "gemini", "grok"]);
+    assert_eq!(settings().listed_kinds(), ["claude", "codex", "gemini", "opencode", "grok"]);
 }
 
 mod folder {
@@ -903,11 +903,11 @@ mod agent {
         let mut s = settings();
         go_to(&mut s, &Row::AddAgent);
         press(&mut s, KeyCode::Enter);
-        type_text(&mut s, "opencode");
+        type_text(&mut s, "aider");
         press(&mut s, KeyCode::Enter);
         type_text(&mut s, "--model x");
         let config = saved(press(&mut s, KeyCode::Enter));
-        assert_eq!(config.agent_args["opencode"], ["--model", "x"]);
+        assert_eq!(config.agent_args["aider"], ["--model", "x"]);
     }
 
     #[test]

@@ -1,5 +1,5 @@
 #!/bin/sh
-CC_SCREENS="first-run sidebar-stacked groups hover-close reorder codex-context search sidebar-tree tab-bar sidebar-agents agent-failed compact-bar compact-menu-workspaces compact-menu-projects compact-menu-agents picker picker-filter new-workspace new-workspace-plain pane-menu group-style rename-menu rename-form remove-workspace pull-requests pull-request-checks issues-list issues-token issues-people issues-person-picker issues-mine issue-detail issue-detail-end issue-agent-picker issue-started overview splits toast changes changes-commits changes-base changes-filter changes-every files files-file files-search files-names files-link todo todo-add settings-worktrees settings-agents settings-remote settings-claude-modes settings-gemini-modes settings-default-agent settings-issues settings-ui usage usage-stats keys-menu remote-reconnecting queue queue-form"
+CC_SCREENS="first-run sidebar-stacked groups hover-close reorder codex-context search sidebar-tree tab-bar sidebar-agents agent-failed compact-bar compact-menu-workspaces compact-menu-projects compact-menu-agents picker picker-filter new-workspace new-workspace-plain pane-menu group-style rename-menu rename-form remove-workspace pull-requests pull-request-checks issues-list issues-token issues-people issues-person-picker issues-mine issue-detail issue-detail-end issue-agent-picker issue-started overview splits toast changes changes-commits changes-base changes-filter changes-every files files-file files-search files-names files-link todo todo-add settings-worktrees settings-agents settings-remote settings-claude-modes settings-gemini-modes settings-default-agent settings-issues settings-ui usage usage-stats keys-menu remote-reconnecting queue queue-form flow-run flows-list flows-edit flow-start"
 
 pane_in() {
   cc status --json | node -e '
@@ -225,10 +225,16 @@ screen_picker_filter() {
   cc_shot picker-filter
 }
 
+new_workspace_form() {
+  cc_click '+ New' 0 -1
+  cc_wait 'start a flow…'
+  cc_click 'new workspace'
+  cc_wait 'with its own worktree'
+}
+
 screen_new_workspace() {
   cc_s1
-  cc_click '+ New workspace'
-  cc_wait 'with its own worktree'
+  new_workspace_form
   cc_type 'feat/login'
   cc_wait 'in ~/.cornercase/worktrees/web-shop/feat-login'
   cc_shot new-workspace
@@ -236,8 +242,7 @@ screen_new_workspace() {
 
 screen_new_workspace_plain() {
   cc_s1
-  cc_click '+ New workspace'
-  cc_wait 'with its own worktree'
+  new_workspace_form
   cc_click 'its own worktree'
   cc_wait '[ ] with its own worktree'
   cc_hover 'Workspaces'
@@ -382,7 +387,7 @@ screen_issue_agent_picker() {
 
 screen_issue_started() {
   open_issue_482
-  cc_click 'start   schedule   agent…'
+  cc_click 'start   schedule   start a flow'
   cc_wait 'aider'
   cc_click 'claude    claude'
   cc_wait '> https://github.com/acme/web-shop/issues/482' 40
@@ -400,7 +405,7 @@ issue_pane() {
 }
 
 issue_listed() {
-  cc_wheel '+ New workspace' down 3
+  cc_wheel '+ New' down 3 -1
   cc_hover 'Workspaces'
   cc_wait "$1"
 }
@@ -736,6 +741,84 @@ JS
   cc_shot usage-stats
 }
 
+flow_482() {
+  cc_s1_at 140 38
+  cc flow run 'Full issue' --prompt 'Fix https://github.com/acme/web-shop/issues/482: the returns page crashes on an empty address.' --worktree issue-482-returns-page-crashes-on-empty-address --focus >/dev/null
+  cc_wait 'Sending issue #482 to coder' 60
+}
+
+screen_flow_run() {
+  flow_482
+  cc_wait 'findings · 1/3' 60
+  cc_wait 'waiting for reviewer…' 30
+  cc_wheel 'feat/dark-mode' down 3
+  cc_hover 'Workspaces'
+  cc_wait '├ ○ tester'
+  i=0
+  while cc_text | grep -qF 'finished in'; do
+    i=$((i + 1))
+    [ "$i" -lt 100 ] || { echo "capture: the toast never went"; cc_text; exit 1; }
+    sleep 0.1
+  done
+  cc_shot flow-run
+}
+
+flows_open() {
+  cc_config '{}'
+  cc_session "$CC_CAPTURE/sessions/$CC_SESSION.json"
+  cc_start 140 38
+  cc_wait 'web-shop'
+  cc_click 'Settings'
+  cc_click 'Agents'
+  cc_click 'flows'
+  cc_wait 'teams of agents that work through a plan'
+}
+
+flows_edit_full_issue() {
+  flows_open
+  cc_click 'Full issue'
+  cc_click 'edit   duplicate'
+  cc_wait 'not saved yet'
+}
+
+screen_flows_list() {
+  flows_edit_full_issue
+  cc_click 'save   done'
+  cc_wait 'full-issue.toml'
+  cc_click 'save   done' 7
+  cc_wait 'restore default'
+  CC_ROWS=24
+  tmux -L "$CC_TMUX" resize-window -x 140 -y 24
+  cc_wait 'restore default'
+  cc_hover '╭─ Flows'
+  cc_shot flows-list
+}
+
+screen_flows_edit() {
+  flows_edit_full_issue
+  cc_click '▸ 2'
+  cc_wait 'goes back'
+  cc_hover '╭─ Flows'
+  cc_shot flows-edit
+}
+
+screen_flow_start() {
+  CC_SESSION=s1
+  cc_config '{}'
+  cc_session "$CC_CAPTURE/sessions/$CC_SESSION.json"
+  cc_start 140 38
+  cc_wait 'web-shop'
+  cc_click 'Issues'
+  cc_wait '#482'
+  cc_click '#482'
+  cc_wait 'opened by @ana'
+  cc_click 'start a flow'
+  cc_wait 'Flow templates'
+  cc_wait 'Full issue in web-shop'
+  cc_wait '◆ open a pull request'
+  cc_hover '╭─ Start a flow'
+  cc_shot flow-start
+}
 
 screen_queue() {
   cc_config '{"sidebar":"projects_on_top"}'

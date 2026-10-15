@@ -95,6 +95,7 @@ impl Settings {
             Row::Kind(kind) => self.pick_mode(kind),
             Row::Bot(_) => self.start_edit(row, String::new()),
             Row::Chat(via) => Action::Pair(via),
+            Row::Flows => Action::OpenFlows,
             Row::AddAgent => {
                 let listed = self.listed_kinds();
                 let items: Vec<PickItem> = agents::kinds(&self.config)

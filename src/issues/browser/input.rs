@@ -1,6 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEventKind};
 
-use super::{Action, Browser, IssuesHit, Pick, Room, Screen, Tab};
+use super::{Action, After, Browser, IssuesHit, Pick, Room, Screen, Tab};
 
 const WHEEL_ROWS: isize = 3;
 
@@ -118,7 +118,7 @@ impl Browser {
                     Some(IssuesHit::Item(i)) => {
                         self.filtering = Some(i);
                         if let Some((source, field)) = self.people_rows().get(i).copied() {
-                            self.open_picker(Pick::Person(source, field), false);
+                            self.open_picker(Pick::Person(source, field), After::Nothing);
                         }
                     }
                     Some(IssuesHit::Button(i)) => return self.press(self.buttons(room.buttons)[i]),

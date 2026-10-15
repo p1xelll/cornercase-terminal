@@ -132,6 +132,9 @@ impl Settings {
             }
             Row::Kind(kind) => kind_row(config, kind),
             Row::AddAgent => ("+ another agent…".into(), String::new(), String::new(), false),
+            Row::Flows => {
+                ("flows".into(), self.flows.clone(), "teams of agents that work through a plan".into(), false)
+            }
             Row::Bot(via) | Row::Chat(via) => self.messenger_row(row, *via),
         };
         RowText { label, value, note, dangerous }

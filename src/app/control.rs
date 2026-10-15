@@ -1,6 +1,7 @@
 mod arrange;
 mod close;
 mod create;
+mod flow;
 mod idle_restart;
 mod queue;
 mod status;
@@ -17,6 +18,7 @@ use serde_json::Value;
 use crate::agents;
 use crate::agents::launch::Launch;
 use crate::app::App;
+use crate::app::flow_runs::Starting;
 use crate::app::messenger::CLIENTS as MESSENGER_CLIENTS;
 use crate::control::{self, Command, Done, Ids, Item, Request, Response};
 use crate::error;
@@ -80,6 +82,7 @@ struct Pending {
 
 enum Stage {
     Worktree(Then),
+    Run(u64, Box<Starting>),
     Removing { force: bool },
     Launch { confirm: Option<SystemTime>, wait: Option<Condition> },
     Confirm(Confirm),
@@ -215,6 +218,7 @@ impl App {
             );
         }
         self.events.forget(client);
+        self.forget_flow_reads(Some(client));
         for pending in self.requests.pending.iter_mut().filter(|p| p.client == Some(client)) {
             pending.client = None;
         }
@@ -233,6 +237,7 @@ impl App {
 
     fn answer(&mut self, client: Option<u64>, reply: Reply) {
         let Some(client) = client else { return };
+        self.flow_answered(client, &reply);
         self.requests.open.retain(|open| *open != client);
         if let Some((at, command)) = self.requests.asked.remove(&client) {
             let ms = at.elapsed().as_millis();
@@ -264,14 +269,15 @@ impl App {
 
     fn handle_request(&mut self, client: u64, request: Request, area: Option<Rect>, now: Instant) -> Handled {
         let caller = request.caller.filter(|_| request.server.as_deref() == Some(control::server_token()));
-        match request.command {
+        let noted = self.flow_steps(caller, &request.command, now);
+        let handled = match request.command {
             Command::Status(_) => Ok(Some(json(&self.report(caller)))),
             Command::Stats(_) => Ok(Some(json(&self.stats_view(SystemTime::now())))),
             Command::Open(open) => self.open_request(&open, area),
             Command::NewWorkspace(new) => self.new_workspace_request(client, caller, new, area),
             Command::NewTab(new) => self.new_tab_request(client, caller, new, area, now),
             Command::Split(split) => self.split_request(client, caller, split, area, now),
-            Command::Start(start) => self.start_request(client, caller, start, area, now),
+            Command::Start(start) | Command::StartWith(start) => self.start_request(client, caller, start, area, now),
             Command::Send(send) => self.send_request(client, caller, send, now),
             Command::Keys(keys) => self.keys_request(caller, &keys, now),
             Command::Read(read) => self.read_request(caller, &read),
@@ -288,7 +294,11 @@ impl App {
             Command::RestartWhenIdle(restart) => self.restart_request(client, caller, &restart, now),
             Command::Away(away) => self.away_request(away.off),
             Command::Mark(mark) => self.mark_request(caller, &mark),
-        }
+            Command::FlowList(list) => self.flow_list_request(caller, &list),
+            Command::FlowRun(run) => self.flow_run_request(client, caller, run, area),
+        };
+        self.flow_requested(client, noted, handled.is_ok());
+        handled
     }
 
     fn launch_within(
@@ -363,7 +373,12 @@ impl App {
         Ok((p, here.workspace.unwrap_or_else(|| self.ensure_workspace(p))))
     }
 
-    fn target(&self, caller: Option<u64>, pane: Option<u64>, tab: Option<u64>) -> Result<u64, String> {
+    pub(in crate::app) fn target(
+        &self,
+        caller: Option<u64>,
+        pane: Option<u64>,
+        tab: Option<u64>,
+    ) -> Result<u64, String> {
         if let Some(id) = pane {
             return self.projects.tab_of_pane(id).map(|_| id).ok_or_else(|| none("pane", id));
         }

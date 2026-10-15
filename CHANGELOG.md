@@ -2,6 +2,17 @@
 
 Every pull request that changes the app adds a section here for its new version. The section becomes the notes of the GitHub Release and shows up in the app's update dialog, so write it for users.
 
+## 0.12.97
+
+- **Flows** start a whole team of agents on an issue or a prompt. A flow is a saved team and the plan it follows: an orchestrator agent, and roles such as coder, reviewer, security and tester, each with its own agent, model and effort. The plan is a list of stages, which can work in parallel and go back when there are findings. Choose ` start a flow ` next to ` start ` in an issue, **start a flow…** in the workspaces' `+ New`, or `w s` with a prefix key. cornercase makes a worktree, opens a tab per role and starts every agent there, and the orchestrator runs the plan with cornercase's own commands, from the first message to the pull request.
+- Four flows come built in (**Full issue**, **Cross review**, **Quick**, **Bug, test first**), with the agents you have installed. Change them to your liking, or make your own, in **Settings → Agents → flows**: stages, roles, agents, models, efforts and prompts, with the plan drawn beside them. **restore default** brings a built-in flow back. Yours are saved in `flows/` next to `config.json`, and a project's in its `.cornercase/flows/`.
+- The new **Flow** panel draws the plan as boxes and arrows and lights it up as the work moves: the box of an agent at work, the arrow the work went along, the rounds of each loop. Click a box to go to that agent, or an arrow to read the last message sent along it. It opens when a flow starts, and from the workspace's menu (**show flow**), the icon bar or `w f`.
+- Every agent of a flow runs without asking for permission, so nothing stops the team halfway. A project's flow that sets environment variables or arguments on its agents says so in red before it starts, and Claude Code's one-time consent to that mode is still yours to give.
+- `cornercase flow list` and `cornercase flow run` start flows from scripts and agents, and `cornercase start` takes `--model`, `--mode` and `--effort`.
+- opencode has two modes in **Settings → Agents**: plan, and auto (which skips its permission prompts).
+- The workspaces' `+ New workspace` button is now `+ New`, with **new workspace** and **start a flow…**.
+- Text fields with long prompts take line breaks, and wide characters (Chinese, Japanese, emoji) no longer put the cursor in the wrong place, in the TODO panel too.
+
 ## 0.12.96
 
 - Schedule issues or prompts for later from the **schedule** button in Issues, the new **Queue** tab at the end of the Issues dialog, or `cornercase queue add`. Choose a clock time, a date, a delay such as `in 2h`, or the next Claude/Codex five-hour plan reset, and pick the agent, mode and destination: a project root, a workspace tab or a worktree. Clock times use your client's time zone, including remote terminals and browsers.
