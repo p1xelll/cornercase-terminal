@@ -1,6 +1,6 @@
 [package]
 name = "cornercase"
-version = "0.12.95"
+version = "0.12.96"
 edition = "2024"
 description = "A terminal multiplexer for projects, git worktrees and coding agents, driven by the mouse"
 license = "MIT OR Apache-2.0"
@@ -33,6 +33,7 @@ httparse = "1.10.1"
 icy_sixel = "0.7.0"
 ignore = "0.4.25"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico"] }
+jiff = { version = "0.2.38", features = ["tzdb-bundle-always"] }
 libghostty-vt = { version = "=0.2.2", default-features = false }
 nucleo-matcher = "0.3.1"
 parking_lot = "0.12.5"

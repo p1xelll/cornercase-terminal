@@ -2,6 +2,13 @@
 
 Every pull request that changes the app adds a section here for its new version. The section becomes the notes of the GitHub Release and shows up in the app's update dialog, so write it for users.
 
+## 0.12.96
+
+- Schedule issues or prompts for later from the **schedule** button in Issues, the new **Queue** tab at the end of the Issues dialog, or `cornercase queue add`. Choose a clock time, a date, a delay such as `in 2h`, or the next Claude/Codex five-hour plan reset, and pick the agent, mode and destination: a project root, a workspace tab or a worktree. Clock times use your client's time zone, including remote terminals and browsers.
+- Every due entry starts together, without moving your active pane. Queued starts submit the stored prompt automatically and always accept the agent's folder trust question, so they can run unattended; immediate starts keep your existing trust setting.
+- The queue survives server restarts and keeps started entries so you can see what ran. On the **Queue** tab, edit, remove or start entries now, and clear the started history; a removal can be undone from its notice for a few seconds. Work more than ten minutes late is marked **missed** and waits for you. A closed destination or failed start shows its reason; interrupted starts ask you to check the workspace before retrying.
+- `cornercase queue add --issue` takes an issue URL or key. A URL must point to the project's own repository, or to the Jira site or the Plane or Linear workspace you are connected to; a bare key such as `482` that more than one tracker could read asks for `--source`.
+
 ## 0.12.95
 
 - cornercase can message you on Discord, as it does on Telegram: while you are away, an agent that needs you or finishes its turn sends you a direct message with its question and buttons to answer it, or what it wrote, and what you reply goes to that agent. `/status`, `/new`, `/away` and `/back` work there too, as slash commands: type `/` in the chat with the bot to pick one.
