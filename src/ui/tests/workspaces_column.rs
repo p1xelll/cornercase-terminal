@@ -23,6 +23,7 @@ fn with_workspaces(active_tab: Option<usize>) -> View<'static> {
                 behind: 0,
                 pull: None,
                 removing: false,
+                setting_up: false,
             },
             WorkspaceEntry {
                 collapsed: false,
@@ -31,6 +32,7 @@ fn with_workspaces(active_tab: Option<usize>) -> View<'static> {
                 behind: 0,
                 pull: None,
                 removing: false,
+                setting_up: false,
             },
         ],
         active_tab,
@@ -114,6 +116,7 @@ fn renders_a_workspace_being_removed_without_its_buttons() {
         behind: 3,
         pull: None,
         removing: true,
+        setting_up: false,
         tabs: Vec::new(),
         name: "login".into(),
     };
@@ -152,6 +155,7 @@ fn an_empty_workspace_says_so_in_the_pane() {
             behind: 0,
             pull: None,
             removing: false,
+            setting_up: false,
         }],
         ..with_workspaces(None)
     };

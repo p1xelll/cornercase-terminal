@@ -260,11 +260,11 @@ impl App {
         let w = self.worktree_workspace(p, path);
         let launch = match then.start {
             Some((spec, name)) => {
-                let t = self.push_tab(p, w, area, name).map_err(|e| e.to_string())?;
+                let t = self.push_setup_tab(p, w, area, name).map_err(|e| e.to_string())?;
                 Some((spec, t))
             }
             None if self.projects[p].workspaces[w].tabs.is_empty() => {
-                self.push_tab(p, w, area, None).map_err(|e| e.to_string())?;
+                self.push_setup_tab(p, w, area, None).map_err(|e| e.to_string())?;
                 None
             }
             None => None,
@@ -275,7 +275,14 @@ impl App {
         if then.focus {
             self.show(Item::Pane(pane))?;
         }
-        let Some((spec, _)) = launch else { return Ok(false) };
+        let Some((spec, _)) = launch else {
+            let workspace = self.projects[p].workspaces[w].id;
+            if self.projects[p].workspaces[w].setting_up() {
+                pending.stage = Stage::Setup(workspace);
+                return Ok(true);
+            }
+            return Ok(false);
+        };
         let mut launch = Launch::new(pane, spec, Instant::now());
         launch.key = Some(pending.key);
         launch.trust = pending

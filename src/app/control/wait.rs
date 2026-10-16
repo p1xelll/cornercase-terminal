@@ -155,6 +155,11 @@ impl App {
                 _ => return Some(Ok(json(&pending.done))),
             }
         }
+        if let Stage::Setup(workspace) = pending.stage
+            && !self.workspace_setting_up(workspace)
+        {
+            return Some(self.setup_failure(pane).map_or_else(|| Ok(json(&pending.done)), Err));
+        }
         if let Stage::Confirm(confirm) = &mut pending.stage {
             match self.confirmation(confirm, now) {
                 None => {}
@@ -207,6 +212,8 @@ impl App {
     fn not_started(&self, pane: u64) -> String {
         if self.projects.pane_by(pane).is_none() {
             format!("pane {pane} closed before it was ready")
+        } else if let Some(failure) = self.setup_failure(pane) {
+            failure
         } else {
             format!(
                 "pane {pane} did not take what was typed: the agent did not start, or its program is not reading; \
@@ -220,6 +227,9 @@ impl App {
             Stage::Worktree(_) | Stage::Run(..) => return "git is still creating the worktree".into(),
             Stage::Removing { .. } => return "git is still removing the worktree".into(),
             Stage::Launch { .. } => return format!("pane {pane} is still starting"),
+            Stage::Setup(workspace) => {
+                return format!("workspace {workspace} is still running its setup in pane {pane}");
+            }
             Stage::Confirm(confirm) => return self.unrecorded(confirm.pane),
             Stage::Reading => return format!("the record of pane {pane} is still being read"),
             Stage::Restart { caller } => return held(&self.holding(*caller, Instant::now())),

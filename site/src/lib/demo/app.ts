@@ -100,6 +100,8 @@ const MERGED_NEED = 'this needs cornercase on your computer: the demo has no Git
 
 const PULL_REQUESTS_NEED = 'this needs cornercase on your computer: the demo has no GitHub';
 
+const SETUP_NEEDS = 'this needs cornercase on your computer: the demo runs no setup scripts';
+
 const FLOWS_NEED = 'this needs cornercase on your computer: the demo only plays the flow in payments';
 
 const NO_RUN = 'this workspace runs no flow';
@@ -1939,6 +1941,7 @@ export class App {
   openMenu(at: Pos, target: Target): void {
     const actions: MenuAction[] = [{ kind: 'rename', target }];
     if (target.kind === 'project' && this.groups.length) actions.push({ kind: 'moveToGroup', project: target.project });
+    if (target.kind === 'project' && this.projects.find((x) => x.id === target.project)?.repo) actions.push({ kind: 'projectSettings', project: target.project });
     const tab = target.kind === 'tab' ? this.resolveTarget(target).tab : undefined;
     const mark = tab && this.markAction(tab.panes);
     if (mark) actions.push(mark);
@@ -1977,6 +1980,7 @@ export class App {
     if (a.kind === 'showFlow') return 'show flow';
     if (a.kind === 'newWorkspace') return 'new workspace';
     if (a.kind === 'startFlow') return 'start a flow…';
+    if (a.kind === 'projectSettings') return 'project settings';
     return a.action;
   }
 
@@ -2039,6 +2043,7 @@ export class App {
       this.nav = null;
       this.openNewWorkspace(this.projects.findIndex((x) => x.id === a.project));
     } else if (a.kind === 'startFlow') this.bug(FLOWS_NEED);
+    else if (a.kind === 'projectSettings') this.bug(SETUP_NEEDS);
     else this.paneAction(a.pane, a.action);
     this.dirty();
   }

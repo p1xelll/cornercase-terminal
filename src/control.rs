@@ -573,6 +573,8 @@ pub(crate) struct Done {
     #[serde(flatten)]
     pub(crate) ids: Ids,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) warning: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) ended: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) line: Option<String>,
@@ -792,6 +794,7 @@ pub struct WorkspaceInfo {
     pub(crate) worktree: bool,
     pub(crate) behind: u32,
     pub(crate) pull_request: Option<PullRequestInfo>,
+    pub(crate) setup: Option<String>,
     pub(crate) active: bool,
     pub tabs: Vec<TabInfo>,
 }

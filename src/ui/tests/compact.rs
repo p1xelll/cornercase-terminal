@@ -21,6 +21,7 @@ fn in_a_project(nav: Option<Nav>) -> View<'static> {
                 behind: 0,
                 pull: None,
                 removing: false,
+                setting_up: false,
             },
             WorkspaceEntry {
                 collapsed: false,
@@ -29,6 +30,7 @@ fn in_a_project(nav: Option<Nav>) -> View<'static> {
                 behind: 0,
                 pull: None,
                 removing: false,
+                setting_up: false,
             },
         ],
         active_tab: Some(0),

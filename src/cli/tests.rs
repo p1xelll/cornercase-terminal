@@ -270,6 +270,7 @@ mod output {
             worktree: true,
             behind: 2,
             pull_request: None,
+            setup: None,
             active: true,
             tabs: vec![tab],
         };

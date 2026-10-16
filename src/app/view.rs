@@ -48,6 +48,7 @@ impl App {
             behind: w.behind,
             pull: self.pull_mark(w),
             removing: w.removing(),
+            setting_up: w.setting_up(),
         }
     }
 
@@ -74,6 +75,7 @@ impl App {
                     pull: self.pull_mark(workspace),
                     removing: workspace.removing(),
                     collapsed: workspace.collapsed,
+                    setting_up: workspace.setting_up(),
                 }
             };
             if open[p] { project.workspaces.iter().enumerate().map(entry).collect() } else { Vec::new() }

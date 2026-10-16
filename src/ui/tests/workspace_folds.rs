@@ -12,6 +12,7 @@ fn workspace(name: &str, collapsed: bool, statuses: &[Option<Status>]) -> Worksp
         behind: 0,
         pull: None,
         removing: false,
+        setting_up: false,
     }
 }
 

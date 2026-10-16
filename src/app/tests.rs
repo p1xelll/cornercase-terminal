@@ -436,6 +436,7 @@ mod lock_text;
 mod merged_pull_requests;
 mod muted_text;
 mod picker;
+mod project_settings;
 mod projects;
 mod remove_worktree;
 mod rename;

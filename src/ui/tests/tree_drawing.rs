@@ -36,6 +36,7 @@ fn with_tree() -> View<'static> {
                 behind: 0,
                 pull: None,
                 removing: false,
+                setting_up: false,
             },
             WorkspaceEntry {
                 collapsed: false,
@@ -44,6 +45,7 @@ fn with_tree() -> View<'static> {
                 behind: 2,
                 pull: None,
                 removing: false,
+                setting_up: false,
             },
         ],
         Vec::new(),
