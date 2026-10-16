@@ -308,7 +308,7 @@ pub(crate) fn install(fetched: Fetched, places: &Places) -> Result<Installed, St
     let mut registry = Registry::open(&places.registry)?;
     conflict(&registry, &id, &fetched.origin)?;
     let previous = registry.entries.iter().find(|entry| entry.id == id).cloned();
-    if !previous.as_ref().is_some_and(|entry| entry.source.root() == dest) {
+    if previous.as_ref().is_none_or(|entry| entry.source.root() != dest) {
         let _ = fs::remove_dir_all(&dest);
         fs::rename(&root, &dest).map_err(|e| format!("cannot move it into {}: {e}", dest.display()))?;
     }
