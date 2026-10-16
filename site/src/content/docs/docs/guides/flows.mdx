@@ -103,13 +103,13 @@ The messages are kept in memory only, at most the first 32 KiB of each: they nev
 
 ## Edit flows
 
-Open **settings → Agents → flows** to list them, in one list sorted by name: a project's flows are tagged `this project`, and built-in flows you changed `edited`. Click a flow to select it, and again (or **`edit`**) to open it. **`duplicate`** saves a copy in your folder and opens it, **`export`** and **`import`** [share a flow](#share-a-flow), **`new`** starts a flow with a coder and a reviewer, and **`delete`** (yours and the project's) asks first. A built-in flow opens like the others: saving it keeps your version in your folder under the same name, in its place, and for it **`restore default`** takes the place of **`delete`**: it asks first, then deletes your file, and the built-in flow comes back.
+Open **settings → Agents → flows** to list them, in one list sorted by name: a project's flows are tagged `this project`, and built-in flows you changed `edited`. Click a flow to select it and see its diagram, and again (or **`edit`**) to open it. When the dialog is wide enough the diagram is drawn beside the list (the wheel over it scrolls a tall one); otherwise **`diagram`** shows it in place of the list and **`list`** brings the list back. A file that cannot be read says why instead of drawing a diagram. **`duplicate`** saves a copy in your folder and opens it, **`export`** and **`import`** [share a flow](#share-a-flow), **`new`** starts a flow with a coder and a reviewer, and **`delete`** (yours and the project's) asks first. A built-in flow opens like the others: saving it keeps your version in your folder under the same name, in its place, and for it **`restore default`** takes the place of **`delete`**: it asks first, then deletes your file, and the built-in flow comes back.
 
 <Screen
   name="flows-list"
-  alt="The Flows dialog: teams of agents that work through a plan, started from an issue or a prompt; one list sorted by name: Bug, test first (4 agents, reproducer → coder → tester), Cross review (4 agents), Full issue (5 agents, tagged edited, selected) and Quick (3 agents); the buttons edit, duplicate, restore default, new and done"
-  caption="The flows, sorted by name, with their agents and their plan; Full issue has been edited."
-  crop={[2, 1, 136, 22]}
+  alt="The Flows dialog: teams of agents that work through a plan, started from an issue or a prompt; one list sorted by name: Bug, test first (4 agents, reproducer → coder → tester), Cross review (4 agents), Full issue (5 agents, tagged edited, selected) and Quick (3 agents); the diagram of Full issue on the right (the orchestrator, coder, reviewer and security, tester and the end open a pull request, with their loops); the buttons edit, duplicate, export, restore default, import, new and done"
+  caption="The flows, sorted by name, with their agents and their plan, and the selected one's diagram beside them; Full issue has been edited."
+  crop={[2, 1, 136, 35]}
 />
 
 A flow opens on its **Flow** tab, with a tab for the **Orchestrator** and one per role, and **`+ add role`** to add one (at most eight). When the dialog is wide enough, the diagram is drawn beside the form as you change it; otherwise **`diagram`** shows it. The wheel scrolls it (**`↑ more`** and **`↓ more`** at its edges), and the stage you are changing is drawn with heavy borders and scrolled into view.
