@@ -53,6 +53,7 @@ test('the star prompt is a switch on the UI tab', () => {
   app.openSettings();
   inputKey(app, key('ArrowLeft'));
   inputKey(app, key('ArrowLeft'));
+  inputKey(app, key('ArrowLeft'));
   const index = app.settingsRows(3).findIndex((row) => row.id === 'starPrompt');
   assert.ok(index > 0);
   assert.equal(app.config.starPrompt, true);
