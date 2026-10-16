@@ -2,6 +2,10 @@
 
 Every pull request that changes the app adds a section here for its new version. The section becomes the notes of the GitHub Release and shows up in the app's update dialog, so write it for users.
 
+## 0.12.110
+
+- **Community flows.** Anyone can publish a flow: add the topic `cornercase-flow` to a public GitHub repository with a `flow.toml`, and usecornercase.dev/flows lists it, most starred first, within a day, after the built-in flows that come with cornercase, which have pages of their own. `cornercase flow import OWNER/REPO` (or typing it on the Flows import page, or an `https://` address) fetches one, shows its roles and always asks before saving: nobody reviews these flows, and their agents never ask for permission.
+
 ## 0.12.109
 
 - **`cornercase contract`** says what the running server supports, for scripts and other programs that drive cornercase: its version, the version of its contract, the boot that its ids belong to, its commands and the version of each stream it sends (`--json` for the full description). `cornercase status --json` now names the boot too.
