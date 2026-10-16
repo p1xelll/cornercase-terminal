@@ -104,3 +104,24 @@ fn window_processes_are_not_services() {
 fn waits_longer_after_each_failure(#[case] failures: u32, #[case] seconds: u64) {
     assert_eq!(backoff(failures), Duration::from_secs(seconds));
 }
+
+#[test]
+fn a_process_that_cannot_be_recorded_is_stopped() {
+    let fixture = Fixture::new(true);
+    let state = fixture.places.state("acme.notes");
+    fs::create_dir_all(&state).expect("state folder");
+    fs::write(state.join(RUNNING_DIR), "not a folder").expect("running as a file");
+    let supervisor = Supervisor::start(Kind::Service, fixture.places.clone(), Vec::new());
+    let log = || fs::read_to_string(fixture.places.log("acme.notes")).unwrap_or_default();
+    wait_until("it is stopped again", || log().contains("service stopped") && log().contains("error="));
+    let log = log();
+    let pid: i32 = log
+        .split("service started")
+        .nth(1)
+        .and_then(|rest| rest.split("pid=").nth(1))
+        .and_then(|rest| rest.split_whitespace().next())
+        .and_then(|pid| pid.parse().ok())
+        .expect("the started pid");
+    wait_until("the process is gone", || !process::alive(pid));
+    drop((supervisor, fixture.home));
+}

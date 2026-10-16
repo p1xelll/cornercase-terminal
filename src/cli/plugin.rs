@@ -33,7 +33,7 @@ pub(super) fn run(action: PluginAction) -> Result<bool> {
         PluginAction::Install { source, yes } => install_from(&places, &source, yes)?,
         PluginAction::Update { id, yes } => update(&places, &registry, id, yes)?,
         PluginAction::Remove { id } => {
-            if !supervise::running(&places, &id).is_empty() {
+            if supervise::running(&places, &id).is_ok_and(|pids| !pids.is_empty()) {
                 println!("stopping {id}…");
             }
             match install::remove(&places, &id).map_err(Error::Plugin)? {

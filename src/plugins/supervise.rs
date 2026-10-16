@@ -19,6 +19,7 @@ use crate::panics;
 use crate::process;
 
 const CHECK_EVERY: Duration = Duration::from_millis(250);
+pub(crate) const SETTLE: Duration = CHECK_EVERY.saturating_mul(3);
 const HEALTHY_AFTER: Duration = Duration::from_secs(60);
 const MAX_BACKOFF: Duration = Duration::from_secs(60);
 const STOP_WITHIN: Duration = Duration::from_secs(2);
@@ -170,7 +171,11 @@ impl State {
 
     fn spawn(&mut self, key: &Key, spec: &Spec, now: Instant) {
         let kind = self.kind.name();
-        let child = self.places.command(&spec.plugin, &spec.command, &self.env, None).and_then(|mut c| c.spawn());
+        let child = if spec.plugin.root().is_dir() {
+            self.places.command(&spec.plugin, &spec.command, &self.env, None).and_then(|mut c| c.spawn())
+        } else {
+            Err(std::io::Error::new(std::io::ErrorKind::NotFound, "the plugin's folder is gone"))
+        };
         match child {
             Ok(child) => {
                 log::info!("plugins", "started", kind = kind, plugin = key.plugin, entry = key.entry, pid = child.id());
@@ -179,8 +184,29 @@ impl State {
                     &format!("{kind} started"),
                     &[("entry", &key.entry), ("pid", &child.id())],
                 );
-                record(&self.places, &key.plugin, child.id(), &format!("{kind} {}", key.entry));
-                self.running.insert(key.clone(), Running { spec: spec.clone(), child, since: now });
+                let run = Running { spec: spec.clone(), child, since: now };
+                match record(&self.places, &key.plugin, run.child.id(), &format!("{kind} {}", key.entry)) {
+                    Ok(()) => {
+                        self.running.insert(key.clone(), run);
+                    }
+                    Err(e) => {
+                        log::warning!(
+                            "plugins",
+                            "cannot record a running process, stopping it",
+                            kind = kind,
+                            plugin = key.plugin,
+                            entry = key.entry,
+                            error = e
+                        );
+                        self.places.note(
+                            &key.plugin,
+                            &format!("{kind} stopped"),
+                            &[("entry", &key.entry), ("error", &e)],
+                        );
+                        stop_children(&self.places, vec![run]);
+                        self.retry(key, now, false);
+                    }
+                }
             }
             Err(e) => {
                 log::warning!(
@@ -266,25 +292,28 @@ fn running_dir(places: &Places, plugin: &str) -> std::path::PathBuf {
     places.state(plugin).join(RUNNING_DIR)
 }
 
-fn record(places: &Places, plugin: &str, pid: u32, what: &str) {
+fn record(places: &Places, plugin: &str, pid: u32, what: &str) -> std::io::Result<()> {
     let dir = running_dir(places, plugin);
-    let file = dir.join(pid.to_string());
-    let written = private_dir(&dir)
-        .and_then(|()| fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&file))
-        .and_then(|mut file| file.write_all(what.as_bytes()));
-    if let Err(e) = written {
-        log::warning!("plugins", "cannot record a running process", plugin = plugin, pid = pid, error = e);
-    }
+    private_dir(&dir)?;
+    let mut file =
+        fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(dir.join(pid.to_string()))?;
+    file.write_all(what.as_bytes())
 }
 
 fn forget(places: &Places, plugin: &str, pid: u32) {
     let _ = fs::remove_file(running_dir(places, plugin).join(pid.to_string()));
 }
 
-pub(crate) fn running(places: &Places, plugin: &str) -> Vec<i32> {
-    let Ok(files) = fs::read_dir(running_dir(places, plugin)) else { return Vec::new() };
+pub(crate) fn running(places: &Places, plugin: &str) -> Result<Vec<i32>, String> {
+    let dir = running_dir(places, plugin);
+    let files = match fs::read_dir(&dir) {
+        Ok(files) => files,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(format!("cannot read {}: {e}", dir.display())),
+    };
     let mut alive = Vec::new();
-    for file in files.flatten() {
+    for file in files {
+        let file = file.map_err(|e| format!("cannot read {}: {e}", dir.display()))?;
         match file.file_name().to_str().and_then(|name| name.parse::<i32>().ok()) {
             Some(pid) if process::alive(pid) => alive.push(pid),
             _ => {
@@ -293,7 +322,7 @@ pub(crate) fn running(places: &Places, plugin: &str) -> Vec<i32> {
         }
     }
     alive.sort_unstable();
-    alive
+    Ok(alive)
 }
 
 fn stop_children(places: &Places, mut running: Vec<Running>) {

@@ -17,6 +17,7 @@ use crate::process;
 
 const BUILD_WITHIN: Duration = Duration::from_mins(15);
 const STOP_WAIT: Duration = Duration::from_secs(10);
+const QUIET_POLLS: u32 = 2;
 const STAGING: &str = ".staging";
 const CHECKOUT: &str = "plugin";
 const SERVICE: Service = Service { name: "the plugin's download", rejected: "the plugin's download was refused" };
@@ -367,17 +368,21 @@ fn build(fetched: &Fetched, places: &Places) -> Result<(), String> {
 }
 
 pub(crate) fn remove(places: &Places, id: &str) -> Result<Removed, String> {
-    remove_within(places, id, STOP_WAIT)
+    remove_within(places, id, supervise::SETTLE, STOP_WAIT)
 }
 
-fn remove_within(places: &Places, id: &str, within: Duration) -> Result<Removed, String> {
+fn remove_within(places: &Places, id: &str, settle: Duration, within: Duration) -> Result<Removed, String> {
+    let save =
+        |registry: &Registry| registry.save().map_err(|e| format!("cannot save {}: {e}", places.registry.display()));
     let mut registry = Registry::open(&places.registry)?;
-    let installed = registry.entry(id)?.source.installed();
     if registry.entry(id)?.enabled {
         registry.set_enabled(id, false)?;
-        registry.save().map_err(|e| format!("cannot save {}: {e}", places.registry.display()))?;
+        save(&registry)?;
     }
-    let left = stopped(places, id, within);
+    let off = registry.entry(id)?.clone();
+    let left = stopped(places, id, settle, within).map_err(|e| {
+        format!("cannot tell whether `{id}` still runs: {e}; it is turned off and still installed, nothing was deleted")
+    })?;
     if !left.is_empty() {
         let pids = left.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ");
         return Err(format!(
@@ -386,8 +391,14 @@ fn remove_within(places: &Places, id: &str, within: Duration) -> Result<Removed,
         ));
     }
     let mut registry = Registry::open(&places.registry)?;
+    if registry.entry(id).ok() != Some(&off) {
+        return Err(format!(
+            "`{id}` changed while it was being removed; nothing was deleted, run `cornercase plugin remove {id}` again"
+        ));
+    }
+    let installed = off.source.installed();
     registry.unlink(id);
-    registry.save().map_err(|e| format!("cannot save {}: {e}", places.registry.display()))?;
+    save(&registry)?;
     if !installed {
         return Ok(Removed::Unlinked);
     }
@@ -399,12 +410,16 @@ fn remove_within(places: &Places, id: &str, within: Duration) -> Result<Removed,
     }
 }
 
-fn stopped(places: &Places, id: &str, within: Duration) -> Vec<i32> {
-    let until = Instant::now() + within;
+fn stopped(places: &Places, id: &str, settle: Duration, within: Duration) -> Result<Vec<i32>, String> {
+    let start = Instant::now();
+    std::thread::sleep(settle);
+    let until = start + settle + within;
+    let mut quiet = 0;
     loop {
-        let left = supervise::running(places, id);
-        if left.is_empty() || Instant::now() >= until {
-            return left;
+        let left = supervise::running(places, id)?;
+        quiet = if left.is_empty() { quiet + 1 } else { 0 };
+        if quiet >= QUIET_POLLS || Instant::now() >= until {
+            return Ok(left);
         }
         std::thread::sleep(Duration::from_millis(100));
     }
