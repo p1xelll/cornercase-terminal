@@ -1,7 +1,8 @@
 use crossterm::event::Event;
 
 use super::{
-    ChangesEvent, FilesEvent, IssueEvent, MessengerEvent, PluginEvent, QueueEvent, SearchEvent, UpdateEvent, WorktreeEvent,
+    ChangesEvent, FilesEvent, IssueEvent, MessengerEvent, PluginEvent, QueueEvent, SearchEvent, UpdateEvent,
+    WorktreeEvent,
 };
 use crate::agents::context::{self};
 use crate::agents::launch::{self};

@@ -172,7 +172,10 @@ impl App {
             Target::Workspace(project, workspace) => self.setup_action(project, workspace),
             _ => None,
         };
-        std::iter::once(MenuAction::Rename(target)).chain(more).chain(flow).chain(setup)
+        std::iter::once(MenuAction::Rename(target))
+            .chain(more)
+            .chain(flow)
+            .chain(setup)
             .chain(spot.map(|spot| self.plugin_menu(spot)).unwrap_or_default())
             .collect()
     }
