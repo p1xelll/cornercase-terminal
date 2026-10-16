@@ -2,11 +2,15 @@
 
 Every pull request that changes the app adds a section here for its new version. The section becomes the notes of the GitHub Release and shows up in the app's update dialog, so write it for users.
 
-## 0.12.110
+## 0.12.111
 
 - Plugins: a folder with a `cornercase-plugin.toml` can add entries to the ` ⋯ ` and right-click menus of projects, workspaces, tabs and panes, run a command on every event `cornercase events` prints, keep a service running in the server (restarted if it stops), and keep a process running next to each window on this computer. Plugins talk back through the cornercase commands, so they can be written in any language.
 - `cornercase plugin link <folder>` adds a plugin, turned off; `enable`, `disable`, `list`, `logs` and `unlink` do the rest, and Settings has a new Plugins tab to turn them on and off.
 - A plugin runs as you and can do anything you can, including typing into every terminal. What it asks for is shown before you turn it on, but not enforced: only turn on plugins you trust.
+
+## 0.12.110
+
+- **Community flows.** Anyone can publish a flow: add the topic `cornercase-flow` to a public GitHub repository with a `flow.toml`, and usecornercase.dev/flows lists it, most starred first, within a day, after the built-in flows that come with cornercase, which have pages of their own. `cornercase flow import OWNER/REPO` (or typing it on the Flows import page, or an `https://` address) fetches one, shows its roles and always asks before saving: nobody reviews these flows, and their agents never ask for permission.
 
 ## 0.12.109
 
