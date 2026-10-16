@@ -3,18 +3,20 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use super::archive;
 use super::manifest::{self, Manifest};
 use super::registry::{Entry, Plugin, Registry, Source, short};
 use super::run::{self, Places, private_dir};
 use super::source::Origin;
+use super::supervise;
 use crate::git::worktree;
 use crate::http::{self, Service};
 use crate::process;
 
 const BUILD_WITHIN: Duration = Duration::from_mins(15);
+const STOP_WAIT: Duration = Duration::from_secs(10);
 const STAGING: &str = ".staging";
 const CHECKOUT: &str = "plugin";
 const SERVICE: Service = Service { name: "the plugin's download", rejected: "the plugin's download was refused" };
@@ -365,8 +367,25 @@ fn build(fetched: &Fetched, places: &Places) -> Result<(), String> {
 }
 
 pub(crate) fn remove(places: &Places, id: &str) -> Result<Removed, String> {
+    remove_within(places, id, STOP_WAIT)
+}
+
+fn remove_within(places: &Places, id: &str, within: Duration) -> Result<Removed, String> {
     let mut registry = Registry::open(&places.registry)?;
     let installed = registry.entry(id)?.source.installed();
+    if registry.entry(id)?.enabled {
+        registry.set_enabled(id, false)?;
+        registry.save().map_err(|e| format!("cannot save {}: {e}", places.registry.display()))?;
+    }
+    let left = stopped(places, id, within);
+    if !left.is_empty() {
+        let pids = left.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ");
+        return Err(format!(
+            "`{id}` is turned off but still runs (pid {pids}) after {} s; it is still installed, run `cornercase plugin remove {id}` again",
+            within.as_secs().max(1)
+        ));
+    }
+    let mut registry = Registry::open(&places.registry)?;
     registry.unlink(id);
     registry.save().map_err(|e| format!("cannot save {}: {e}", places.registry.display()))?;
     if !installed {
@@ -377,6 +396,17 @@ pub(crate) fn remove(places: &Places, id: &str) -> Result<Removed, String> {
         Ok(()) => Ok(Removed::Deleted),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Removed::Deleted),
         Err(e) => Err(format!("removed from the list, but cannot delete {}: {e}", folder.display())),
+    }
+}
+
+fn stopped(places: &Places, id: &str, within: Duration) -> Vec<i32> {
+    let until = Instant::now() + within;
+    loop {
+        let left = supervise::running(places, id);
+        if left.is_empty() || Instant::now() >= until {
+            return left;
+        }
+        std::thread::sleep(Duration::from_millis(100));
     }
 }
 

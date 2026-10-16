@@ -16,7 +16,7 @@ struct Fixture {
 impl Fixture {
     fn new(enabled: bool) -> Self {
         let (home, root) = (TempDir::new(), TempDir::new());
-        std::fs::write(root.path().join(FILE), SERVICE).expect("manifest");
+        fs::write(root.path().join(FILE), SERVICE).expect("manifest");
         write_executable(&root.path().join("serve"), "#!/bin/sh\necho $$ >> pids\nexec sleep 30\n");
         let places = Places::new(&home.path().join("config.json"), &home.path().join("session.json"));
         let mut registry = Registry::load(&places.registry);
@@ -27,7 +27,7 @@ impl Fixture {
     }
 
     fn pids(&self) -> Vec<i32> {
-        std::fs::read_to_string(self.root.path().join("pids"))
+        fs::read_to_string(self.root.path().join("pids"))
             .unwrap_or_default()
             .lines()
             .filter_map(|line| line.parse().ok())
@@ -54,7 +54,7 @@ fn a_service_that_ends_starts_again() {
     let _ = rustix::process::kill_process(rustix::process::Pid::from_raw(first).expect("pid"), Signal::KILL);
     wait_until_within("it starts again", Duration::from_secs(10), || fixture.pids().len() == 2);
     assert!(supervisor.note("acme.notes").is_some());
-    let log = std::fs::read_to_string(fixture.places.log("acme.notes")).expect("log");
+    let log = fs::read_to_string(fixture.places.log("acme.notes")).expect("log");
     assert_eq!(log.matches("service started").count(), 2, "{log}");
     drop((supervisor, fixture.home));
 }

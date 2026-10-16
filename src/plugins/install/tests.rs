@@ -6,7 +6,9 @@ use flate2::write::GzEncoder;
 use sha2::{Digest, Sha256};
 
 use super::*;
-use crate::test_util::{FakeHttp, TempDir, git, git_repo, write_executable};
+use crate::plugins::{Kind, Supervisor};
+use crate::process;
+use crate::test_util::{FakeHttp, Sleeper, TempDir, exited_pid, git, git_repo, wait_until, write_executable};
 use crate::text::hex;
 
 const SCRIPT: &str = "#!/bin/sh\nexec sleep 60\n";
@@ -338,6 +340,57 @@ mod removing {
         assert_eq!(remove(&places, "acme.notes"), Ok(Removed::Deleted));
         assert!(!places.installs.join("acme.notes").exists());
         assert_eq!(Registry::load(&places.registry).entries.len(), 0);
+    }
+
+    fn turned_on(places: &Places) {
+        let mut registry = Registry::open(&places.registry).expect("open");
+        registry.set_enabled("acme.notes", true).expect("on");
+        registry.save().expect("save");
+    }
+
+    fn mark_running(places: &Places, pid: i32) {
+        let dir = places.state("acme.notes").join("running");
+        fs::create_dir_all(&dir).expect("running folder");
+        fs::write(dir.join(pid.to_string()), "service sync").expect("running file");
+    }
+
+    #[test]
+    fn the_service_has_stopped_when_remove_returns() {
+        let (remote, home) = (Remote::new(&manifest("1.0", "")), TempDir::new());
+        let places = places(&home);
+        updating::installed(&remote, &places);
+        turned_on(&places);
+        let supervisor = Supervisor::start(Kind::Service, places.clone(), Vec::new());
+        wait_until("the service runs", || !supervise::running(&places, "acme.notes").is_empty());
+        let pid = supervise::running(&places, "acme.notes")[0];
+        assert_eq!(remove(&places, "acme.notes"), Ok(Removed::Deleted));
+        assert!(!process::alive(pid));
+        assert!(!places.installs.join("acme.notes").exists());
+        drop(supervisor);
+    }
+
+    #[test]
+    fn a_process_that_keeps_running_stops_the_removal() {
+        let (remote, home) = (Remote::new(&manifest("1.0", "")), TempDir::new());
+        let places = places(&home);
+        updating::installed(&remote, &places);
+        turned_on(&places);
+        let sleeper = Sleeper::with_env(&[]);
+        mark_running(&places, sleeper.pid());
+        let err = remove_within(&places, "acme.notes", Duration::from_millis(300)).expect_err("still running");
+        assert!(err.contains(&sleeper.pid().to_string()) && err.contains("remove acme.notes"), "{err}");
+        let entry = Registry::load(&places.registry).entries[0].clone();
+        assert_eq!((entry.enabled, entry.source.root().exists()), (false, true));
+    }
+
+    #[test]
+    fn a_stale_pid_file_does_not_block() {
+        let (remote, home) = (Remote::new(&manifest("1.0", "")), TempDir::new());
+        let places = places(&home);
+        updating::installed(&remote, &places);
+        mark_running(&places, exited_pid());
+        assert_eq!(remove_within(&places, "acme.notes", Duration::from_millis(300)), Ok(Removed::Deleted));
+        assert!(!places.installs.join("acme.notes").exists());
     }
 
     #[test]
