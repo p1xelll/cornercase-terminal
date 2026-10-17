@@ -26,6 +26,7 @@ mod read;
 mod search;
 mod start_server;
 mod status;
+mod terminal;
 mod update;
 mod view;
 
@@ -226,6 +227,11 @@ fn run_control(command: Control) -> Result<bool> {
         Control::Surface(args) => stream_surface(&args),
         Control::View(args) => view::open(&args),
         Control::ViewSet(args) => view::set(&args),
+        Control::Input(args) => terminal::input(&args),
+        Control::Scroll(args) => terminal::scroll(&args),
+        Control::Selection(args) => terminal::selection(&args),
+        Control::Resize(args) => terminal::resize(&args),
+        Control::Ratio(args) => terminal::ratio(&args),
     }?;
     Ok(true)
 }
