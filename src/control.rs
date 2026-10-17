@@ -21,7 +21,7 @@ mod watch;
 pub(crate) use todo::{Todo, TodoSend};
 
 pub(crate) use contract::Contract;
-pub(crate) use events::{Event, Events, Kind, What};
+pub(crate) use events::{Event, Events, Go, Kind, What};
 pub(crate) use flow::{
     BrokenFlow, Exported, FlowExport, FlowImport, FlowInfo, FlowList, FlowRun, Flows, Imported, MemberInfo, RoleInfo,
     RunInfo,
@@ -121,6 +121,7 @@ pub(crate) enum Command {
     Ratio(Ratio),
     Link(Link),
     Theme(Theme),
+    Go(Go),
 }
 
 impl Command {
@@ -169,6 +170,7 @@ impl Command {
             Self::Link(_) => 40,
             Self::TodoSend(_) => 41,
             Self::Theme(_) => 42,
+            Self::Go(_) => 43,
         }]
     }
 
@@ -178,7 +180,7 @@ impl Command {
             Self::Queue(_) => {
                 fields.add("queue", true);
             }
-            Self::Status(_) | Self::Stats(_) | Self::Contract(_) | Self::Watch(_) => {}
+            Self::Status(_) | Self::Stats(_) | Self::Contract(_) | Self::Watch(_) | Self::Go(_) => {}
             Self::Open(open) => {
                 fields.add("path", open.path.display()).add("focus", open.focus);
             }
@@ -240,10 +242,7 @@ impl Command {
             }
             Self::Todo(todo) => todo.fields(&mut fields),
             Self::TodoSend(send) => send.fields(&mut fields),
-            Self::Events(events) => {
-                let panes: Vec<String> = events.panes.iter().map(u64::to_string).collect();
-                fields.maybe("panes", (!panes.is_empty()).then(|| panes.join(","))).add("host", events.host);
-            }
+            Self::Events(events) => events.fields(&mut fields),
             Self::RestartWhenIdle(restart) => {
                 fields.maybe("timeout", restart.timeout);
             }
@@ -275,7 +274,7 @@ impl Command {
         fields.0
     }
 
-    pub(crate) const NAMES: [&str; 43] = [
+    pub(crate) const NAMES: [&str; 44] = [
         "status",
         "open",
         "new-workspace",
@@ -319,6 +318,7 @@ impl Command {
         "link",
         "todo-send",
         "theme",
+        "go",
     ];
 
     pub(crate) fn chatty(name: &str) -> bool {

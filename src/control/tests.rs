@@ -90,6 +90,7 @@ fn every_command_is_listed_by_name() {
         Command::Link(Link::default()),
         Command::TodoSend(TodoSend::default()),
         Command::Theme(Theme::default()),
+        Command::Go(Go::default()),
     ];
 
     let names: Vec<String> = commands
@@ -382,7 +383,7 @@ mod events_v1 {
         Ids { project: Some(1), workspace: Some(2), tab: Some(3), pane: Some(4) }
     }
 
-    fn samples() -> [(Event, &'static str); 8] {
+    fn samples() -> [(Event, &'static str); 9] {
         [
             (
                 event(What::Opened { kind: Kind::Tab, parent: None }, Ids { pane: None, ..pane() }),
@@ -404,6 +405,20 @@ mod events_v1 {
             ),
             (event(What::Bell { count: 3 }, pane()), fixture!("control/events/v1/bell.json")),
             (
+                event(
+                    What::Notice {
+                        token: "cc-ab12cd-3".into(),
+                        agent: "claude".into(),
+                        status: "waiting".into(),
+                        place: "shop › default".into(),
+                        message: "claude needs you in shop › default".into(),
+                        panes: vec![4],
+                    },
+                    Ids { pane: None, tab: None, ..pane() },
+                ),
+                fixture!("control/events/v1/notice.json"),
+            ),
+            (
                 event(What::Opened { kind: Kind::Pane, parent: Some(2) }, pane()),
                 fixture!("control/events/v1/opened-parent.json"),
             ),
@@ -423,7 +438,8 @@ mod events_v1 {
     #[case::dropped(4)]
     #[case::clipboard(5)]
     #[case::bell(6)]
-    #[case::opened_from_a_pane(7)]
+    #[case::opened_from_a_pane(8)]
+    #[case::notice(7)]
     fn an_event_is_written_as_its_fixture(#[case] index: usize) {
         let (event, fixture) = &samples()[index];
 
@@ -438,7 +454,8 @@ mod events_v1 {
     #[case::dropped(4)]
     #[case::clipboard(5)]
     #[case::bell(6)]
-    #[case::opened_from_a_pane(7)]
+    #[case::opened_from_a_pane(8)]
+    #[case::notice(7)]
     fn a_fixture_reads_back_as_its_event(#[case] index: usize) {
         let (event, fixture) = &samples()[index];
 
@@ -626,6 +643,7 @@ mod watch_v1 {
             rows: Some(40),
             shown,
             controls: true,
+            visible: true,
         });
         snapshot
     }
