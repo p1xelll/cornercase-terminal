@@ -10,6 +10,7 @@ pub(crate) const DONE: &str = "done";
 pub(crate) const RESTART: &str = "restart";
 const TAB_IDS: [&str; 8] = DEFAULT_ISSUE_TABS;
 const EXTRA_ARGS: &str = "extra arguments…";
+const NO_PLUGINS: &str = "`cornercase plugin install <owner/repo>` adds one, then enter turns it on here";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Status {
@@ -60,6 +61,8 @@ pub(crate) enum Row {
     AddAgent,
     Bot(Via),
     Chat(Via),
+    Plugin(String),
+    NoPlugins,
 }
 
 impl Row {
@@ -88,6 +91,7 @@ impl Row {
             | Self::Prefix => "",
             Self::Remote | Self::Browsers => "Browser",
             Self::Bot(via) | Self::Chat(via) => via.name(),
+            Self::Plugin(_) | Self::NoPlugins => "Installed",
             Self::Token(Source::Jira) | Self::JiraSite | Self::JiraEmail | Self::JiraJql => "Jira",
             Self::Token(Source::Plane) | Self::PlaneWorkspace | Self::PlaneUrl | Self::PlaneFilter => "Plane",
             Self::Token(Source::Asana) | Self::AsanaWorkspace | Self::AsanaProjects => "Asana",
@@ -136,6 +140,7 @@ impl Row {
             | Self::StarPrompt
             | Self::Prefix => Page::Ui,
             Self::Remote | Self::Browsers | Self::Bot(_) | Self::Chat(_) => Page::Remote,
+            Self::Plugin(_) | Self::NoPlugins => Page::Plugins,
         }
     }
 }
@@ -200,10 +205,12 @@ pub(crate) enum Page {
     Issues,
     Ui,
     Remote,
+    Plugins,
 }
 
 impl Page {
-    pub(crate) const ALL: [Self; 5] = [Self::Worktrees, Self::Agents, Self::Issues, Self::Ui, Self::Remote];
+    pub(crate) const ALL: [Self; 6] =
+        [Self::Worktrees, Self::Agents, Self::Issues, Self::Ui, Self::Remote, Self::Plugins];
 
     pub(crate) fn name(self) -> &'static str {
         match self {
@@ -212,6 +219,7 @@ impl Page {
             Self::Issues => "Issues",
             Self::Ui => "UI",
             Self::Remote => "Remote",
+            Self::Plugins => "Plugins",
         }
     }
 
@@ -240,6 +248,7 @@ pub(crate) enum Action {
     Pair(Via),
     ForgetChat(Via),
     OpenFlows,
+    Plugin(String, bool),
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -248,6 +257,15 @@ pub(crate) struct Messenger {
     pub(crate) chat: Option<String>,
     pub(crate) note: String,
     pub(crate) checking: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PluginRow {
+    pub(crate) id: String,
+    pub(crate) label: String,
+    pub(crate) on: bool,
+    pub(crate) note: String,
+    pub(crate) broken: bool,
 }
 
 #[derive(Debug)]
@@ -299,6 +317,7 @@ pub(crate) struct Settings {
     pub(crate) remote: String,
     pub(crate) browsers: usize,
     pub(crate) messengers: [Messenger; Via::ALL.len()],
+    pub(crate) plugins: Vec<PluginRow>,
 }
 
 impl Settings {
@@ -322,6 +341,7 @@ impl Settings {
             remote: String::new(),
             browsers: 0,
             messengers: Default::default(),
+            plugins: Vec::new(),
         }
     }
 
@@ -412,6 +432,10 @@ impl Settings {
             if self.messenger(via).bot.is_some() {
                 rows.push(Row::Chat(via));
             }
+        }
+        rows.extend(self.plugins.iter().map(|plugin| Row::Plugin(plugin.id.clone())));
+        if self.plugins.is_empty() {
+            rows.push(Row::NoPlugins);
         }
         rows.retain(|row| row.page() == self.page);
         rows

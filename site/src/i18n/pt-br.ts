@@ -177,6 +177,7 @@ export const page: Page = {
           ['Suas cores', 'Ele veste o tema do seu terminal, claro ou escuro.'],
           ['Cabe no celular', 'Diminua a janela, ou entre por SSH pelo celular. Continua cabendo.'],
           ['Remoto e estável', 'Agentes numa máquina potente, a janela no seu notebook. O Wi-Fi caiu? Ele reconecta.'],
+          ['Plugins', 'Suas próprias entradas de menu, hooks e serviços, em qualquer linguagem. Falam com o cornercase pela CLI.'],
           ['Atualiza sozinho', 'Versão nova? Um clique. Seu layout volta igualzinho.'],
         ],
       },

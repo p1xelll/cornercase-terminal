@@ -20,6 +20,7 @@ mod args;
 mod contract;
 mod flow;
 mod help;
+mod plugin;
 mod queue;
 mod read;
 mod search;
@@ -65,6 +66,7 @@ pub fn run(cli: Cli) -> Result<bool> {
         Command::KillServer(kill) => return update::kill(kill.yes),
         Command::Logs(args) => return print_logs(&args),
         Command::Stats(args) => return print_stats(&args),
+        Command::Plugin(args) => return plugin::run(args.action),
         Command::Server => server::run()?,
         Command::Proxy => remote::proxy(client::connect_or_start)?,
     }
@@ -72,14 +74,17 @@ pub fn run(cli: Cli) -> Result<bool> {
 }
 
 fn print_logs(args: &LogsArgs) -> Result<bool> {
-    let path = crate::paths::log();
+    print_log(&crate::paths::log(), args)
+}
+
+fn print_log(path: &Path, args: &LogsArgs) -> Result<bool> {
     let mut out = io::stdout().lock();
     if args.path {
         writeln!(out, "{}", path.display())?;
         return Ok(true);
     }
-    let follower = if args.follow { Some(log::Follower::at_end(&path)) } else { None };
-    let tail = match log::tail(&path, args.lines) {
+    let follower = if args.follow { Some(log::Follower::at_end(path)) } else { None };
+    let tail = match log::tail(path, args.lines) {
         Err(e) if e.kind() == io::ErrorKind::NotFound => {
             eprintln!("no log yet: {} does not exist", path.display());
             return Ok(false);

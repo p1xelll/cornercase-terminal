@@ -1,7 +1,8 @@
 use crossterm::event::Event;
 
 use super::{
-    ChangesEvent, FilesEvent, IssueEvent, MessengerEvent, QueueEvent, SearchEvent, UpdateEvent, WorktreeEvent,
+    ChangesEvent, FilesEvent, IssueEvent, MessengerEvent, PluginEvent, QueueEvent, SearchEvent, UpdateEvent,
+    WorktreeEvent,
 };
 use crate::agents::context::{self};
 use crate::agents::launch::{self};
@@ -34,6 +35,7 @@ pub(crate) enum AppEvent {
     Tailscale(std::result::Result<tailscale::Node, tailscale::Problem>),
     Messenger(MessengerEvent),
     Merged(crate::pull_request::merged::Answer),
+    Plugin(PluginEvent),
 }
 
 impl AppEvent {
@@ -59,6 +61,7 @@ impl AppEvent {
             Self::Tailscale(_) => "tailscale",
             Self::Messenger(event) => event.name(),
             Self::Merged(_) => "merged pull requests",
+            Self::Plugin(event) => event.name(),
         }
     }
 }

@@ -56,8 +56,24 @@ pub(crate) fn telegram(config: &Path) -> PathBuf {
     config.with_file_name("telegram.json")
 }
 
+pub(crate) fn plugins(config: &Path) -> PathBuf {
+    config.with_file_name("plugins.json")
+}
+
+pub(crate) fn plugin_config(config: &Path, id: &str) -> PathBuf {
+    config.with_file_name("plugins").join("config").join(id)
+}
+
+pub(crate) fn plugin_state(session: &Path, id: &str) -> PathBuf {
+    session.with_file_name("plugins").join("state").join(id)
+}
+
 pub(crate) fn discord(config: &Path) -> PathBuf {
     config.with_file_name("discord.json")
+}
+
+pub(crate) fn plugin_installs(session: &Path) -> PathBuf {
+    session.with_file_name("plugins").join("installed")
 }
 
 pub(crate) fn session() -> PathBuf {

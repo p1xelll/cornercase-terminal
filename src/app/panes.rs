@@ -10,6 +10,7 @@ use super::menus::Marked;
 use super::menus::MenuAction;
 use super::menus::PaneAction;
 use super::overlay::Overlay;
+use super::plugins::Spot;
 use super::toast::NOT_READING;
 use super::toast::Toast;
 use crate::error::Result;
@@ -249,6 +250,7 @@ impl App {
             .collect();
         actions.extend(self.mark_action(Marked::Pane(pane)));
         actions.push(MenuAction::Pane(pane, PaneAction::Close));
+        actions.extend(self.plugin_menu(Spot::Pane(pane)));
         self.overlay = Some(Overlay::Menu { at, actions });
     }
 

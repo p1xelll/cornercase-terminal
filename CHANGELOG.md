@@ -2,6 +2,15 @@
 
 Every pull request that changes the app adds a section here for its new version. The section becomes the notes of the GitHub Release and shows up in the app's update dialog, so write it for users.
 
+## 0.12.115
+
+- Plugins: a folder with a `cornercase-plugin.toml` can add entries to the ` ⋯ ` and right-click menus of projects, workspaces, tabs and panes, run a command on every event `cornercase events` prints, keep a service running in the server (restarted if it stops), and keep a process running next to each window on this computer. Plugins talk back through the cornercase commands, so they can be written in any language.
+- `cornercase plugin link <folder>` adds a plugin, turned off; `enable`, `disable`, `list`, `logs` and `unlink` do the rest, and Settings has a new Plugins tab to turn them on and off.
+- `cornercase plugin install owner/repo` installs a plugin from GitHub (or any `https://` git address, or a folder), pinned to a commit, with `@tag`, `@branch` or `@commit` to choose one. A repository can hold several plugins in folders: `cornercase plugin install owner/repo/plugins/notes` (or `address//folder` outside GitHub). Before anything runs it shows where the plugin comes from, what it asks for and every command it will run, and asks; it is installed turned off. A plugin can ship prebuilt archives, checked against their sha256 before they are unpacked, or build steps that run once you confirm.
+- `cornercase plugin update` fetches installed plugins again and, when one changed, shows the new version's commands and asks before updating; `cornercase plugin remove` turns a plugin off, waits (up to 10 seconds) until its service and window processes have stopped, then deletes its installed copy; if something still runs, cannot be checked, or the plugin was turned on again meanwhile, it says so and deletes nothing, leaving the plugin installed.
+- Find plugins at usecornercase.dev/plugins: every public GitHub repository with the `cornercase-plugin` topic shows there, with each plugin it holds and the command that installs it; see what is trending and new, search it, and sort by stars, trending, recent activity, newest or name. Nobody reviews them, so read a plugin or trust its author before turning it on. To publish yours, add that topic to its repository.
+- A plugin runs as you and can do anything you can, including typing into every terminal. What it asks for is shown before you turn it on, but not enforced: only turn on plugins you trust.
+
 ## 0.12.114
 
 - **A click on a notification takes you to the agent.** In kitty, VS Code, Contour, foot 1.18 or later and Konsole 24.12 or later, clicking the desktop notification of an agent that needs you or finished shows its project, workspace and tab, with its pane focused. foot and Konsole now get kitty's kind of notification, so Konsole, like foot, no longer shows one while its window is in front.

@@ -56,6 +56,7 @@ use merged_pull_requests::MergedPulls;
 use messenger::{Messenger, MessengerEvent};
 use notifications::Notices;
 use overlay::Overlay;
+use plugins::{PluginEvent, Plugins};
 use pull_requests::PullRequests;
 use queue_panel::{QueueEvent, QueueRuntime};
 use search_dialog::SearchEvent;
@@ -92,6 +93,7 @@ mod notifications;
 mod overlay;
 mod panes;
 mod picker_dialog;
+mod plugins;
 mod project_settings_dialog;
 mod pull_requests;
 mod queue_dialog;
@@ -185,6 +187,7 @@ pub(crate) struct App {
     requests: control::Requests,
     events: events::Events,
     seen: trace::Seen,
+    plugins: Plugins,
 }
 
 impl App {
@@ -193,6 +196,7 @@ impl App {
         let home = std::env::var_os("HOME").map(PathBuf::from);
         let web = Web::new(paths::browsers(&config_path), paths::socket(), tx.clone());
         let messengers = messenger::messengers(&config_path, &secrets_path);
+        let plugins = Plugins::new(crate::plugins::Places::new(&config_path, &config_path));
         Self {
             upstream: Upstream::default(),
             pulls: PullRequests::default(),
@@ -251,6 +255,7 @@ impl App {
             requests: control::Requests::default(),
             events: events::Events::default(),
             seen: trace::Seen::default(),
+            plugins,
         }
     }
 
@@ -403,6 +408,7 @@ impl App {
         self.sync_remote();
         self.sync_messengers();
         self.pair_by_owner(now);
+        self.watch_plugins(now);
         self.check_requests(now);
         self.close_gone_flow_message();
         self.check_updates(now);
@@ -548,6 +554,7 @@ impl App {
             AppEvent::Tailscale(answer) => self.tailscale_answered(answer),
             AppEvent::Messenger(event) => self.messenger_event(event, area),
             AppEvent::Merged(answer) => self.merged_answered(answer),
+            AppEvent::Plugin(event) => self.plugin_answered(event),
         }
         Ok(())
     }

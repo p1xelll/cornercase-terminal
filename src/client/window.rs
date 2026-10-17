@@ -20,6 +20,8 @@ use crate::graphics::Support;
 use crate::graphics::detect::{self, Facts, Outer};
 use crate::host::notify::{self, Channel};
 use crate::host::theme::HostTheme;
+use crate::paths;
+use crate::plugins::{Kind, Places, Supervisor};
 use crate::protocol::{self, ClientMessage, Hello, ServerMessage};
 use crate::remote::{self, Stderr};
 use crate::ui::remote::{self as notice, Notice};
@@ -380,6 +382,10 @@ pub(super) fn attach(link: Link, target: &Target, terminal: &mut DefaultTerminal
     };
     window.link(link)?;
     let _threads = Threads::spawn(tx, probe_timed_out)?;
+    let _plugins = matches!(target, Target::Local).then(|| {
+        let places = Places::new(&paths::config(), &paths::session());
+        Supervisor::start(Kind::Window, places, Vec::new())
+    });
     loop {
         let ending = match rx.recv_timeout(window.wait(Instant::now())) {
             Ok(incoming) => window.handle(incoming)?,

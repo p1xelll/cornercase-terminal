@@ -3,6 +3,7 @@ use ratatui::layout::{Position, Rect};
 
 use super::App;
 use super::overlay::Overlay;
+use super::plugins::Spot;
 use crate::error::Result;
 use crate::log::{self};
 use crate::messenger::Via;
@@ -95,6 +96,7 @@ pub(super) enum MenuAction {
     StartFlow(u64),
     ProjectSettings(u64),
     RunSetup(u64),
+    Plugin { spot: Spot, index: u16, revision: u32 },
 }
 
 impl App {
@@ -146,6 +148,7 @@ impl App {
             MenuAction::Away(via) if !self.messenger(via).ready() => format!("set up {}…", via.name()),
             MenuAction::Away(via) if self.messenger(via).away => format!("stop messaging on {}", via.name()),
             MenuAction::Away(via) => format!("continue on {}", via.name()),
+            MenuAction::Plugin { index, .. } => self.plugin_label(index),
         }
     }
 
@@ -159,11 +162,22 @@ impl App {
             Target::Workspace(_, workspace) => self.run_of(workspace).map(|_| MenuAction::ShowFlow(workspace)),
             _ => None,
         };
+        let spot = match target {
+            Target::Group(_) => None,
+            Target::Project(project) => Some(Spot::Project(project)),
+            Target::Workspace(project, workspace) => Some(Spot::Workspace(project, workspace)),
+            Target::Tab(project, workspace, tab) => Some(Spot::Tab(project, workspace, tab)),
+        };
         let setup = match target {
             Target::Workspace(project, workspace) => self.setup_action(project, workspace),
             _ => None,
         };
-        std::iter::once(MenuAction::Rename(target)).chain(more).chain(flow).chain(setup).collect()
+        std::iter::once(MenuAction::Rename(target))
+            .chain(more)
+            .chain(flow)
+            .chain(setup)
+            .chain(spot.map(|spot| self.plugin_menu(spot)).unwrap_or_default())
+            .collect()
     }
 
     pub(super) fn menu_action(&mut self, action: MenuAction, at: Position, area: Rect) -> Result<()> {
@@ -224,6 +238,7 @@ impl App {
             MenuAction::Browser if self.config.remote => self.open_remote(),
             MenuAction::Browser => self.open_settings_on(&settings::Row::Remote),
             MenuAction::Away(via) => self.toggle_away(via),
+            MenuAction::Plugin { spot, index, revision } => self.run_plugin_action(spot, index, revision),
         }
         Ok(())
     }

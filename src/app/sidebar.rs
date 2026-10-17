@@ -9,6 +9,7 @@ use super::menus::Marked;
 use super::menus::MenuAction;
 use super::menus::Target;
 use super::overlay::Overlay;
+use super::plugins::Spot;
 use crate::error::Result;
 use crate::git;
 use crate::project::Workspace;
@@ -229,6 +230,7 @@ impl App {
         if git::is_repo_root(&self.projects[p].path) {
             actions.push(MenuAction::ProjectSettings(id));
         }
+        actions.extend(self.plugin_menu(Spot::Project(id)));
         actions
     }
 

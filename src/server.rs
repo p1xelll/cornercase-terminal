@@ -329,6 +329,7 @@ pub(crate) fn run() -> Result<()> {
         level = format!("{level:?}").to_lowercase(),
     );
     app.set_issue_cache(paths::issue_cache(&session));
+    app.set_plugin_places(crate::plugins::Places::new(&paths::config(), &session));
     let todos = todo::load(&paths::todos(&session));
     let todo_saver = Saver::new(paths::todos(&session), Some(todos.saved()));
     app.set_todos(todos);
@@ -791,6 +792,7 @@ impl Server {
             if let Err(e) = self.open_first_terminals() {
                 log::error!("server", "could not open a first terminal", error = e);
             }
+            self.app.start_plugins();
         }
     }
 
@@ -904,6 +906,7 @@ impl Server {
 
     fn shutdown(&mut self) {
         self.answer();
+        self.app.stop_plugins();
         if let Err(e) = self.stats_saver.flush(self.app.stats(), SystemTime::now()) {
             log::error!("stats", "failed to save", error = e);
         }

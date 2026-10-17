@@ -4,7 +4,7 @@ use crate::issues::Source;
 use crate::messenger::Via;
 use crate::shortcuts::Prefix;
 
-use super::{Page, Row, RowText, Settings, Status};
+use super::{NO_PLUGINS, Page, Row, RowText, Settings, Status};
 
 const RESUME_NOTE: &str = "Claude, Codex, Gemini, Grok, Cursor, in their tabs";
 
@@ -14,6 +14,21 @@ impl Settings {
     fn keep_awake_row(&self) -> (String, String, String, bool) {
         let value = if self.config.keep_awake { "[x] while an agent works" } else { "[ ] never" };
         ("keep awake".into(), value.into(), self.awake.clone(), false)
+    }
+
+    fn plugin_row(&self, row: &Row) -> (String, String, String, bool) {
+        let Row::Plugin(id) = row else {
+            return ("no plugins yet".into(), String::new(), NO_PLUGINS.into(), false);
+        };
+        let Some(plugin) = self.plugins.iter().find(|plugin| plugin.id == *id) else {
+            return (id.clone(), String::new(), String::new(), false);
+        };
+        let value = match (plugin.broken, plugin.on) {
+            (true, _) => "cannot run",
+            (false, true) => "[x] on",
+            (false, false) => "[ ] off",
+        };
+        (plugin.label.clone(), value.into(), plugin.note.clone(), plugin.broken)
     }
 
     fn worktrees_row(&self, row: &Row) -> (String, String, String, bool) {
@@ -146,6 +161,7 @@ impl Settings {
                 ("flows".into(), self.flows.clone(), "teams of agents that work through a plan".into(), false)
             }
             Row::Bot(via) | Row::Chat(via) => self.messenger_row(row, *via),
+            Row::Plugin(_) | Row::NoPlugins => self.plugin_row(row),
         };
         RowText { label, value, note, dangerous }
     }
@@ -257,6 +273,8 @@ impl Settings {
                 "enter saves · esc cancels".into()
             } else if self.pick.is_some() {
                 "enter picks · type to filter · esc goes back".into()
+            } else if self.page == Page::Plugins {
+                "plugins run as you and can do what you can; what they ask for is shown, not enforced".into()
             } else if self.page == Page::Issues {
                 "enter changes the selected setting · shift+↑↓ moves a source · tab or ←→ switches tabs".into()
             } else {

@@ -175,6 +175,7 @@ export const page = {
           ['Your colours', "It wears your terminal's theme, light or dark."],
           ['Phone-sized', 'Shrink the window, or SSH in from your phone. Still fits.'],
           ['Remote, steady', 'Agents on a big box, the window on your laptop. Wi-Fi drops? It reconnects.'],
+          ['Plugins', 'Your own menu entries, hooks and services, in any language. They talk back through the CLI.'],
           ['Updates itself', 'New version? One click. Your layout comes right back.'],
         ],
       },

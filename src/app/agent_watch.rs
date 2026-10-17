@@ -59,7 +59,7 @@ impl App {
         let open = self.tree_open();
         let (config, dir, tree) = (&self.config, self.agents.claude_dir.as_deref(), self.drawn.tree);
         let folds = tree || self.drawn.tab_bar.is_empty();
-        let jobs = self.events.listening();
+        let jobs = self.following();
         let mut notices: Vec<(NoticeKey, Vec<u64>)> = Vec::new();
         let (members, orchestrators) = (self.run_panes(false), self.run_panes(true));
         for (project, open) in self.projects.iter_mut().zip(open) {

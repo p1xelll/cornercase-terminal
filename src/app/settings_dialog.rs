@@ -60,6 +60,7 @@ impl App {
         for via in Via::ALL {
             *settings.messenger_mut(via) = self.messenger_settings(via);
         }
+        settings.plugins = self.plugin_rows();
         self.overlay = Some(Overlay::Settings(Box::new(settings)));
     }
 
@@ -177,6 +178,7 @@ impl App {
                     s.notice = Some(forgotten);
                 }
             }
+            settings::Action::Plugin(id, on) => self.switch_plugin(&id, on),
             settings::Action::RemoveToken(source) => {
                 let removed = source.secret_key().map(|key| secrets::remove(&self.issues.secrets_path, key));
                 let Some(Overlay::Settings(s)) = &mut self.overlay else { return };

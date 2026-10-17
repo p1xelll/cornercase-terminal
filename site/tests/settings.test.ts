@@ -11,6 +11,7 @@ test('the UI tab lists the icon bar, which needs a real cornercase', () => {
   app.openSettings();
   inputKey(app, key('ArrowLeft'));
   inputKey(app, key('ArrowLeft'));
+  inputKey(app, key('ArrowLeft'));
   assert.equal(app.overlay?.kind === 'settings' && app.overlay.page, 3);
   const rows = app.settingsRows(3);
   assert.deepEqual(rows.slice(0, 3).map((row) => row.id), ['sidebar', 'tabs', 'iconBar']);
@@ -50,6 +51,7 @@ test('g p in the keys menu says pull requests need a real cornercase', () => {
 test('the star prompt is a switch on the UI tab', () => {
   const app = new App(); app.virtual = true; app.resize(110, 38); world(app, { scripted: true });
   app.openSettings();
+  inputKey(app, key('ArrowLeft'));
   inputKey(app, key('ArrowLeft'));
   inputKey(app, key('ArrowLeft'));
   const index = app.settingsRows(3).findIndex((row) => row.id === 'starPrompt');

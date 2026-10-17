@@ -30,6 +30,7 @@ mod contract;
 mod input;
 mod panels;
 mod panes;
+mod plugins;
 mod queue;
 mod remote;
 mod server;
@@ -491,6 +492,14 @@ fn temp_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("cornercase-e2e-{name}-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("create temp dir");
     dir.canonicalize().expect("canonicalize temp dir")
+}
+
+fn wait_until(what: &str, mut cond: impl FnMut() -> bool) {
+    let deadline = Instant::now() + TIMEOUT;
+    while !cond() {
+        assert!(Instant::now() < deadline, "timed out waiting for: {what}");
+        thread::sleep(POLL);
+    }
 }
 
 fn finish_within(mut child: std::process::Child, timeout: Duration) -> std::process::Output {

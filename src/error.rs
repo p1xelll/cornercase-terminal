@@ -63,6 +63,8 @@ pub enum Error {
     Api(String),
     #[error("{0}")]
     Usage(String),
+    #[error("{0}")]
+    Plugin(String),
     #[error("{}", .0.message)]
     Workspaces(Box<Workspaces>),
     #[error("cannot read `{}`: {reason}", path.display())]

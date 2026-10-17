@@ -79,6 +79,7 @@ export default defineConfig({
             { label: 'On Telegram', slug: 'docs/guides/telegram' },
             { label: 'On Discord', slug: 'docs/guides/discord' },
             { label: 'Small terminals', slug: 'docs/guides/small-terminals' },
+            { label: 'Plugins', slug: 'docs/guides/plugins' },
           ],
         },
         {

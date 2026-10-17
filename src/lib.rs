@@ -23,6 +23,7 @@ pub(crate) mod highlight;
 pub mod host;
 pub(crate) mod issues;
 pub(crate) mod messenger;
+pub(crate) mod plugins;
 pub mod project;
 pub(crate) mod pull_request;
 pub(crate) mod queue;
