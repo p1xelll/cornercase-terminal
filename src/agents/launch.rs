@@ -43,6 +43,7 @@ pub(crate) struct Launch {
     pub(crate) after: Vec<u64>,
     pub(crate) told: bool,
     pub(crate) trust: Option<Trust>,
+    pub(crate) resume: Option<Instant>,
     spec: Spec,
     agent: bool,
     stage: Stage,
@@ -86,6 +87,7 @@ impl Launch {
             after: Vec::new(),
             told: false,
             trust: None,
+            resume: None,
             spec,
             agent: true,
             stage: Stage::Shell,
@@ -106,6 +108,20 @@ impl Launch {
 
     pub(crate) fn command(term: u64, command: String, now: Instant) -> Self {
         Self { agent: false, ..Self::new(term, Spec { command, prompt: None, submit: false, trusted: false }, now) }
+    }
+
+    pub(crate) fn resume(term: u64, command: String, trusted: bool, now: Instant, until: Instant) -> Self {
+        let spec = Spec { command, prompt: None, submit: false, trusted };
+        Self { trust: Some(Trust::LeftToYou), resume: Some(until), ..Self::new(term, spec, now) }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn trusted(&self) -> bool {
+        self.spec.trusted
+    }
+
+    pub(crate) fn holds(&self, now: Instant) -> bool {
+        self.resume.is_some_and(|until| now < until) && self.parked.is_none()
     }
 
     pub(crate) fn enter(term: u64, now: Instant) -> Self {
@@ -143,6 +159,10 @@ impl Launch {
 
     pub(crate) fn waits_for_you(&self) -> bool {
         self.parked.is_some()
+    }
+
+    pub(crate) fn typed(&self) -> bool {
+        self.stage != Stage::Shell
     }
 
     pub(crate) fn submits(&self) -> bool {
