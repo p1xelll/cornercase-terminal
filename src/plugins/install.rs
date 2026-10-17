@@ -135,6 +135,10 @@ fn shown(command: &[String]) -> String {
 }
 
 pub(crate) fn fetch(origin: &Origin, places: &Places) -> Result<Fetched, String> {
+    fetch_from(origin, places).map_err(|e| text::escape_hidden(&e))
+}
+
+fn fetch_from(origin: &Origin, places: &Places) -> Result<Fetched, String> {
     let staging = Staging(stage(places).map_err(|e| format!("cannot make a folder to fetch into: {e}"))?);
     let checkout = staging.0.join(CHECKOUT);
     git(

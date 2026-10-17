@@ -86,7 +86,7 @@ pub(super) fn run(action: PluginAction) -> Result<bool> {
 
 fn install_from(places: &Places, spec: &str, yes: bool) -> Result<()> {
     let origin = Origin::parse(&folder_spec(spec)).map_err(Error::Plugin)?;
-    println!("fetching {}…", origin.spec());
+    println!("fetching {}…", crate::text::escape_hidden(&origin.spec()));
     let fetched = install::fetch(&origin, places).map_err(Error::Plugin)?;
     if !confirmed(&fetched, yes, "Install it?")? {
         println!("nothing was installed");
