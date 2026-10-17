@@ -112,7 +112,8 @@ impl Registry {
     }
 
     pub(crate) fn link(&mut self, folder: &Path) -> Result<(Manifest, bool), String> {
-        let path = folder.canonicalize().map_err(|e| format!("cannot open {}: {e}", folder.display()))?;
+        let cannot = |e: io::Error| text::escape_hidden(&format!("cannot open {}: {e}", folder.display()));
+        let path = folder.canonicalize().map_err(cannot)?;
         let manifest = Manifest::load(&path)?;
         let source = Source::Link { path };
         let enabled = match self.entries.iter_mut().find(|entry| entry.id == manifest.id) {

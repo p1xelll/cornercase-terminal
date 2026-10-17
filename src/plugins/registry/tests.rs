@@ -110,3 +110,11 @@ fn a_link_path_is_shown_with_its_invisible_characters_escaped() {
     let source = Source::Link { path: PathBuf::from("/plugins/evil\u{202e}lmth.sh") };
     assert_eq!(source.describe(), "linked from /plugins/evil\\u{202e}lmth.sh");
 }
+
+#[test]
+fn a_folder_that_cannot_be_linked_is_named_with_its_invisible_characters_escaped() {
+    let home = TempDir::new();
+    let mut registry = Registry::load(&home.path().join("plugins.json"));
+    let error = registry.link(&home.path().join("gone\u{202e}")).expect_err("refused");
+    assert!(error.contains("gone\\u{202e}") && !error.contains('\u{202e}'), "{error}");
+}
