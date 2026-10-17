@@ -2,11 +2,17 @@
 
 Every pull request that changes the app adds a section here for its new version. The section becomes the notes of the GitHub Release and shows up in the app's update dialog, so write it for users.
 
-## 0.12.114
+## 0.12.115
 
 - Plugins: a folder with a `cornercase-plugin.toml` can add entries to the ` ⋯ ` and right-click menus of projects, workspaces, tabs and panes, run a command on every event `cornercase events` prints, keep a service running in the server (restarted if it stops), and keep a process running next to each window on this computer. Plugins talk back through the cornercase commands, so they can be written in any language.
 - `cornercase plugin link <folder>` adds a plugin, turned off; `enable`, `disable`, `list`, `logs` and `unlink` do the rest, and Settings has a new Plugins tab to turn them on and off.
 - A plugin runs as you and can do anything you can, including typing into every terminal. What it asks for is shown before you turn it on, but not enforced: only turn on plugins you trust.
+
+## 0.12.114
+
+- **A click on a notification takes you to the agent.** In kitty, VS Code, Contour, foot 1.18 or later and Konsole 24.12 or later, clicking the desktop notification of an agent that needs you or finished shows its project, workspace and tab, with its pane focused. foot and Konsole now get kitty's kind of notification, so Konsole, like foot, no longer shows one while its window is in front.
+- The toast that comes with it has a **go** button that does the same in any terminal, and stays 6 seconds. In Ghostty, iTerm2 and WezTerm, where a click only brings the window forward, the toast comes back with its **go** when you return to the window, if the agent still needs you.
+- When you quit, restart or stop the server, cornercase closes the last 64 notifications it sent (where the terminal can), so clicking one later types nothing into your shell.
 
 ## 0.12.113
 
