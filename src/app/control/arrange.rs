@@ -1,7 +1,9 @@
+use std::time::Instant;
+
 use super::{Asker, Handled, json, name_of, none, pane_ids};
 use crate::app::menus::{Marked, Target};
 use crate::app::{App, Toast};
-use crate::control::{self, Done, Item, TodoItem, TodoList};
+use crate::control::{self, Command, Done, Item, Request, TodoItem, TodoList};
 use crate::host::notify::{self, Notification};
 use crate::project::Hierarchy;
 use crate::ui;
@@ -86,5 +88,44 @@ impl App {
             }
         };
         Ok(Some(json(&done)))
+    }
+
+    pub(super) fn todo_send_request(
+        &mut self,
+        client: u64,
+        asker: Asker,
+        todo: &control::TodoSend,
+        now: Instant,
+    ) -> Handled {
+        let item = self.todos.item(todo.id).ok_or_else(|| none("todo", todo.id))?;
+        if item.done {
+            return Err(format!("todo {} is already done, so it is not sent; uncheck it first", todo.id).into());
+        }
+        if self.requests.todo_sends.values().any(|sending| sending.todo == todo.id) {
+            return Err(format!("todo {} is already being sent; wait for its answer", todo.id).into());
+        }
+        let pane = self.target(asker, todo.pane, todo.tab)?;
+        let term = self.projects.pane_by(pane).ok_or_else(|| none("pane", pane))?;
+        if !self.runs_agent(term) {
+            return Err(format!("pane {pane} runs no agent; `cornercase status --panes` lists the agents").into());
+        }
+        let text = item.text.clone();
+        let confirmed = self.confirms(term, Some(&text));
+        let send = control::SendText {
+            text: Some(text.clone()),
+            enter: true,
+            pane: todo.pane,
+            tab: todo.tab,
+            force: todo.force,
+            ..control::SendText::default()
+        };
+        self.requests.todo_sends.insert(client, super::Sending { todo: todo.id, text, confirmed });
+        self.send_request(client, asker, send, now)
+    }
+
+    pub(in crate::app) fn send_todo(&mut self, client: u64, todo: u64, pane: u64, now: Instant) {
+        let command = Command::TodoSend(control::TodoSend { id: todo, pane: Some(pane), ..Default::default() });
+        let request = Request { caller: None, server: None, contract: None, boot: None, view: None, command };
+        self.run_request(client, Ok(request), 0, None, now);
     }
 }

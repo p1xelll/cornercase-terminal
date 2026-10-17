@@ -1,17 +1,23 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::{Position, Rect};
+use serde_json::Value;
 
 use super::input::wheel;
 use super::interaction::{Drag, Grab, RowDrag};
 use super::layout::Side;
+use super::menus::MenuAction;
+use super::overlay::Overlay;
 use super::toast::Undo;
 use super::{App, Toast};
+use crate::project::Hierarchy;
 use crate::todo::editor::Editor;
 use crate::todo::{Field, Removed};
 use crate::ui;
 use crate::ui::todo::{self as panel, Hit};
 
 const DELETED: &str = "deleted";
+const NO_AGENT: &str = "no agent is running";
+pub(in crate::app) const CLIENTS: u64 = 1 << 61;
 
 impl App {
     fn todo_area(&self, area: Rect) -> Rect {
@@ -34,7 +40,15 @@ impl App {
         let adding = field.filter(|f| f.item.is_none()).map(|f| f.editor.clone());
         let light = self.theme.is_light() == Some(true);
         let muted = ui::muted(&self.theme);
-        let mut view = panel::View { items, scroll: self.todo.scroll, adding, light, muted, drag: None };
+        let mut view = panel::View {
+            items,
+            scroll: self.todo.scroll,
+            adding,
+            light,
+            muted,
+            drag: None,
+            compact: self.drawn.compact(),
+        };
         if let Some((drag, pos)) = self.row_drag().filter(|d| d.moved).zip(self.hover)
             && let Grab::Todo(id) = drag.target
         {
@@ -145,6 +159,7 @@ impl App {
                     self.removed_todos(DELETED.into(), removed);
                 }
             }
+            Some(Hit::Send(id)) => self.ask_todo_agent(id, pos),
             Some(Hit::Item { id, row, .. }) => {
                 self.drag = Some(Drag::Row(RowDrag {
                     target: Grab::Todo(id),
@@ -157,6 +172,86 @@ impl App {
             }
             None => {}
         }
+    }
+
+    fn ask_todo_agent(&mut self, todo: u64, at: Position) {
+        let panes: Vec<u64> = self
+            .agent_places()
+            .into_iter()
+            .map(|(p, w, t, i)| self.projects[p].workspaces[w].tabs[t].panes[i].id)
+            .collect();
+        if panes.is_empty() {
+            self.toast = Some(Toast::new(NO_AGENT, ui::ToastIcon::Bug));
+            return;
+        }
+        let actions = panes.into_iter().map(|pane| MenuAction::SendTodo { todo, pane }).collect();
+        self.overlay = Some(Overlay::Menu { at, actions });
+    }
+
+    fn todo_agent(&self, pane: u64) -> Option<(String, String, String)> {
+        let (p, w, _) = self.projects.tab_of_pane(pane)?;
+        let project = &self.projects[p];
+        let term = self.projects.pane_by(pane)?;
+        let place = if project.workspaces.len() > 1 {
+            format!("{} › {}", self.project_label(project), project.workspaces[w].label())
+        } else {
+            self.project_label(project)
+        };
+        let icon = term.agent.status().map(ui::status_text).unwrap_or_default();
+        Some((icon, place, term.agent.agent().unwrap_or_default().to_string()))
+    }
+
+    pub(super) fn todo_agent_label(&self, pane: u64) -> String {
+        let base = |id: u64| self.todo_agent(id).map(|(icon, place, kind)| format!("{icon} {place} · {kind}"));
+        let Some(label) = base(pane) else { return String::new() };
+        let others: Vec<u64> = self
+            .agent_places()
+            .into_iter()
+            .map(|(p, w, t, i)| self.projects[p].workspaces[w].tabs[t].panes[i].id)
+            .filter(|id| *id != pane)
+            .collect();
+        let tabbed = |id: u64| {
+            let (p, w, t) = self.projects.tab_of_pane(id)?;
+            let tab = self.projects[p].workspaces[w].tabs[t].label(&self.config);
+            base(id).map(|label| format!("{label} · {tab}"))
+        };
+        if !others.iter().any(|id| base(*id).as_ref() == Some(&label)) {
+            return label;
+        }
+        let with_tab = tabbed(pane).unwrap_or(label);
+        if others.iter().any(|id| tabbed(*id).as_ref() == Some(&with_tab)) {
+            return format!("{with_tab} · pane {pane}");
+        }
+        with_tab
+    }
+
+    pub(super) fn send_todo_from_panel(&mut self, todo: u64, pane: u64, now: std::time::Instant) {
+        let client = CLIENTS + self.todo.next_client;
+        self.todo.next_client += 1;
+        self.todo.sending.insert(client, self.todo_agent_place(pane));
+        self.send_todo(client, todo, pane, now);
+    }
+
+    fn todo_agent_place(&self, pane: u64) -> String {
+        self.todo_agent(pane).map(|(_, place, kind)| format!("{kind} in {place}")).unwrap_or_default()
+    }
+
+    pub(in crate::app) fn todo_answered(&mut self, client: u64, reply: &Result<Value, String>) -> bool {
+        let Some(place) = self.todo.sending.remove(&client) else { return false };
+        if place.is_empty() {
+            return true;
+        }
+        self.toast = Some(match reply {
+            Ok(value) if value.get("unconfirmed").is_some() => {
+                Toast::new(format!("sent to {place}, not confirmed: stays to do"), ui::ToastIcon::Check)
+            }
+            Ok(value) if value.get("checked") == Some(&Value::Bool(false)) => {
+                Toast::new(format!("sent to {place}, but it changed meanwhile: stays to do"), ui::ToastIcon::Check)
+            }
+            Ok(_) => Toast::new(format!("sent to {place}"), ui::ToastIcon::Check),
+            Err(reason) => Toast::new(reason.clone(), ui::ToastIcon::Bug),
+        });
+        true
     }
 
     fn removed_todos(&mut self, message: String, removed: Removed) {

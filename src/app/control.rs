@@ -58,7 +58,14 @@ pub(super) struct Requests {
     structured: HashSet<u64>,
     answers: Vec<(u64, String)>,
     launched: Vec<(u64, bool)>,
+    todo_sends: HashMap<u64, Sending>,
     next: u64,
+}
+
+struct Sending {
+    todo: u64,
+    text: String,
+    confirmed: bool,
 }
 
 impl Requests {
@@ -233,6 +240,19 @@ impl App {
     pub(crate) fn forget(&mut self, client: u64) {
         self.requests.open.retain(|open| *open != client);
         self.requests.structured.remove(&client);
+        if let Some(sending) = self.requests.todo_sends.remove(&client) {
+            let orphan = crate::app::todo_panel::CLIENTS + self.todo.next_client;
+            self.todo.next_client += 1;
+            let mut kept = false;
+            for pending in self.requests.pending.iter_mut().filter(|p| p.client == Some(client)) {
+                pending.client = Some(orphan);
+                kept = true;
+            }
+            if kept {
+                self.requests.todo_sends.insert(orphan, sending);
+                self.todo.sending.insert(orphan, String::new());
+            }
+        }
         if let Some((at, command)) = self.requests.asked.remove(&client) {
             log::info!(
                 "control",
@@ -280,6 +300,26 @@ impl App {
     fn refuse_or_answer(&mut self, client: Option<u64>, reply: Result<Value, Refusal>) {
         let Some(client) = client else { return };
         let structured = self.requests.structured.remove(&client);
+        let reply = match (self.requests.todo_sends.remove(&client), reply) {
+            (Some(sending), Ok(mut value)) => {
+                let editing = self.todo.field.as_ref().filter(|field| field.item == Some(sending.todo));
+                let same = self.todos.item(sending.todo).is_some_and(|item| !item.done && item.text == sending.text)
+                    && editing.is_none_or(|field| field.editor.text() == sending.text);
+                let checked = sending.confirmed && same;
+                if checked {
+                    self.todos.toggle(sending.todo);
+                }
+                if let Some(fields) = value.as_object_mut() {
+                    fields.insert("todo".into(), sending.todo.into());
+                    fields.insert("checked".into(), checked.into());
+                    if !sending.confirmed {
+                        fields.insert("unconfirmed".into(), true.into());
+                    }
+                }
+                Ok(value)
+            }
+            (_, reply) => reply,
+        };
         let (code, reply) = match reply {
             Ok(value) => (Code::Failed, Ok(value)),
             Err(refusal) => (refusal.code, Err(refusal.message)),
@@ -308,6 +348,9 @@ impl App {
             }
         }
         if self.queue_answered(client, &reply) {
+            return;
+        }
+        if self.todo_answered(client, &reply) {
             return;
         }
         if client >= MESSENGER_CLIENTS {
@@ -352,6 +395,7 @@ impl App {
             Command::Focus(focus) => self.focus_request(asker, focus.item),
             Command::Notify(notify) => self.notify_request(&notify.text),
             Command::Todo(todo) => self.todo_request(todo),
+            Command::TodoSend(send) => self.todo_send_request(client, asker, &send, now),
             Command::Queue(queue) => self.queue_request(client, caller, queue, area, now),
             Command::Events(events) => self.events_request(client, events),
             Command::Surface(surface) => self.surface_request(client, asker.view, &surface, now),

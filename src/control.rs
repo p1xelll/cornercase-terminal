@@ -13,8 +13,11 @@ mod search;
 pub(crate) mod start_server;
 pub(crate) mod surface;
 pub(crate) mod terminal;
+mod todo;
 pub(crate) mod view;
 mod watch;
+
+pub(crate) use todo::{Todo, TodoSend};
 
 pub(crate) use contract::Contract;
 pub(crate) use events::{Event, Events, Kind, What};
@@ -88,6 +91,7 @@ pub(crate) enum Command {
     Focus(Focus),
     Notify(Notify),
     Todo(Todo),
+    TodoSend(TodoSend),
     Events(Events),
     LastMessage(LastMessage),
     RestartWhenIdle(RestartWhenIdle),
@@ -158,9 +162,11 @@ impl Command {
             Self::Resize(_) => 38,
             Self::Ratio(_) => 39,
             Self::Link(_) => 40,
+            Self::TodoSend(_) => 41,
         }]
     }
 
+    #[expect(clippy::too_many_lines, reason = "one arm per command")]
     pub(crate) fn fields(&self) -> Vec<(&'static str, String)> {
         let mut fields = Fields::default();
         match self {
@@ -228,6 +234,7 @@ impl Command {
                 fields.add("bytes", notify.text.len());
             }
             Self::Todo(todo) => todo.fields(&mut fields),
+            Self::TodoSend(send) => send.fields(&mut fields),
             Self::Events(events) => {
                 let panes: Vec<String> = events.panes.iter().map(u64::to_string).collect();
                 fields.maybe("panes", (!panes.is_empty()).then(|| panes.join(","))).add("host", events.host);
@@ -264,7 +271,7 @@ impl Command {
         fields.0
     }
 
-    pub(crate) const NAMES: [&str; 41] = [
+    pub(crate) const NAMES: [&str; 42] = [
         "status",
         "open",
         "new-workspace",
@@ -306,6 +313,7 @@ impl Command {
         "resize",
         "ratio",
         "link",
+        "todo-send",
     ];
 
     pub(crate) fn chatty(name: &str) -> bool {
@@ -520,26 +528,6 @@ pub(crate) struct Away {
     pub(crate) off: bool,
 }
 
-impl Todo {
-    fn fields(&self, fields: &mut Fields) {
-        match self {
-            Self::Add(_) => fields.add("todo", "add"),
-            Self::List => fields.add("todo", "list"),
-            Self::Done(id) => fields.add("todo", "done").add("id", id),
-            Self::Rm(id) => fields.add("todo", "rm").add("id", id),
-        };
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub(crate) enum Todo {
-    Add(String),
-    List,
-    Done(u64),
-    Rm(u64),
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct RestartWhenIdle {
@@ -581,6 +569,10 @@ pub(crate) struct Done {
     pub(crate) text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) todo: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) unconfirmed: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) checked: Option<bool>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) panes: Vec<Done>,
     #[serde(skip_serializing_if = "Option::is_none")]
