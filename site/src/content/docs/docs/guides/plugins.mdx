@@ -61,7 +61,7 @@ id = "panel"
 command = ["bin/notes", "panel"]
 ```
 
-Fields cornercase doesn't know are ignored, so a manifest written for a newer cornercase still loads. The plugin's folder and its manifest must be yours and not writable by other users. A manifest that cannot be read shows in `plugin list` and in Settings with the reason, and never hides the other plugins.
+Fields cornercase doesn't know are ignored, so a manifest written for a newer cornercase still loads. The plugin's folder and its manifest must be yours and not writable by other users. Its texts may not hold control characters or invisible ones (bidirectional overrides, zero-width spaces and the like), which could make a command read differently from what runs. A manifest that cannot be read shows in `plugin list` and in Settings with the reason, and never hides the other plugins.
 
 ### Commands
 

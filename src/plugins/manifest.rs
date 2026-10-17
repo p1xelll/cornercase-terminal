@@ -7,7 +7,7 @@ use rustix::fs::OFlags;
 use rustix::process::getgid;
 use serde::{Deserialize, Serialize};
 
-use crate::version;
+use crate::{text, version};
 
 pub(crate) const FILE: &str = "cornercase-plugin.toml";
 pub(crate) const API: u32 = 1;
@@ -110,6 +110,10 @@ pub(crate) fn platform() -> &'static str {
 
 impl Manifest {
     pub(crate) fn load(root: &Path) -> Result<Self, String> {
+        Self::read(root).map_err(|e| text::escape_hidden(&e))
+    }
+
+    fn read(root: &Path) -> Result<Self, String> {
         let path = root.join(FILE);
         let cannot = |e: &dyn std::fmt::Display| format!("cannot read {}: {e}", path.display());
         let file = std::fs::OpenOptions::new()
@@ -140,12 +144,16 @@ impl Manifest {
     }
 
     pub(crate) fn parse(text: &str) -> Result<Self, String> {
-        let manifest: Self = toml::from_str(text).map_err(|e| format!("{FILE}: {}", e.message()))?;
-        manifest.check()?;
+        let shown = |e: String| text::escape_hidden(&e);
+        let manifest: Self = toml::from_str(text).map_err(|e| shown(format!("{FILE}: {}", e.message())))?;
+        manifest.check().map_err(shown)?;
         Ok(manifest)
     }
 
     fn check(&self) -> Result<(), String> {
+        if let Some((field, value)) = self.texts().find(|(_, value)| value.chars().any(text::hidden)) {
+            return Err(format!("{FILE}: {field} `{value}` has an invisible or control character"));
+        }
         valid_id("id", &self.id)?;
         for (field, value) in [("name", &self.name), ("version", &self.version)] {
             if value.trim().is_empty() {
@@ -193,6 +201,27 @@ impl Manifest {
         Ok(())
     }
 
+    fn texts(&self) -> impl Iterator<Item = (&'static str, &str)> {
+        let fields =
+            [("id", &self.id), ("name", &self.name), ("version", &self.version), ("description", &self.description)];
+        let lists = [("platforms", &self.platforms), ("permissions", &self.permissions)];
+        fields
+            .into_iter()
+            .map(|(field, value)| (field, value.as_str()))
+            .chain(self.min_cornercase.iter().map(|value| ("min_cornercase", value.as_str())))
+            .chain(lists.into_iter().flat_map(|(field, values)| values.iter().map(move |v| (field, v.as_str()))))
+            .chain(self.actions.iter().flat_map(|a| {
+                [("an action id", a.id.as_str()), ("an action title", a.title.as_str())]
+                    .into_iter()
+                    .chain(a.command.iter().map(|arg| ("a command", arg.as_str())))
+            }))
+            .chain(self.events.iter().flat_map(|h| h.command.iter().map(|arg| ("a command", arg.as_str()))))
+            .chain(self.service.iter().chain(&self.window).flat_map(|p| {
+                std::iter::once(("a process id", p.id.as_str()))
+                    .chain(p.command.iter().map(|arg| ("a command", arg.as_str())))
+            }))
+    }
+
     pub(crate) fn runs(&self) -> Vec<String> {
         let count = |n: usize, one: &str, many: &str| match n {
             0 => None,
@@ -235,9 +264,6 @@ fn valid_command(what: &str, command: &[String]) -> Result<(), String> {
     let Some(program) = command.first().filter(|program| !program.trim().is_empty()) else {
         return Err(format!("{FILE}: {what} has no command"));
     };
-    if command.iter().any(|arg| arg.contains('\0')) {
-        return Err(format!("{FILE}: {what} has a NUL character in its command"));
-    }
     let path = Path::new(program);
     if path.is_relative() && path.components().any(|part| part == Component::ParentDir) {
         return Err(format!("{FILE}: {what} runs `{program}`, outside the plugin's folder"));
@@ -246,6 +272,10 @@ fn valid_command(what: &str, command: &[String]) -> Result<(), String> {
 }
 
 pub(crate) fn program(root: &Path, command: &[String]) -> Result<(PathBuf, Vec<String>), String> {
+    resolve(root, command).map_err(|e| text::escape_hidden(&e))
+}
+
+fn resolve(root: &Path, command: &[String]) -> Result<(PathBuf, Vec<String>), String> {
     let (first, args) = command.split_first().ok_or("no command")?;
     let path = Path::new(first);
     if !(path.is_relative() && first.contains('/')) {

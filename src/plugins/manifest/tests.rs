@@ -78,8 +78,20 @@ mod parsing {
     #[case::an_unknown_event(&with("[[events]]\non = \"typed\"\ncommand = [\"x\"]"), "unknown variant `typed`")]
     #[case::an_empty_command(&with("[[service]]\nid = \"s\"\ncommand = []"), "has no command")]
     #[case::a_command_leaving_the_folder(&with("[[service]]\nid = \"s\"\ncommand = [\"../bin/x\"]"), "outside the plugin's folder")]
-    #[case::a_nul_in_an_argument(&with("[[service]]\nid = \"s\"\ncommand = [\"x\", \"a\\u0000b\"]"), "NUL")]
+    #[case::a_nul_in_an_argument(&with("[[service]]\nid = \"s\"\ncommand = [\"x\", \"a\\u0000b\"]"), "invisible or control character")]
     #[case::two_services_with_one_id(&with("[[service]]\nid = \"s\"\ncommand = [\"x\"]\n[[service]]\nid = \"s\"\ncommand = [\"y\"]"), "two service entries")]
+    #[case::a_bidi_override_in_a_command(&with("[[service]]\nid = \"s\"\ncommand = [\"bin/run\\u202e\"]"), "`bin/run\\u{202e}` has an invisible")]
+    #[case::an_isolate_in_an_argument(&with("[[service]]\nid = \"s\"\ncommand = [\"x\", \"a\\u2066b\"]"), "a command `a\\u{2066}b`")]
+    #[case::a_zero_width_space_in_the_name(
+        "id = \"a\"\nname = \"No\\u200Btes\"\nversion = \"1\"",
+        "name `No\\u{200b}tes`"
+    )]
+    #[case::a_line_separator_in_the_description(&with("description = \"a\\u2028b\""), "description")]
+    #[case::a_byte_order_mark_in_a_permission(&with("permissions = [\"\\uFEFFsend\"]"), "permissions")]
+    #[case::a_soft_hyphen_in_a_title(&with("[[actions]]\nid = \"a\"\ntitle = \"t\\u00ADx\"\ncontexts = [\"tab\"]\ncommand = [\"x\"]"), "an action title")]
+    #[case::a_newline_in_the_version("id = \"a\"\nname = \"x\"\nversion = \"1\\n2\"", "version `1\\u{a}2`")]
+    #[case::a_tag_in_a_hook(&with("[[events]]\non = \"opened\"\ncommand = [\"x\\U000E0041\"]"), "a command")]
+    #[case::a_bidi_override_in_an_unknown_variant(&with("[[events]]\non = \"op\\u202eened\"\ncommand = [\"x\"]"), "op\\u{202e}ened")]
     fn it_refuses(#[case] text: &str, #[case] reason: &str) {
         let error = Manifest::parse(text).expect_err("refused");
         assert!(error.contains(reason), "{error}");
