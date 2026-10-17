@@ -98,6 +98,13 @@ mod parsing {
     }
 
     #[test]
+    fn a_long_text_is_quoted_around_its_invisible_character() {
+        let description = format!("{}\u{202e}{}", "a".repeat(500), "b".repeat(500));
+        let error = Manifest::parse(&with(&format!("description = \"{description}\""))).expect_err("refused");
+        assert!(error.contains("…aaa") && error.contains("\\u{202e}bbb") && error.len() < 200, "{error}");
+    }
+
+    #[test]
     fn it_refuses_too_many_entries() {
         let many = "[[service]]\nid = \"s\"\ncommand = [\"x\"]\n".repeat(65);
         assert!(Manifest::parse(&with(&many)).expect_err("refused").contains("more than the 64"));
@@ -174,10 +181,13 @@ mod programs {
     fn a_program_another_group_can_write_to_is_refused() {
         let dir = root_with_bin();
         let path = dir.path().join("bin/run");
-        let other = if getgid().as_raw() == 0 { 1 } else { 0 };
-        if std::os::unix::fs::chown(&path, None, Some(other)).is_err() {
-            return;
-        }
+        let groups = std::process::Command::new("id").arg("-G").output().expect("id -G");
+        let other = String::from_utf8_lossy(&groups.stdout)
+            .split_whitespace()
+            .filter_map(|group| group.parse::<u32>().ok())
+            .find(|&group| group != getgid().as_raw());
+        let Some(other) = other else { return };
+        std::os::unix::fs::chown(&path, None, Some(other)).expect("chown to one of the user's groups");
         std::fs::set_permissions(&path, Permissions::from_mode(0o775)).expect("chmod");
         let error = program(dir.path(), &["bin/run".into()]).expect_err("refused");
         assert!(error.contains("other users can write to `bin/run`"), "{error}");

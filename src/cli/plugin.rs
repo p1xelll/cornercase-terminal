@@ -73,14 +73,14 @@ fn list_text(plugins: &[Plugin]) -> String {
         let on = if plugin.entry.enabled { "on" } else { "off" };
         match &plugin.manifest {
             Ok(manifest) => {
-                let _ = writeln!(text, "{}  {}  {on}  {}", plugin.entry.id, manifest.version, manifest.name);
+                let _ = writeln!(text, "{}  {}  {on}  {}", manifest.id, manifest.version, manifest.name);
                 let _ = writeln!(text, "  {}\n  {}", plugin.entry.source.describe(), manifest.asks());
                 if !manifest.runs().is_empty() {
                     let _ = writeln!(text, "  runs {}", manifest.runs().join(", "));
                 }
             }
             Err(e) => {
-                let _ = writeln!(text, "{}  -  {on}  cannot run", plugin.entry.id);
+                let _ = writeln!(text, "{}  -  {on}  cannot run", plugin.name());
                 let _ = writeln!(text, "  {}\n  {e}", plugin.entry.source.describe());
             }
         }

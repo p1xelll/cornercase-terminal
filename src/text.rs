@@ -111,7 +111,7 @@ pub(crate) fn hidden(c: char) -> bool {
                 | '\u{fe00}'..='\u{fe0f}'
                 | '\u{feff}'
                 | '\u{ffa0}'
-                | '\u{fff9}'..='\u{fffb}'
+                | '\u{fff0}'..='\u{fffb}'
                 | '\u{110bd}'
                 | '\u{110cd}'
                 | '\u{13430}'..='\u{1343f}'

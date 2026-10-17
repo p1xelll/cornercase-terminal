@@ -104,3 +104,9 @@ fn a_registry_that_cannot_be_read_is_never_written_over() {
     std::fs::write(&path, r#"{"version":9,"plugins":[]}"#).expect("newer");
     assert!(Registry::open(&path).expect_err("refused").contains("version 9"));
 }
+
+#[test]
+fn a_link_path_is_shown_with_its_invisible_characters_escaped() {
+    let source = Source::Link { path: PathBuf::from("/plugins/evil\u{202e}lmth.sh") };
+    assert_eq!(source.describe(), "linked from /plugins/evil\\u{202e}lmth.sh");
+}

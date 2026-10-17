@@ -15,6 +15,7 @@ pub(crate) const API: u32 = 1;
 const MAX_ID: usize = 64;
 const MAX_BYTES: u64 = 64 * 1024;
 const MAX_ENTRIES: usize = 64;
+const MAX_QUOTED: usize = 80;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub(crate) struct Manifest {
@@ -146,7 +147,7 @@ impl Manifest {
 
     fn check(&self) -> Result<(), String> {
         if let Some((field, value)) = self.texts().find(|(_, value)| value.chars().any(text::hidden)) {
-            return Err(format!("{FILE}: {field} `{value}` has an invisible or control character"));
+            return Err(format!("{FILE}: {field} `{}` has an invisible or control character", around_hidden(value)));
         }
         valid_id("id", &self.id)?;
         for (field, value) in [("name", &self.name), ("version", &self.version)] {
@@ -240,6 +241,15 @@ impl Manifest {
             format!("asks for {}", self.permissions.join(", "))
         }
     }
+}
+
+fn around_hidden(value: &str) -> String {
+    let chars: Vec<char> = value.chars().collect();
+    let at = chars.iter().position(|&c| text::hidden(c)).unwrap_or(0);
+    let start = at.saturating_sub(MAX_QUOTED / 2);
+    let end = (start + MAX_QUOTED).min(chars.len());
+    let cut = |cut: bool| if cut { "…" } else { "" };
+    format!("{}{}{}", cut(start > 0), chars[start..end].iter().collect::<String>(), cut(end < chars.len()))
 }
 
 fn valid_id(field: &str, id: &str) -> Result<(), String> {

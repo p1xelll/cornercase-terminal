@@ -6,7 +6,7 @@ use std::time::SystemTime;
 use serde::{Deserialize, Serialize};
 
 use super::manifest::{self, Manifest};
-use crate::persist;
+use crate::{persist, text};
 
 const VERSION: u32 = 1;
 
@@ -33,7 +33,7 @@ impl Source {
 
     pub(crate) fn describe(&self) -> String {
         match self {
-            Self::Link { path } => format!("linked from {}", path.display()),
+            Self::Link { path } => format!("linked from {}", text::escape_hidden(&path.display().to_string())),
         }
     }
 }
@@ -60,8 +60,8 @@ impl Plugin {
         self.entry.source.root()
     }
 
-    pub(crate) fn name(&self) -> &str {
-        self.manifest.as_ref().map_or(&self.entry.id, |m| &m.name)
+    pub(crate) fn name(&self) -> String {
+        self.manifest.as_ref().map_or_else(|_| text::escape_hidden(&self.entry.id), |m| m.name.clone())
     }
 }
 
