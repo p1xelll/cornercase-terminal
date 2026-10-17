@@ -88,6 +88,8 @@ mod parsing {
     )]
     #[case::a_line_separator_in_the_description(&with("description = \"a\\u2028b\""), "description")]
     #[case::a_byte_order_mark_in_a_permission(&with("permissions = [\"\\uFEFFsend\"]"), "permissions")]
+    #[case::a_bidi_override_in_a_build_step(&with("[[build]]\ncommand = [\"make\", \"a\\u202eb\"]"), "a build command `a\\u{202e}b`")]
+    #[case::a_bidi_override_in_a_download(&with("[download.x86_64-unknown-linux-gnu]\nurl = \"https://acme.dev/a\\u202eb\"\nsha256 = \"00\""), "a download url")]
     #[case::a_soft_hyphen_in_a_title(&with("[[actions]]\nid = \"a\"\ntitle = \"t\\u00ADx\"\ncontexts = [\"tab\"]\ncommand = [\"x\"]"), "an action title")]
     #[case::a_newline_in_the_version("id = \"a\"\nname = \"x\"\nversion = \"1\\n2\"", "version `1\\u{a}2`")]
     #[case::a_tag_in_a_hook(&with("[[events]]\non = \"opened\"\ncommand = [\"x\\U000E0041\"]"), "a command")]

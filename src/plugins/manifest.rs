@@ -245,6 +245,14 @@ impl Manifest {
                 std::iter::once(("a process id", p.id.as_str()))
                     .chain(p.command.iter().map(|arg| ("a command", arg.as_str())))
             }))
+            .chain(self.build.iter().flat_map(|b| b.command.iter().map(|arg| ("a build command", arg.as_str()))))
+            .chain(self.download.iter().flat_map(|(target, d)| {
+                [
+                    ("a download target", target.as_str()),
+                    ("a download url", d.url.as_str()),
+                    ("a download sha256", d.sha256.as_str()),
+                ]
+            }))
     }
 
     pub(crate) fn commands(&self) -> Vec<(String, &[String])> {

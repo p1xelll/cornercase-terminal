@@ -221,6 +221,16 @@ mod building {
     }
 
     #[test]
+    fn a_hidden_character_in_a_build_step_is_refused_before_the_preview() {
+        let remote = Remote::new(&manifest("1.0", "\n[[build]]\ncommand = [\"./make\", \"a\u{202e}b\"]\n"));
+        let home = TempDir::new();
+        let places = places(&home);
+        let error = fetch(&remote.origin(None), &places).map(|_| ()).expect_err("refused");
+        assert!(error.contains("a\\u{202e}b") && !error.contains('\u{202e}'), "{error}");
+        assert_eq!(staged(&places), 0);
+    }
+
+    #[test]
     fn a_build_that_changes_the_manifest_is_refused() {
         let remote = with_make(
             "#!/bin/sh\nprintf 'id = \"acme.notes\"\\nname = \"Notes\"\\nversion = \"9\"\\n' > cornercase-plugin.toml\n",
