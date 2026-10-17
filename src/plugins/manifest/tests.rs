@@ -129,6 +129,9 @@ mod loading {
 }
 
 mod programs {
+    use std::fs::Permissions;
+    use std::os::unix::fs::PermissionsExt;
+
     use super::*;
 
     fn root_with_bin() -> TempDir {
@@ -149,6 +152,42 @@ mod programs {
     fn a_bare_name_is_looked_up_on_the_path() {
         let (program, _) = program(Path::new("/nowhere"), &["sh".into()]).expect("a name");
         assert_eq!(program, PathBuf::from("sh"));
+    }
+
+    #[test]
+    fn a_program_anyone_can_write_to_is_refused() {
+        let dir = root_with_bin();
+        std::fs::set_permissions(dir.path().join("bin/run"), Permissions::from_mode(0o757)).expect("chmod");
+        let error = program(dir.path(), &["bin/run".into()]).expect_err("refused");
+        assert!(error.contains("other users can write to `bin/run`"), "{error}");
+    }
+
+    #[test]
+    fn a_folder_on_the_way_anyone_can_write_to_is_refused() {
+        let dir = root_with_bin();
+        std::fs::set_permissions(dir.path().join("bin"), Permissions::from_mode(0o777)).expect("chmod");
+        let error = program(dir.path(), &["bin/run".into()]).expect_err("refused");
+        assert!(error.contains("other users can write to `bin`"), "{error}");
+    }
+
+    #[test]
+    fn a_program_another_group_can_write_to_is_refused() {
+        let dir = root_with_bin();
+        let path = dir.path().join("bin/run");
+        let other = if getgid().as_raw() == 0 { 1 } else { 0 };
+        if std::os::unix::fs::chown(&path, None, Some(other)).is_err() {
+            return;
+        }
+        std::fs::set_permissions(&path, Permissions::from_mode(0o775)).expect("chmod");
+        let error = program(dir.path(), &["bin/run".into()]).expect_err("refused");
+        assert!(error.contains("other users can write to `bin/run`"), "{error}");
+    }
+
+    #[test]
+    fn a_program_in_the_users_own_group_is_accepted() {
+        let dir = root_with_bin();
+        std::fs::set_permissions(dir.path().join("bin/run"), Permissions::from_mode(0o775)).expect("chmod");
+        assert!(program(dir.path(), &["bin/run".into()]).is_ok());
     }
 
     #[test]
