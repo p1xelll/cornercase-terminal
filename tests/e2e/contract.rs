@@ -53,8 +53,17 @@ fn contract_describes_the_running_server_and_its_boot() {
         "group-style",
         "group-delete",
         "removal-check",
+        "app",
     ] {
         assert!(operations.iter().any(|op| op["name"] == name && op["available"] == true), "{name}: {contract}");
+    }
+    for name in ["update-check", "update-install"] {
+        let operation = operations.iter().find(|op| op["name"] == name).unwrap_or_else(|| panic!("{name}: {contract}"));
+        assert_eq!(operation["available"], !cfg!(debug_assertions), "{name}: {contract}");
+        if cfg!(debug_assertions) {
+            let reason = operation["reason"].as_str().unwrap_or_default();
+            assert!(reason.contains("development build"), "{name}: {contract}");
+        }
     }
     assert!(contract["features"].as_array().expect("features").iter().any(|f| f == "views"), "{contract}");
     assert!(contract["features"].as_array().expect("features").iter().any(|f| f == "host-events"), "{contract}");
@@ -63,6 +72,11 @@ fn contract_describes_the_running_server_and_its_boot() {
     assert!(contract["features"].as_array().expect("features").iter().any(|f| f == "config"), "{contract}");
     assert!(contract["features"].as_array().expect("features").iter().any(|f| f == "close-unlock"), "{contract}");
     assert!(contract["features"].as_array().expect("features").iter().any(|f| f == "issues"), "{contract}");
+    assert!(contract["features"].as_array().expect("features").iter().any(|f| f == "todo-panel"), "{contract}");
+    assert!(
+        contract["streams"].as_array().expect("streams").iter().any(|s| s["name"] == "app" && s["version"] == 1),
+        "{contract}"
+    );
     assert!(
         contract["streams"].as_array().expect("streams").iter().any(|s| s["name"] == "view" && s["version"] == 1),
         "{contract}"

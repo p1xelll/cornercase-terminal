@@ -4,7 +4,8 @@ use clap::{CommandFactory, Parser};
 use rstest::rstest;
 
 use super::args::issue::IssueAction;
-use super::args::{KillServerArgs, RestartArgs, StartServerArgs, TodoAction, UpdateArgs};
+use super::args::todo::TodoAction;
+use super::args::{KillServerArgs, RestartArgs, StartServerArgs, UpdateArgs};
 use super::status::cell;
 use super::*;
 use crate::control::{GroupInfo, Ids, PaneInfo, PaneRows, ProjectInfo, PullRequestInfo, TabInfo, WorkspaceInfo};
@@ -334,6 +335,20 @@ mod parsing {
 
         let refused = parse(&["status", "--follow", "--panes"]).expect_err("conflict");
         assert_eq!(refused.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn status_app_follows_but_never_with_panes_or_a_view() {
+        for args in [&["status", "--app"][..], &["status", "--app", "--follow"]] {
+            let Some(Command::Control(Control::Status(status))) = parse(args).expect("parse").command else {
+                panic!("not status")
+            };
+            assert!(status.app && !status.panes);
+        }
+        for args in [&["status", "--app", "--panes"][..], &["status", "--app", "--view", "2"]] {
+            let refused = parse(args).expect_err("conflict");
+            assert_eq!(refused.kind(), clap::error::ErrorKind::ArgumentConflict);
+        }
     }
 
     #[rstest]
