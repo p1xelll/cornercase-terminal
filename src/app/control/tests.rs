@@ -19,7 +19,7 @@ mod answer_lost_requests {
             key: 1,
             timeout: None,
             done: Done::default(),
-            stage: Stage::Removing { force: false },
+            stage: Stage::Removing { force: false, unlock: false },
         };
         app.requests.pending.push(removing);
         app.requests.open.extend([1, 2]);
@@ -48,6 +48,48 @@ mod forget {
         app.message_read(1, Ok(Some(context::Said { text: "Done.".into(), written: None })));
 
         assert_eq!((left, app.take_answers()), (0, Vec::new()));
+    }
+}
+
+mod checks {
+    use super::*;
+
+    #[test]
+    fn a_removal_check_goes_with_its_client() {
+        let dir = TempDir::new();
+        let (tx, _rx) = mpsc::channel();
+        let mut app = App::new("/bin/sh".into(), HostTheme::default(), dir.path().join("config.json"), tx);
+        let checking = Pending { client: Some(1), key: 1, timeout: None, done: Done::default(), stage: Stage::Check };
+        app.requests.pending.push(checking);
+        app.requests.open.push(1);
+
+        app.forget(1);
+
+        assert_eq!(app.requests.pending.len(), 0);
+    }
+}
+
+mod forgotten_checks {
+    use super::*;
+    use crate::git::worktree::Status;
+    use crate::test_util::git_repo;
+
+    #[test]
+    fn a_check_whose_client_left_starts_no_removal() {
+        let repo = git_repo(&[("README", "hi")]);
+        let (tx, _rx) = mpsc::channel();
+        let mut app = App::new("/bin/sh".into(), HostTheme::default(), repo.path().join("config.json"), tx);
+        app.open_here(Rect::new(0, 0, 120, 40)).expect("open the project");
+        let (project, workspace) = (app.projects[0].id, app.projects[0].workspaces[0].id);
+        let checking = Pending { client: Some(1), key: 1, timeout: None, done: Done::default(), stage: Stage::Check };
+        app.requests.pending.push(checking);
+        app.requests.open.push(1);
+        app.forget(1);
+
+        app.removal_checked(1, project, workspace, &Status::default());
+
+        assert_eq!(app.projects[0].workspaces[0].phase, Phase::Open);
+        assert_eq!(app.take_answers(), Vec::new());
     }
 }
 
