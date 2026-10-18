@@ -42,6 +42,7 @@ mod socket;
 mod startup;
 mod todos;
 mod updates;
+mod usage;
 mod views;
 
 const ROWS: u16 = 24;

@@ -2,6 +2,11 @@
 
 Every pull request that changes the app adds a section here for its new version. The section becomes the notes of the GitHub Release and shows up in the app's update dialog, so write it for users.
 
+## 0.12.146
+
+- **Scripts and other apps can read your plan limits.** `cornercase usage` prints what the Usage dialog's Limits tab shows: for Claude Code and Codex, how much of each limit you have used and when it resets, extra usage or credits, and how old the numbers are. Like the tab, it asks the agents on the server's machine, which sends no prompt and costs no tokens, and waits for a probe already on its way rather than asking twice; `--cached` prints the last answer without asking. Nothing is asked between requests.
+  - `--json` gives each limit's kind, model, percentage, severity and reset time in UTC, for another app to draw. See Scripts and agents → Plan usage.
+
 ## 0.12.145
 
 - **Other apps and scripts can show the changes panel.** `cornercase changes list` prints a workspace's changed files, or every project's with `--every`, and `--follow` keeps printing them as they change, using the same git options that never take the index lock while an agent commits.

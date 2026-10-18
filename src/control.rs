@@ -20,6 +20,7 @@ pub(crate) mod surface;
 pub(crate) mod terminal;
 pub(crate) mod theme;
 mod todo;
+pub(crate) mod usage;
 pub(crate) mod view;
 mod watch;
 
@@ -45,6 +46,7 @@ pub use status::{PaneInfo, PaneRow, PaneRows, ProjectInfo, Report, TabInfo, Work
 pub(crate) use surface::Surface;
 pub(crate) use terminal::{Input, Link, Ratio, Redraw, Resize, Scroll, Selection};
 pub(crate) use theme::{Theme, ThemeInfo};
+pub(crate) use usage::{Plans, Usage};
 pub(crate) use view::{OpenView, SetView, ViewInfo};
 pub(crate) use watch::{Layout, Snapshot, Watch};
 
@@ -157,6 +159,7 @@ pub(crate) enum Command {
     ChangesGap(ChangesGap),
     ChangesBase(ChangesBase),
     ChangesViewed(ChangesViewed),
+    Usage(Usage),
 }
 
 impl Command {
@@ -229,6 +232,7 @@ impl Command {
             Self::ChangesGap(_) => 64,
             Self::ChangesBase(_) => 65,
             Self::ChangesViewed(_) => 66,
+            Self::Usage(_) => 67,
         }]
     }
 
@@ -361,11 +365,12 @@ impl Command {
             Self::ChangesGap(gap) => gap.fields(&mut fields),
             Self::ChangesBase(base) => base.fields(&mut fields),
             Self::ChangesViewed(viewed) => viewed.fields(&mut fields),
+            Self::Usage(usage) => usage.fields(&mut fields),
         }
         fields.0
     }
 
-    pub(crate) const NAMES: [&str; 67] = [
+    pub(crate) const NAMES: [&str; 68] = [
         "status",
         "open",
         "new-workspace",
@@ -433,6 +438,7 @@ impl Command {
         "changes-gap",
         "changes-base",
         "changes-viewed",
+        "usage",
     ];
 
     pub(crate) fn chatty(name: &str) -> bool {

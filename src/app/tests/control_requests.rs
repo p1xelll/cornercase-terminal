@@ -532,6 +532,7 @@ mod theme;
 mod todo_sending;
 mod todos;
 mod updating;
+mod usage;
 mod views;
 mod watching;
 mod worktrees;

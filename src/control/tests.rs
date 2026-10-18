@@ -115,6 +115,7 @@ fn every_command_is_listed_by_name() {
         Command::ChangesGap(ChangesGap::default()),
         Command::ChangesBase(ChangesBase::default()),
         Command::ChangesViewed(ChangesViewed::default()),
+        Command::Usage(Usage::default()),
     ];
 
     let names: Vec<String> = commands

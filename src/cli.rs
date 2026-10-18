@@ -34,6 +34,7 @@ mod terminal;
 mod theme;
 mod todo;
 mod update;
+mod usage;
 mod view;
 
 pub use args::Cli;
@@ -273,6 +274,7 @@ fn run_control(command: Control) -> Result<bool> {
         Control::Config(args) => config::run(args),
         Control::Issue(args) => return issue::run(args.action),
         Control::Changes(args) => changes::run(args),
+        Control::Usage(args) => return usage::run(&args),
     }?;
     Ok(true)
 }
