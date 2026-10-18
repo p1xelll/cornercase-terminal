@@ -2,6 +2,12 @@
 
 Every pull request that changes the app adds a section here for its new version. The section becomes the notes of the GitHub Release and shows up in the app's update dialog, so write it for users.
 
+## 0.12.150
+
+- **Other apps and scripts can follow a flow run.** `cornercase flow runs` prints where each run stands: its stage, the rounds of its loops, the last step and the last one outside the plan, each role's pane and status, and whether the orchestrator marked the end; `--follow` prints it again as it changes. `cornercase flow messages` prints what the orchestrator and the roles sent each other, as the Flow panel's arrows show it, and `cornercase flow files` lists the run's folder, also after the run ended.
+- **Flows can be managed from scripts.** `cornercase flow hide NAME` deletes a built-in flow and `flow restore NAME` brings it back, as Settings › Flows does; restoring a built-in you edited deletes your version. `flow delete NAME` deletes yours or the project's.
+- `flow list --json` gives each flow whole (stages, loops, prompts, arguments, variables and worktrees) and the deleted built-ins, and an app with its own editor saves a flow as JSON with the `flow-save` request, after the editor's own checks.
+
 ## 0.12.149
 
 - **Other apps and scripts can list and run plugin actions.** `cornercase plugin actions` lists the entries your plugins add to the row and pane menus, for one kind of row or all of them, and `cornercase plugin run PLUGIN ACTION --pane ID` (or `--tab`, `--workspace`, `--project`) runs one as its menu entry does: in the workspace's folder, with the ids of what you name, stopped after 5 minutes, its output in the plugin's log. It waits for the action, prints how it ended and exits with 1 when it failed. An action listed before the plugins changed is refused rather than run.
