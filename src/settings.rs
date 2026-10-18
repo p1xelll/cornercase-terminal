@@ -19,6 +19,13 @@ pub(crate) enum Status {
     Env,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Refused {
+    Unknown(String),
+    Invalid(String),
+    Blocked(String),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Row {
     Folder,
@@ -261,6 +268,7 @@ pub(crate) struct Messenger {
     pub(crate) chat: Option<String>,
     pub(crate) note: String,
     pub(crate) checking: bool,
+    pub(crate) refused: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -387,6 +395,12 @@ impl Settings {
     }
 
     pub(crate) fn rows(&self) -> Vec<Row> {
+        let mut rows = self.every_row();
+        rows.retain(|row| row.page() == self.page);
+        rows
+    }
+
+    pub(crate) fn every_row(&self) -> Vec<Row> {
         let shown = self.shown_tabs();
         let hidden = TAB_IDS.iter().filter(|id| !shown.contains(id)).copied();
         let mut rows = vec![Row::Folder, Row::Fetch, Row::PullRequests, Row::MergedPullRequests];
@@ -438,7 +452,6 @@ impl Settings {
         if self.plugins.is_empty() {
             rows.push(Row::NoPlugins);
         }
-        rows.retain(|row| row.page() == self.page);
         rows
     }
 
@@ -463,7 +476,7 @@ impl Settings {
         self.tokens.iter().find(|(s, _)| *s == source).map(|(_, status)| status)
     }
 
-    fn save(&mut self, config: Config, notice: String) -> Action {
+    pub(crate) fn take_config(&mut self, config: Config) {
         if config.asana_workspace != self.config.asana_workspace {
             for (source, status) in &mut self.tokens {
                 if *source == Source::Asana && matches!(status, Status::Saved(_)) {
@@ -471,7 +484,11 @@ impl Settings {
                 }
             }
         }
-        self.config = config.clone();
+        self.config = config;
+    }
+
+    fn save(&mut self, config: Config, notice: String) -> Action {
+        self.take_config(config.clone());
         self.notice = Some(notice);
         Action::Save(Box::new(config))
     }
@@ -484,6 +501,8 @@ impl Settings {
 }
 
 mod activate;
+mod apply;
+mod describe;
 mod input;
 mod submit;
 mod trackers;

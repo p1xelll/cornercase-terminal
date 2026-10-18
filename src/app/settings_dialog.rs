@@ -14,10 +14,13 @@ use crate::ui::{self};
 
 impl App {
     pub(super) fn set_config(&mut self, config: Config) {
+        if config == self.config {
+            return;
+        }
         if log::enabled(Level::Info) {
-            let keys = changed_keys(&self.config, &config);
-            if !keys.is_empty() {
-                log::info!("app", "settings changed", keys = keys.join(","));
+            let changes = config::Changes::between(&self.config, &config);
+            if !changes.is_empty() {
+                log::info!("app", "settings changed", keys = changes.keys().join(","));
             }
         }
         let jira = |c: &Config| (c.jira_site.clone(), c.jira_email.clone(), c.jira_jql.clone());
@@ -36,6 +39,10 @@ impl App {
             self.forget_issues(Source::Gitlab);
         }
         self.config = config;
+        if let Some(Overlay::Settings(s)) = &mut self.overlay {
+            s.take_config(self.config.clone());
+        }
+        self.settings_changed();
     }
 
     pub(super) fn open_settings(&mut self) {
@@ -43,7 +50,12 @@ impl App {
             self.open_flows_tab();
             return;
         }
-        let tokens = Source::REMOTE
+        let settings = self.settings_model(self.settings_page);
+        self.overlay = Some(Overlay::Settings(Box::new(settings)));
+    }
+
+    fn token_statuses(&self) -> Vec<(Source, Status)> {
+        Source::REMOTE
             .into_iter()
             .map(|source| {
                 let status = match self.token(source) {
@@ -53,8 +65,11 @@ impl App {
                 };
                 (source, status)
             })
-            .collect();
-        let mut settings = Settings::new(self.config.clone(), self.home.clone(), tokens, self.settings_page);
+            .collect()
+    }
+
+    pub(super) fn settings_model(&self, page: Page) -> Settings {
+        let mut settings = Settings::new(self.config.clone(), self.home.clone(), self.token_statuses(), page);
         settings.awake = self.agents.awake.state().note();
         settings.pulls = self.pull_requests_note();
         settings.merged = self.merged_note();
@@ -64,7 +79,19 @@ impl App {
             *settings.messenger_mut(via) = self.messenger_settings(via);
         }
         settings.plugins = self.plugin_rows();
-        self.overlay = Some(Overlay::Settings(Box::new(settings)));
+        settings
+    }
+
+    pub(super) fn refresh_open_settings(&mut self) {
+        let tokens = self.token_statuses();
+        let browsers = self.remote.web.paired();
+        let messengers: Vec<_> = Via::ALL.iter().map(|via| self.messenger_settings(*via)).collect();
+        let Some(Overlay::Settings(s)) = &mut self.overlay else { return };
+        s.tokens = tokens;
+        s.browsers = browsers;
+        for (via, view) in Via::ALL.into_iter().zip(messengers) {
+            *s.messenger_mut(via) = view;
+        }
     }
 
     pub(super) fn open_settings_on(&mut self, row: &settings::Row) {
@@ -148,19 +175,28 @@ impl App {
         self.settings_act(action);
     }
 
+    pub(super) fn remove_token(&mut self, source: Source) -> Result<String, String> {
+        if let Some(key) = source.secret_key() {
+            secrets::remove(&self.issues.secrets_path, key)
+                .map_err(|e| format!("failed to remove the {}: {e}", source.token_name()))?;
+        }
+        self.forget_issues(source);
+        self.settings_changed();
+        if let Some(Overlay::Settings(s)) = &mut self.overlay {
+            s.removed(source);
+        }
+        Ok(format!("the {} {} was removed", source.name(), source.token_name()))
+    }
+
     fn settings_act(&mut self, action: settings::Action) {
         match action {
             settings::Action::None => {}
             settings::Action::Close => self.overlay = None,
             settings::Action::Restart => self.open_restart(),
             settings::Action::Save(config) => {
-                if let Err(e) = config::save(&self.config_path, &config) {
-                    if let Some(Overlay::Settings(s)) = &mut self.overlay {
-                        s.notice = Some(format!("failed to save the settings: {e}"));
-                    }
-                    return;
+                if let (Err(e), Some(Overlay::Settings(s))) = (self.write_config(&config), &mut self.overlay) {
+                    s.notice = Some(e);
                 }
-                self.set_config(*config);
             }
             settings::Action::CheckToken(source, token) => self.check_token(source, token),
             settings::Action::ForgetBrowsers => {
@@ -190,26 +226,12 @@ impl App {
             }
             settings::Action::Plugin(id, on) => self.switch_plugin(&id, on),
             settings::Action::RemoveToken(source) => {
-                let removed = source.secret_key().map(|key| secrets::remove(&self.issues.secrets_path, key));
-                let Some(Overlay::Settings(s)) = &mut self.overlay else { return };
-                if let Some(Err(e)) = removed {
-                    s.notice = Some(format!("failed to remove the {}: {e}", source.token_name()));
-                    return;
+                if let (Err(e), Some(Overlay::Settings(s))) = (self.remove_token(source), &mut self.overlay) {
+                    s.notice = Some(e);
                 }
-                s.removed(source);
-                self.forget_issues(source);
             }
         }
     }
-}
-
-pub(super) fn changed_keys(old: &Config, new: &Config) -> Vec<String> {
-    let (Ok(serde_json::Value::Object(old)), Ok(serde_json::Value::Object(new))) =
-        (serde_json::to_value(old), serde_json::to_value(new))
-    else {
-        return Vec::new();
-    };
-    new.into_iter().filter(|(key, value)| old.get(key) != Some(value)).map(|(key, _)| key).collect()
 }
 
 pub(super) fn settings_view(settings: &Settings) -> ui::Settings {

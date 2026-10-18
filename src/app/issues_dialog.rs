@@ -10,7 +10,7 @@ use super::event::Start;
 use super::overlay::Overlay;
 use crate::agents;
 use crate::agents::launch::{self};
-use crate::config::{self, Config};
+use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::git;
 use crate::highlight::markdown;
@@ -85,7 +85,7 @@ impl Apis {
 pub(crate) enum IssueEvent {
     Listed { project: u64, source: Source, epoch: u64, query: Query, result: Result<Listed> },
     Read { source: Source, epoch: u64, key: String, result: Result<Detail> },
-    TokenChecked { source: Source, epoch: u64, token: Secret, result: Result<Account> },
+    TokenChecked { source: Source, epoch: u64, token: Secret, result: Result<Account>, request: Option<u64> },
     People { project: u64, source: Source, epoch: u64, result: Result<Vec<Person>> },
 }
 
@@ -116,13 +116,16 @@ impl App {
                     b.read_done(source, &key, result.map_err(|e| e.to_string()));
                 }
             }
-            IssueEvent::TokenChecked { source, epoch, token, result } => {
+            IssueEvent::TokenChecked { source, epoch, token, result, request } => {
                 let result = if epoch == self.epoch(source) {
                     result
                 } else {
                     Err(Error::Api(format!("the {} settings changed during the check", source.name())))
                 };
-                self.token_checked(source, &token, result, area)?;
+                match request {
+                    Some(key) => self.token_set_by_request(key, source, &token, result),
+                    None => self.token_checked(source, &token, result, area)?,
+                }
             }
             IssueEvent::People { project, source, epoch, result } => {
                 if epoch == self.epoch(source) {
@@ -342,24 +345,21 @@ impl App {
             }
             Action::SetDefaultAgent(kind) => {
                 let config = Config { agent: kind.clone(), ..self.config.clone() };
-                let saved = config::save(&self.config_path, &config);
+                let saved = self.write_config(&config);
                 let Some(Overlay::Issues(b)) = &mut self.overlay else { return Ok(()) };
                 match saved {
-                    Ok(()) => {
-                        self.config = config;
-                        b.default_agent_set(kind);
-                    }
-                    Err(e) => b.error = Some(format!("failed to save the settings: {e}")),
+                    Ok(()) => b.default_agent_set(kind),
+                    Err(e) => b.error = Some(e),
                 }
             }
             Action::CheckToken(source, token) => self.check_token(source, token),
             Action::SaveJira { site, email } => {
                 let config = Config { jira_site: site, jira_email: email, ..self.config.clone() };
-                return self.save_connection(Source::Jira, config, area);
+                return self.save_connection(Source::Jira, &config, area);
             }
             Action::SavePlane { workspace } => {
                 let config = Config { plane_workspace: workspace, ..self.config.clone() };
-                return self.save_connection(Source::Plane, config, area);
+                return self.save_connection(Source::Plane, &config, area);
             }
             Action::SaveAsana { workspace, token } => {
                 let key = Source::Asana.secret_key().unwrap_or_default();
@@ -370,11 +370,11 @@ impl App {
                     return Ok(());
                 }
                 let config = Config { asana_workspace: workspace, ..self.config.clone() };
-                return self.save_connection(Source::Asana, config, area);
+                return self.save_connection(Source::Asana, &config, area);
             }
             Action::SaveGitlab { url } => {
                 let config = Config { gitlab_url: url, ..self.config.clone() };
-                return self.save_connection(Source::Gitlab, config, area);
+                return self.save_connection(Source::Gitlab, &config, area);
             }
             Action::Disconnect(source) => self.disconnect(source),
             Action::Copy(url) => {
@@ -457,7 +457,7 @@ impl App {
             let key = self.cache_key(source, project, query);
             self.issues.cache.put(key, listed.issues.clone());
             if let Some(account) = &listed.account {
-                self.issues.accounts.insert(source, account.clone());
+                self.learn_account(source, account);
             }
         }
         let Some(Overlay::Issues(b)) = &mut self.overlay else { return };
@@ -494,14 +494,13 @@ impl App {
         });
     }
 
-    fn save_connection(&mut self, source: Source, config: Config, area: Rect) -> Result<()> {
-        let saved = config::save(&self.config_path, &config);
+    fn save_connection(&mut self, source: Source, config: &Config, area: Rect) -> Result<()> {
+        let saved = self.write_config(config);
         let Some(Overlay::Issues(b)) = &mut self.overlay else { return Ok(()) };
         if let Err(e) = saved {
-            b.token_rejected(source, format!("failed to save the settings: {e}"));
+            b.token_rejected(source, e);
             return Ok(());
         }
-        self.set_config(config);
         let Some(from_env) = self.connected(source) else { return Ok(()) };
         let Some(Overlay::Issues(b)) = &mut self.overlay else { return Ok(()) };
         b.connected(source, Connection { from_env, account: None });
@@ -513,6 +512,12 @@ impl App {
         self.issues.epochs.get(&source).copied().unwrap_or(0)
     }
 
+    pub(super) fn learn_account(&mut self, source: Source, account: &Account) {
+        if self.issues.accounts.insert(source, account.clone()).as_ref() != Some(account) {
+            self.settings_changed();
+        }
+    }
+
     pub(super) fn forget_issues(&mut self, source: Source) {
         self.issues.accounts.remove(&source);
         self.issues.cache.forget(source);
@@ -521,6 +526,10 @@ impl App {
     }
 
     pub(super) fn check_token(&mut self, source: Source, token: Secret) {
+        self.check_token_for(source, token, None);
+    }
+
+    pub(super) fn check_token_for(&mut self, source: Source, token: Secret, request: Option<u64>) {
         let client = match source {
             Source::Github => return,
             Source::Shortcut => {
@@ -541,6 +550,7 @@ impl App {
                     epoch,
                     token,
                     result: Err(Error::Api(message.into())),
+                    request,
                 }));
                 return;
             }
@@ -550,7 +560,7 @@ impl App {
         self.spawn_job(
             job,
             move || client.whoami(),
-            move |result, _| Some(AppEvent::Issues(IssueEvent::TokenChecked { source, epoch, token, result })),
+            move |result, _| Some(AppEvent::Issues(IssueEvent::TokenChecked { source, epoch, token, result, request })),
         );
     }
 
@@ -580,25 +590,24 @@ impl App {
         if saved.is_ok() {
             self.forget_issues(source);
         }
-        if let Some(Overlay::Settings(s)) = &mut self.overlay {
-            if let Ok(account) = &saved {
-                self.issues.accounts.insert(source, account.clone());
-            }
-            s.checked(source, saved.map_err(|e| e.to_string()));
-            return Ok(());
+        if let (Ok(account), Some(Overlay::Settings(_) | Overlay::Issues(_))) = (&saved, &self.overlay) {
+            self.learn_account(source, account);
         }
-        let Some(Overlay::Issues(b)) = &mut self.overlay else { return Ok(()) };
-        match saved {
-            Ok(account) => {
-                self.issues.accounts.insert(source, account.clone());
+        match (&mut self.overlay, saved) {
+            (Some(Overlay::Settings(s)), saved) => {
+                s.checked(source, saved.map_err(|e| e.to_string()));
+                Ok(())
+            }
+            (Some(Overlay::Issues(b)), Ok(account)) => {
                 b.connected(source, Connection { from_env: false, account: Some(account) });
                 let action = b.needs_load();
                 self.act(action, area)
             }
-            Err(e) => {
+            (Some(Overlay::Issues(b)), Err(e)) => {
                 b.token_rejected(source, e.to_string());
                 Ok(())
             }
+            _ => Ok(()),
         }
     }
 
