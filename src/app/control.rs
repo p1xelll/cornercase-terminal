@@ -6,6 +6,7 @@ mod config;
 mod contract;
 mod create;
 mod flow;
+mod held;
 mod idle_restart;
 mod issues;
 mod plugins;
@@ -41,10 +42,13 @@ use crate::project::{Hierarchy, Phase, Tab, Workspace};
 use crate::term::Term;
 pub(in crate::app) use changes::BaseChange;
 use create::Then;
+use held::Held;
 use issues::Asking;
 use wait::{Condition, Confirm, Watch};
 
 const STARTS_WITHIN: Duration = Duration::from_secs(10);
+
+pub(super) use idle_restart::INPUT_HOLDS;
 
 pub(super) const CONFIRM_WITHIN: Duration = Duration::from_secs(10);
 
@@ -68,6 +72,7 @@ pub(super) struct Requests {
     answers: Vec<(u64, String)>,
     launched: Vec<(u64, bool)>,
     todo_sends: HashMap<u64, Sending>,
+    queued: HashMap<u64, u64>,
     next: u64,
 }
 
@@ -106,6 +111,7 @@ enum Stage {
     Run(u64, Box<Starting>),
     Removing { force: bool, unlock: bool },
     Check,
+    Held(Box<Held>),
     Launch { confirm: Option<SystemTime>, wait: Option<Condition> },
     Confirm(Confirm),
     Watch(Watch),
@@ -299,7 +305,8 @@ impl App {
             p.client.is_some()
                 || !matches!(
                     p.stage,
-                    Stage::Confirm(_)
+                    Stage::Held(_)
+                        | Stage::Confirm(_)
                         | Stage::Watch(_)
                         | Stage::Several { .. }
                         | Stage::Reading
