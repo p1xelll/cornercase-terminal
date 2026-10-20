@@ -476,4 +476,47 @@ mod viewed {
         assert!(panel.model_in(1, Mode::Uncommitted, None).is_none());
         assert!(panel.models.is_empty() && panel.requested.is_empty());
     }
+
+    #[test]
+    fn discarding_a_file_forgets_it_and_the_pacing_of_its_workspace() {
+        let mut panel = Panel::default();
+        let now = Instant::now();
+        let (generation, request) = panel.request_in(&target(1), Mode::Uncommitted, OPEN_EVERY, now).expect("request");
+        panel.loaded(1, generation, &request, Ok(loaded(Some(Diff::default()), 1)));
+        let (a, b) = (file("a", 1, 1), file("b", 2, 1));
+        panel.set_viewed(1, "a", Some(1));
+        panel.set_viewed(1, "b", Some(2));
+        panel.set_fold(1, &a, false);
+        assert!(panel.folds().contains_key(&FileKey { workspace: 1, path: "a".into() }));
+        panel.gaps.insert((FileKey { workspace: 1, path: "a".into() }, 1, 1), Arc::new(Vec::new()));
+        panel.gaps.insert((FileKey { workspace: 1, path: "b".into() }, 2, 1), Arc::new(Vec::new()));
+        assert!(panel.request_in(&target(1), Mode::Uncommitted, OPEN_EVERY, now).is_none());
+
+        panel.discarded(1, "a");
+
+        assert!(!panel.folds().contains_key(&FileKey { workspace: 1, path: "a".into() }));
+        assert!(!panel.viewed(1, &a) && panel.viewed(1, &b));
+        assert_eq!(panel.gaps.len(), 1);
+        assert!(panel.request_in(&target(1), Mode::Uncommitted, OPEN_EVERY, now).is_some());
+    }
+
+    #[test]
+    fn a_load_in_flight_during_a_discard_does_not_bring_the_file_back() {
+        let mut panel = Panel::default();
+        let now = Instant::now();
+        let (generation, request) = panel.request_in(&target(1), Mode::Uncommitted, OPEN_EVERY, now).expect("request");
+        panel.loaded(1, generation, &request, Ok(loaded(Some(diff(vec![file("a", 1, 1)])), 1)));
+        let later = now + OPEN_EVERY;
+        let (stale, request) = panel.request_in(&target(1), Mode::Uncommitted, OPEN_EVERY, later).expect("request");
+
+        panel.discarded(1, "a");
+        panel.loaded(1, stale, &request, Ok(loaded(Some(diff(vec![file("a", 1, 1), file("b", 2, 1)])), 2)));
+
+        let model = panel.model_in(1, Mode::Uncommitted, None).expect("model");
+        assert_eq!(model.diff().map(|d| d.files.len()), Some(1));
+        let (fresh, request) = panel.request_in(&target(1), Mode::Uncommitted, OPEN_EVERY, later).expect("a new load");
+        panel.loaded(1, fresh, &request, Ok(loaded(Some(diff(Vec::new())), 3)));
+        let model = panel.model_in(1, Mode::Uncommitted, None).expect("model");
+        assert_eq!(model.diff().map(|d| d.files.len()), Some(0));
+    }
 }

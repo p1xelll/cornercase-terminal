@@ -1,4 +1,5 @@
 pub(crate) mod diff;
+pub(crate) mod discard;
 pub(crate) mod every;
 pub(crate) mod filter;
 pub(crate) mod git;
@@ -130,6 +131,7 @@ pub(crate) struct Panel {
     gaps: HashMap<(FileKey, u64, usize), Arc<Vec<GapLine>>>,
     loading: Option<(u64, u64, Instant)>,
     generation: u64,
+    superseded: HashMap<u64, u64>,
     requested: HashMap<(u64, Mode), Instant>,
 }
 
@@ -297,6 +299,9 @@ impl Panel {
         if self.loading.is_some_and(|(w, g, _)| (w, g) == (workspace, generation)) {
             self.loading = None;
         }
+        if self.superseded.get(&workspace).is_some_and(|floor| generation <= *floor) {
+            return;
+        }
         let summary = request.expanded.is_some();
         let key = (workspace, request.mode);
         if !self.expects(key, request, summary) {
@@ -406,6 +411,7 @@ impl Panel {
         self.viewed.retain(|k, _| k.workspace != workspace);
         self.gaps.retain(|(k, _, _), _| k.workspace != workspace);
         self.headers.remove(&workspace);
+        self.superseded.remove(&workspace);
         if self.workspace == Some(workspace) {
             self.workspace = None;
         }
@@ -450,6 +456,16 @@ impl Panel {
         self.folded.remove(&key);
         self.every_folded.remove(&key);
         self.invalidate_summary(workspace);
+    }
+
+    pub(crate) fn discarded(&mut self, workspace: u64, path: &str) {
+        self.set_viewed(workspace, path, None);
+        self.gaps.retain(|(k, _, _), _| k.workspace != workspace || k.path != path);
+        self.requested.retain(|(w, _), _| *w != workspace);
+        self.superseded.insert(workspace, self.generation);
+        if self.loading.is_some_and(|(w, _, _)| w == workspace) {
+            self.loading = None;
+        }
     }
 
     fn auto_folded(&self, workspace: u64, diff: &Diff, file: &File) -> bool {
