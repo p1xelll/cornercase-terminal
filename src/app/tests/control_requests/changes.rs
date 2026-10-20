@@ -7,7 +7,7 @@ use crate::test_util::git;
 
 fn started(repo: &TempDir) -> (App, Receiver<AppEvent>) {
     let (mut app, rx) = app_in(repo.path(), no_config());
-    app.clients.change_streams.every = Duration::ZERO;
+    app.clients.change_streams.set_every(Duration::ZERO);
     (app, rx)
 }
 
@@ -106,7 +106,7 @@ fn the_mode_of_a_stream_is_its_own_and_the_window_s_stays() {
     ok(&mut app, "changes-mode", &json!({"stream": 1, "mode": "all"}));
     let line = summary_until(&mut app, &rx, "all", |l| ready(l) && l["mode"] == "all");
     assert_eq!(paths(&line), ["a.txt", "b.txt"]);
-    assert_eq!(app.panels.changes.mode, Mode::Uncommitted);
+    assert_eq!(app.panels.changes.mode(), Mode::Uncommitted);
 }
 
 #[test]
@@ -392,7 +392,7 @@ fn a_stream_can_only_be_changed_by_the_connection_that_opened_it() {
 
     let refusal = reply_of(&reply).expect_err("refused");
     assert_eq!(refusal.code, "not-found");
-    assert_eq!(app.clients.change_streams.open[0].mode, Mode::Uncommitted);
+    assert_eq!(app.clients.change_streams.mode_of(1), Some(Mode::Uncommitted));
     ok(&mut app, "changes-mode", &json!({"stream": 1, "mode": "all"}));
-    assert_eq!(app.clients.change_streams.open[0].mode, Mode::All);
+    assert_eq!(app.clients.change_streams.mode_of(1), Some(Mode::All));
 }

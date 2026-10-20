@@ -71,8 +71,8 @@ pub(super) struct Clients {
     pub(super) change_streams: changes_panel::Streams,
     pub(super) surfaces: surfaces::Surfaces,
     pub(super) views: views::Views,
-    pub(super) confirm_within: Duration,
-    pub(super) typing_holds: Duration,
+    confirm_within: Duration,
+    typing_holds: Duration,
 }
 
 impl Default for Clients {
@@ -86,6 +86,17 @@ impl Default for Clients {
             confirm_within: CONFIRM_WITHIN,
             typing_holds: INPUT_HOLDS,
         }
+    }
+}
+
+#[cfg(test)]
+impl Clients {
+    pub(super) fn set_confirm_within(&mut self, within: Duration) {
+        self.confirm_within = within;
+    }
+
+    pub(super) fn set_typing_holds(&mut self, holds: Duration) {
+        self.typing_holds = holds;
     }
 }
 
@@ -309,7 +320,7 @@ impl App {
     }
 
     fn unavailable(&self) -> &'static [(&'static str, &'static str)] {
-        if self.update.updates.enabled { &[] } else { contract::NOT_LOOKING }
+        if self.update.looks_for_releases() { &[] } else { contract::NOT_LOOKING }
     }
 
     pub(in crate::app) fn run_request(
@@ -376,8 +387,7 @@ impl App {
 
     fn orphan_todo_send(&mut self, client: u64) {
         let Some(sending) = self.clients.requests.todo_sends.remove(&client) else { return };
-        let orphan = crate::app::todo_panel::CLIENTS + self.panels.todo.next_client;
-        self.panels.todo.next_client += 1;
+        let orphan = self.todo_client();
         let mut kept = false;
         for pending in self.clients.requests.pending.iter_mut().filter(|p| p.client == Some(client)) {
             pending.client = Some(orphan);
@@ -385,7 +395,7 @@ impl App {
         }
         if kept {
             self.clients.requests.todo_sends.insert(orphan, sending);
-            self.panels.todo.sending.insert(orphan, String::new());
+            self.panels.todo.send(orphan, String::new());
         }
     }
 
@@ -395,7 +405,7 @@ impl App {
             control::theme::check(theme).map_err(|message| Refusal::new(Code::Malformed, message))?;
             self.give_theme(Some((**theme).clone()));
         }
-        self.outbox.start = Some((client, size));
+        self.outbox.start(client, size);
         Ok(None)
     }
 
@@ -437,7 +447,7 @@ impl App {
     }
 
     fn todo_sent(&mut self, sending: &Sending, mut value: Value) -> Value {
-        let editing = self.panels.todo.field.as_ref().filter(|field| field.item == Some(sending.todo));
+        let editing = self.panels.todo.field().filter(|field| field.item == Some(sending.todo));
         let same = self.panels.todos.item(sending.todo).is_some_and(|item| !item.done && item.text == sending.text)
             && editing.is_none_or(|field| field.editor.text() == sending.text);
         let checked = sending.confirmed && same;
@@ -655,8 +665,8 @@ impl App {
         let Some(mut launch) = launch else { return Some(json(&waits.done)) };
         let key = self.clients.requests.key();
         launch.key = Some(key);
-        launch.trust = self.panels.queued.running.contains_key(&client).then_some(agents::launch::Trust::Accepted);
-        self.agents.launches.push(launch);
+        launch.trust = self.panels.queued.trust(client).then_some(agents::launch::Trust::Accepted);
+        self.agents.launches.add(launch);
         self.clients.requests.push(client, key, waits);
         None
     }

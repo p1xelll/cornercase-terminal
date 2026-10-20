@@ -26,19 +26,19 @@ pub(super) struct Events {
     pub(super) snapshots: Snapshots,
     pub(super) app: Snapshots<AppState>,
     pub(super) runs: Snapshots<FlowRuns>,
-    pub(super) flow_messages: Vec<(u64, u64)>,
+    flow_messages: Vec<(u64, u64)>,
 }
 
 pub(super) struct Snapshots<T = Report> {
     watchers: Vec<u64>,
     last: Option<T>,
     revision: u64,
-    pub(super) built: Option<Instant>,
+    built: Option<Instant>,
     due: bool,
-    pub(super) changed: bool,
+    changed: bool,
     read: Option<Instant>,
     refreshed: Option<u64>,
-    pub(super) every: Duration,
+    every: Duration,
 }
 
 impl<T> Default for Snapshots<T> {
@@ -60,6 +60,25 @@ impl<T> Default for Snapshots<T> {
 impl<T: Clone + PartialEq + Serialize + Default> Snapshots<T> {
     pub(super) fn revision(&self) -> u64 {
         self.revision
+    }
+
+    pub(super) fn mark_changed(&mut self) {
+        self.changed = true;
+    }
+
+    #[cfg(test)]
+    pub(super) fn set_every(&mut self, every: Duration) {
+        self.every = every;
+    }
+
+    #[cfg(test)]
+    pub(super) fn built(&self) -> Option<Instant> {
+        self.built
+    }
+
+    #[cfg(test)]
+    pub(super) fn set_built(&mut self, built: Instant) {
+        self.built = Some(built);
     }
 
     fn take(&mut self, report: T, now: Instant) -> Option<Snapshot<T>> {
@@ -240,6 +259,22 @@ impl Events {
     pub(super) fn push(&mut self, client: u64, streamed: Streamed) {
         self.out.push((client, streamed));
     }
+
+    pub(super) fn follows_flow_messages(&self, client: u64) -> bool {
+        self.flow_messages.iter().any(|(follower, _)| *follower == client)
+    }
+
+    pub(super) fn follow_flow_messages(&mut self, client: u64, run: u64) {
+        self.flow_messages.push((client, run));
+    }
+
+    pub(super) fn flow_message_followers(&self, run: u64) -> Vec<u64> {
+        self.flow_messages.iter().filter(|(_, followed)| *followed == run).map(|(client, _)| *client).collect()
+    }
+
+    pub(super) fn stop_flow_messages(&mut self, running: impl Fn(u64) -> bool) -> Vec<u64> {
+        self.flow_messages.extract_if(.., |(_, run)| !running(*run)).map(|(client, _)| client).collect()
+    }
 }
 
 impl App {
@@ -334,8 +369,8 @@ impl App {
         if !watching && self.clients.views.is_empty() {
             return;
         }
-        if self.clients.events.snapshots.read != self.agents.watched {
-            self.clients.events.snapshots.read = self.agents.watched;
+        if self.clients.events.snapshots.read != self.agents.watched() {
+            self.clients.events.snapshots.read = self.agents.watched();
             let refreshed = Some(self.refreshed());
             if self.clients.events.snapshots.refreshed != refreshed {
                 self.clients.events.snapshots.refreshed = refreshed;

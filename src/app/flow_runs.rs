@@ -29,14 +29,59 @@ use crate::time;
 use crate::ui;
 
 pub(super) struct Runs {
-    pub(super) list: Vec<Run>,
-    pub(super) dir: PathBuf,
-    pub(super) pending_dirs: Vec<(u64, Vec<PathBuf>)>,
+    list: Vec<Run>,
+    dir: PathBuf,
+    pending_dirs: Vec<(u64, Vec<PathBuf>)>,
 }
 
 impl Runs {
     pub(super) fn new(config_path: &Path) -> Self {
         Self { list: Vec::new(), dir: config_path.with_file_name("runs"), pending_dirs: Vec::new() }
+    }
+
+    pub(super) fn all(&self) -> &[Run] {
+        &self.list
+    }
+
+    pub(super) fn dir(&self) -> &Path {
+        &self.dir
+    }
+
+    pub(super) fn seat(&self, pane: u64) -> Option<(&Run, &str)> {
+        self.list.iter().find_map(|run| Some((run, run.role_of(pane)?)))
+    }
+
+    pub(super) fn of_workspace(&self, workspace: u64) -> Option<&Run> {
+        self.list.iter().find(|run| run.workspace == workspace)
+    }
+
+    pub(super) fn has(&self, id: u64) -> bool {
+        self.list.iter().any(|run| run.id == id)
+    }
+
+    pub(super) fn run_mut(&mut self, id: u64) -> Option<&mut Run> {
+        self.list.iter_mut().find(|run| run.id == id)
+    }
+
+    pub(super) fn end_in(&mut self, workspace: u64) -> usize {
+        let ended = self.list.iter().filter(|run| run.workspace == workspace).count();
+        self.list.retain(|run| run.workspace != workspace);
+        ended
+    }
+
+    #[cfg(test)]
+    pub(super) fn push(&mut self, run: Run) {
+        self.list.push(run);
+    }
+
+    #[cfg(test)]
+    pub(super) fn clear(&mut self) {
+        self.list.clear();
+    }
+
+    #[cfg(test)]
+    pub(super) fn first_mut(&mut self) -> &mut Run {
+        self.list.first_mut().expect("a run")
     }
 }
 
@@ -182,7 +227,7 @@ impl App {
         store::list(
             builtin::for_config(&self.config),
             &self.config.hidden_flows,
-            &paths::flows(&self.config_file.path),
+            &paths::flows(self.config_file.path()),
             project.as_deref(),
         )
     }
@@ -414,14 +459,14 @@ impl App {
         for (role, member) in roles.iter().zip(&run.members).skip(1) {
             let branch = seats.iter().find(|tree| tree.role == role.name).map(|tree| tree.branch.as_str());
             let spec = self.flow_spec(role, brief::member(role, branch, dir), dir);
-            self.agents.launches.push(Launch::new(member.pane, spec, now));
+            self.agents.launches.add(Launch::new(member.pane, spec, now));
             team.push(member.pane);
         }
         let members = brief::Team { members: &run.members, trees: seats };
         let spec = self.flow_spec(&roles[0], brief::brief(&run.flow, &run.task, branch, members, dir), dir);
         let mut launch = Launch::new(run.members[0].pane, spec, now);
         launch.after = team;
-        self.agents.launches.push(launch);
+        self.agents.launches.add(launch);
         log::info!(
             "flow",
             "run started",
@@ -433,7 +478,7 @@ impl App {
     }
 
     pub(super) fn member_waits(&mut self, pane: u64) {
-        let Some((run, role)) = self.runs.list.iter().find_map(|run| Some((run, run.role_of(pane)?))) else { return };
+        let Some((run, role)) = self.runs.seat(pane) else { return };
         let (workspace, role) = (run.workspace, role.to_string());
         let Some((p, w)) = self.projects.workspace_index(workspace) else { return };
         let project = &self.projects[p];
@@ -442,7 +487,7 @@ impl App {
             "{role} waits for you in {place}: accept or refuse Claude Code's bypass permissions mode in its tab"
         ));
         log::info!("flow", "a member waits for you", workspace = workspace, role = role);
-        self.outbox.notifications.extend(Notification::new(&message, &self.config.desktop_notifications));
+        self.outbox.notify(Notification::new(&message, &self.config.desktop_notifications));
         self.messages.toast = Some(Toast::new(message, ui::ToastIcon::Agent(activity::Status::Waiting)));
     }
 
@@ -555,7 +600,6 @@ impl App {
             return;
         };
         let Some(line) = self.resume_line(Some(&run.flow.orchestrator), agent, run.dir.as_deref()) else { return };
-        self.agents.launches.retain(|launch| launch.term != term.id);
         let spec = launch::Spec {
             command: line,
             prompt: Some(brief::restored(&run.members, run.dir.as_deref())),
@@ -565,6 +609,6 @@ impl App {
         let mut launch = Launch::new(term.id, spec, Instant::now());
         launch.after = run.members.iter().map(|m| m.pane).filter(|pane| *pane != term.id).collect();
         launch.resume = term.resuming;
-        self.agents.launches.push(launch);
+        self.agents.launches.replace(launch);
     }
 }

@@ -8,7 +8,6 @@ use super::input::wheel;
 use super::overlay::Overlay;
 use crate::config::{self, Config};
 use crate::issues::Source;
-use crate::issues::secrets;
 use crate::log::{self, Level};
 use crate::messenger::Via;
 use crate::settings::{self, DONE, Page, Settings, Status};
@@ -63,7 +62,7 @@ impl App {
                 let status = match self.token(source) {
                     None => Status::Missing,
                     Some((_, true)) => Status::Env,
-                    Some((_, false)) => Status::Saved(self.issues.accounts.get(&source).cloned()),
+                    Some((_, false)) => Status::Saved(self.issues.account(source).cloned()),
                 };
                 (source, status)
             })
@@ -76,7 +75,7 @@ impl App {
         settings.pulls = self.pull_requests_note();
         settings.merged = self.merged_note();
         settings.remote = self.remote.note();
-        settings.browsers = self.remote.web.paired();
+        settings.browsers = self.remote.paired();
         for via in Via::ALL {
             *settings.messenger_mut(via) = self.messenger_settings(via);
         }
@@ -87,7 +86,7 @@ impl App {
 
     pub(super) fn refresh_open_settings(&mut self) {
         let tokens = self.token_statuses();
-        let browsers = self.remote.web.paired();
+        let browsers = self.remote.paired();
         let messengers: Vec<_> = Via::ALL.iter().map(|via| self.messenger_settings(*via)).collect();
         let Some(Overlay::Settings(s)) = &mut self.overlay else { return };
         s.tokens = tokens;
@@ -149,8 +148,7 @@ impl App {
 
     pub(super) fn remove_token(&mut self, source: Source) -> Result<String, String> {
         if let Some(key) = source.secret_key() {
-            secrets::remove(&self.issues.secrets_path, key)
-                .map_err(|e| format!("failed to remove the {}: {e}", source.token_name()))?;
+            self.issues.delete_token(key).map_err(|e| format!("failed to remove the {}: {e}", source.token_name()))?;
         }
         self.forget_issues(source);
         self.settings_changed();

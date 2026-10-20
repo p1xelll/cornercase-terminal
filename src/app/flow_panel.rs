@@ -88,11 +88,11 @@ fn lines(message: &Message, width: usize, muted: Color) -> Vec<Line<'static>> {
 
 impl App {
     pub(super) fn seat(&self, pane: u64) -> Option<(&Run, &str)> {
-        self.runs.list.iter().find_map(|run| Some((run, run.role_of(pane)?)))
+        self.runs.seat(pane)
     }
 
     pub(super) fn run_of(&self, workspace: u64) -> Option<&Run> {
-        self.runs.list.iter().find(|run| run.workspace == workspace)
+        self.runs.of_workspace(workspace)
     }
 
     fn shown_run(&self) -> Option<&Run> {
@@ -141,7 +141,7 @@ impl App {
 
     pub(super) fn flow_view(&self, now: Instant, spin: Option<u8>) -> Option<flow::View> {
         let run = self.shown_run()?;
-        let (muted, light) = (ui::muted(&self.themes.theme), self.themes.theme.is_light() == Some(true));
+        let (muted, light) = (ui::muted(self.themes.host()), self.themes.light());
         let plan = flow::Diagram::plan(&run.flow, muted, light);
         let pull = run.pull(self.pull_request(run.workspace));
         let end = flow::Ending { reached: run.reached(pull), pull: pull.map(PullRequest::mark) };
@@ -199,7 +199,7 @@ impl App {
             self.panels.flow.listing = None;
         }
         if let Ok(listing) = result
-            && self.runs.list.iter().any(|r| r.id == run)
+            && self.runs.has(run)
         {
             self.panels.flow.files = Some((run, listing));
         }
@@ -262,7 +262,7 @@ impl App {
 
     fn flow_message_lines(&self, workspace: u64, sent: Sent<'_>, area: Rect) -> Option<Vec<Line<'static>>> {
         let width = usize::from(ui::update_notes(area).width.max(1));
-        self.flow_message(workspace, sent.0, sent.1).map(|message| lines(message, width, ui::muted(&self.themes.theme)))
+        self.flow_message(workspace, sent.0, sent.1).map(|message| lines(message, width, ui::muted(self.themes.host())))
     }
 
     pub(super) fn flow_message_view(
@@ -329,9 +329,7 @@ impl App {
     }
 
     pub(super) fn flow_steps(&self, caller: Option<u64>, command: &Command, now: Instant) -> Vec<Noted> {
-        let Some((caller, run, from)) =
-            caller.and_then(|c| self.runs.list.iter().find_map(|run| Some((c, run, run.role_of(c)?))))
-        else {
+        let Some((caller, run, from)) = caller.and_then(|c| self.runs.seat(c).map(|(run, from)| (c, run, from))) else {
             return Vec::new();
         };
         let Some(step) = FlowStep::of(command) else { return Vec::new() };
@@ -387,14 +385,14 @@ impl App {
     }
 
     pub(super) fn forget_flow_reads(&mut self, client: Option<u64>) {
-        let runs = &self.runs.list;
-        self.panels.flow.reads.retain(|(c, noted)| Some(*c) != client && runs.iter().any(|run| run.id == noted.run));
+        let runs = &self.runs;
+        self.panels.flow.reads.retain(|(c, noted)| Some(*c) != client && runs.has(noted.run));
     }
 
     fn record_flow(&mut self, noted: Noted) {
         let Noted { run, panes: (from, to), message, .. } = noted;
         let same = |r: &Run| r.role_of(from) == Some(&message.from) && r.role_of(to) == Some(&message.to);
-        let Some(run) = self.runs.list.iter_mut().find(|r| r.id == run && same(r)) else { return };
+        let Some(run) = self.runs.run_mut(run).filter(|r| same(r)) else { return };
         let message = run.record(message).clone();
         let wire = FlowMessage::of(run, &message);
         self.publish_flow_message(&wire);

@@ -13,20 +13,30 @@ use crate::accounts::{self, Account};
 use crate::agents;
 use crate::agents::usage;
 use crate::config::Config;
-use crate::host::clipboard;
 use crate::log::{Job, Level};
 use crate::time;
 use crate::ui;
 
 pub(super) struct Usages {
     pub(super) state: usage::State,
-    pub(super) page: usage::Page,
-    pub(super) timeout: Duration,
+    page: usage::Page,
+    timeout: Duration,
 }
 
 impl Default for Usages {
     fn default() -> Self {
         Self { state: usage::State::default(), page: usage::Page::default(), timeout: usage::TIMEOUT }
+    }
+}
+
+impl Usages {
+    pub(super) fn timeout(&self) -> Duration {
+        self.timeout
+    }
+
+    #[cfg(test)]
+    pub(super) fn set_timeout(&mut self, timeout: Duration) {
+        self.timeout = timeout;
     }
 }
 
@@ -52,13 +62,13 @@ impl App {
     }
 
     pub(super) fn usage_probes(&self) -> Vec<(agents::Known, Option<Account>)> {
-        let listed = accounts::list(&self.accounts.dir);
+        let listed = accounts::list(self.accounts.dir());
         let mut probes = Vec::new();
         for agent in self.usage_agents() {
             probes.push((agent, None));
             let names = listed.iter().find(|(kind, _)| *kind == agent).map(|(_, names)| names.as_slice());
             for name in names.unwrap_or_default() {
-                let home = accounts::path(&self.accounts.dir, agent, name);
+                let home = accounts::path(self.accounts.dir(), agent, name);
                 let home = home.canonicalize().unwrap_or(home);
                 probes.push((agent, Some(Account { kind: agent, name: name.clone(), home })));
             }
@@ -129,7 +139,7 @@ impl App {
         } else if let Some(i) = ui::usage_tabs(area, &view).iter().position(|r| r.contains(pos)) {
             self.switch_usage(if i == 0 { usage::Page::Limits } else { usage::Page::Stats });
         } else if view.page == usage::Page::Stats && !view.stats.empty && ui::usage_share(area, &view).contains(pos) {
-            self.outbox.host_writes.push(clipboard::osc52(&view.stats.share_link()));
+            self.outbox.copy(&view.stats.share_link());
             self.messages.toast = Some(Toast::new("copied a link to your stats", ui::ToastIcon::Check));
         }
     }

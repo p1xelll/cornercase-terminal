@@ -27,11 +27,12 @@ use crate::error::{Error, Result};
 #[cfg(test)]
 use crate::files;
 use crate::host::notify::Notification;
-use crate::host::open::Open;
 use crate::host::pointer;
 use crate::host::sound::Cue;
 use crate::host::theme::HostTheme;
+#[cfg(test)]
 use crate::issues::People;
+#[cfg(test)]
 use crate::issues::browser::Tab as IssueTab;
 use crate::issues::cache::Cache as IssueCache;
 #[cfg(test)]
@@ -41,14 +42,19 @@ use crate::project::search::said;
 use crate::project::split::Dir;
 use crate::project::{Group, Hierarchy, Project, group};
 use crate::settings::Page;
-use crate::state::{self, ChangesState, IssuesState, ProjectState, State};
+#[cfg(test)]
+use crate::state::IssuesState;
+use crate::state::{self, ChangesState, ProjectState, State};
 use crate::todo::{self, Todos};
 use crate::ui::{self};
+#[cfg(test)]
 use crate::update::Install;
 #[cfg(test)]
 use crate::update::restart;
 use crate::web::Web;
-use agent_watch::{AgentRuntime, WATCH_AGENTS_EVERY};
+use agent_watch::AgentRuntime;
+#[cfg(test)]
+use agent_watch::WATCH_AGENTS_EVERY;
 use changes_panel::ChangesEvent;
 use files_panel::FilesEvent;
 use interaction::AUTO_SCROLL_EVERY;
@@ -57,7 +63,7 @@ use interaction::LINES_SCROLL_EVERY;
 use issues_dialog::IssueEvent;
 use launches::LAUNCH_EVERY;
 #[cfg(test)]
-use layout::Focus;
+use layout::List;
 use layout::{Scrolls, Side};
 use messenger::{Messenger, MessengerEvent};
 use overlay::Overlay;
@@ -68,13 +74,14 @@ use session::not_restored;
 use toast::Toast;
 use trackers::IssueConnections;
 use update_dialog::{UpdateEvent, UpdateState};
-use worktrees::{SYNC_EVERY, WorktreeEvent};
+use worktrees::WorktreeEvent;
 
 mod account_menu;
 mod accounts_page;
 mod actions;
 mod agent_watch;
 mod changes_panel;
+mod clock;
 mod config_file;
 mod control;
 mod dialogs;
@@ -99,6 +106,7 @@ mod merged_pull_requests;
 mod messenger;
 mod notifications;
 mod opening;
+mod outbox;
 mod overlay;
 mod panes;
 mod picker_dialog;
@@ -138,28 +146,6 @@ pub(crate) use images::{Placed, Sight};
 pub(crate) use surfaces::FRAME_EVERY;
 pub(crate) use surfaces::Surfaced;
 
-#[derive(Default)]
-struct Outbox {
-    host_writes: Vec<Vec<u8>>,
-    notifications: Vec<Notification>,
-    sounds: Vec<Cue>,
-    opens: Vec<(u64, Open)>,
-    detach: bool,
-    restart: bool,
-    start: Option<(u64, (u16, u16))>,
-}
-
-struct Clock {
-    booted: Instant,
-    synced: Option<Instant>,
-}
-
-impl Clock {
-    fn new() -> Self {
-        Self { booted: Instant::now(), synced: None }
-    }
-}
-
 pub(crate) struct App {
     screen: groups::Screen,
     git: groups::Git,
@@ -170,7 +156,7 @@ pub(crate) struct App {
     clients: control::Clients,
     usages: usage_dialog::Usages,
     scroll: Scrolls,
-    outbox: Outbox,
+    outbox: outbox::Outbox,
     opening: opening::Opening,
     agents: AgentRuntime,
     update: UpdateState,
@@ -186,7 +172,7 @@ pub(crate) struct App {
     accounts: control::accounts::AccountState,
     shells: tabs::Shells,
     tx: Sender<AppEvent>,
-    clock: Clock,
+    clock: clock::Clock,
     home: Option<PathBuf>,
     settings_page: Page,
     remote: remote_access::Remote,
@@ -202,7 +188,7 @@ impl App {
     pub(crate) fn new(shell: String, theme: HostTheme, config_path: PathBuf, tx: Sender<AppEvent>) -> Self {
         let home = std::env::var_os("HOME").map(PathBuf::from);
         let (config, config_file) = config_file::ConfigFile::open(config_path);
-        let config_path = &config_file.path;
+        let config_path = config_file.path();
         Self {
             screen: groups::Screen::default(),
             git: groups::Git::default(),
@@ -213,7 +199,7 @@ impl App {
             usages: usage_dialog::Usages::default(),
             themes: theme::Themes::new(theme),
             scroll: Scrolls::default(),
-            outbox: Outbox::default(),
+            outbox: outbox::Outbox::default(),
             opening: opening::Opening::default(),
             agents: AgentRuntime::new(home.as_deref()),
             update: UpdateState::from_env(),
@@ -226,7 +212,7 @@ impl App {
             overlay: None,
             accounts: control::accounts::AccountState::new(config_path),
             shells: tabs::Shells::new(shell),
-            clock: Clock::new(),
+            clock: clock::Clock::new(),
             settings_page: Page::default(),
             remote: remote_access::Remote::new(Web::new(paths::browsers(config_path), paths::socket(), tx.clone())),
             messengers: messenger::messengers(config_path, &paths::secrets(config_path)),
@@ -243,37 +229,26 @@ impl App {
     }
 
     pub(crate) fn take_detach(&mut self) -> bool {
-        std::mem::take(&mut self.outbox.detach)
+        self.outbox.take_detach()
     }
 
     pub(crate) fn take_restart(&mut self) -> Option<PathBuf> {
-        if !std::mem::take(&mut self.outbox.restart) {
+        if !self.outbox.take_restart() {
             return None;
         }
-        Some(match &self.update.updates.install {
-            Install::Replace(exe) if self.update.updates.installed => exe.clone(),
-            _ => std::env::current_exe().unwrap_or_default(),
-        })
+        Some(self.update.restart_exe())
     }
 
     pub(crate) fn take_start(&mut self) -> Option<(u64, (u16, u16))> {
-        self.outbox.start.take()
+        self.outbox.take_start()
     }
 
     pub(crate) fn set_theme(&mut self, theme: HostTheme) {
-        self.themes.theme = theme;
-        self.themes.window_theme = true;
+        self.themes.reported(theme);
     }
 
     pub(crate) fn theme_info(&self) -> ThemeInfo {
-        let from = if self.themes.client_theme.is_some() {
-            ThemeFrom::Client
-        } else if self.themes.window_theme {
-            ThemeFrom::Window
-        } else {
-            ThemeFrom::Default
-        };
-        ThemeInfo::of(from, self.terminal_theme())
+        ThemeInfo::of(self.themes.source(), self.terminal_theme())
     }
 
     #[cfg(test)]
@@ -282,9 +257,8 @@ impl App {
     }
 
     pub(crate) fn retheme(&mut self, theme: HostTheme) -> bool {
-        self.themes.theme = theme;
-        self.themes.window_theme = true;
-        let paint = self.themes.client_theme.is_none();
+        self.themes.reported(theme);
+        let paint = self.themes.source() != ThemeFrom::Client;
         if paint {
             self.paint_terminals();
         }
@@ -300,12 +274,10 @@ impl App {
         self.screen.nav = None;
         self.screen.hover = None;
         self.screen.drag = None;
-        self.panels.todo.field = None;
+        self.panels.todo.cancel();
         self.panels.files.unfocus();
         self.panels.files.set_full_screen(false);
-        if let Some(filter) = &mut self.panels.changes.filter {
-            filter.focused = false;
-        }
+        self.panels.changes.unfocus();
     }
 
     pub(crate) fn pointer(&self, area: Rect) -> pointer::Shape {
@@ -368,10 +340,9 @@ impl App {
         let drag = self.row_drag().filter(|d| d.moved).map(|_| AUTO_SCROLL_EVERY);
         let lines = self.lines_edge().map(|_| LINES_SCROLL_EVERY);
         let held = self.held_launch_panes();
-        let launch =
-            self.agents.launches.iter().any(|l| !l.waits_for_you() && !held.contains(&l.term)).then_some(LAUNCH_EVERY);
-        let spin = (self.config.spinner() && self.agent_working())
-            .then(|| activity::spin_wait(now.saturating_duration_since(self.clock.booted)));
+        let launch = self.agents.launches.driven().any(|pane| !held.contains(&pane)).then_some(LAUNCH_EVERY);
+        let spin =
+            (self.config.spinner() && self.agent_working()).then(|| activity::spin_wait(self.clock.since_boot(now)));
         [
             drag,
             lines,
@@ -386,7 +357,7 @@ impl App {
             self.clients.change_streams.wake(now),
             self.clients.events.bell_wake(now),
             self.surface_wake(now),
-            self.panels.queued.area.and_then(|_| self.panels.queued.queue.next(clock)),
+            self.panels.queued.wake(clock),
         ]
         .into_iter()
         .flatten()
@@ -405,11 +376,9 @@ impl App {
         self.refresh_sources(now, clock);
         self.refresh_agents(now, clock);
         self.refresh_panels(now);
-        if self.clock.synced.is_some_and(|at| now.duration_since(at) < SYNC_EVERY) {
-            return;
+        if self.clock.sync_due(now) {
+            self.refresh_slowly(now);
         }
-        self.clock.synced = Some(now);
-        self.refresh_slowly(now);
     }
 
     fn refresh_sources(&mut self, now: Instant, clock: i64) {
@@ -418,11 +387,7 @@ impl App {
         self.watch_setups(now);
         self.drive_queue(clock, now);
         self.sync_queued();
-        if self.overlay.as_ref().is_some_and(Overlay::lists_running)
-            && self.update.listed.is_none_or(|at| now.saturating_duration_since(at) >= WATCH_AGENTS_EVERY)
-        {
-            self.list_running(now);
-        }
+        self.refresh_restart_list(now);
     }
 
     fn refresh_agents(&mut self, now: Instant, clock: i64) {
@@ -475,22 +440,16 @@ impl App {
             .projects
             .iter()
             .zip(crate::project::group_indices(&self.projects, &self.groups))
-            .map(|(p, group)| ProjectState::of(p, group, &self.runs.list, &parents))
+            .map(|(p, group)| ProjectState::of(p, group, self.runs.all(), &parents))
             .collect();
-        let chosen = self.issues.tab.is_some() || self.issues.closed || self.issues.people != People::default();
-        let issues = chosen.then(|| IssuesState {
-            tab: self.issues.tab.map(|t| t.id().to_string()),
-            closed: self.issues.closed,
-            people: self.issues.people.clone(),
-        });
         let groups = self.groups.iter().map(|g| g.entry.clone()).collect();
         let changes = (self.screen.side == Some(Side::Changes)
-            || self.panels.changes.mode != changes::Mode::default()
-            || self.panels.changes.scope != changes::Scope::default())
+            || self.panels.changes.mode() != changes::Mode::default()
+            || self.panels.changes.scope() != changes::Scope::default())
         .then_some(ChangesState {
             open: self.screen.side == Some(Side::Changes),
-            mode: self.panels.changes.mode,
-            scope: (self.panels.changes.scope != changes::Scope::default()).then_some(self.panels.changes.scope),
+            mode: self.panels.changes.mode(),
+            scope: (self.panels.changes.scope() != changes::Scope::default()).then_some(self.panels.changes.scope()),
         });
         State {
             version: state::VERSION,
@@ -498,7 +457,7 @@ impl App {
             projects,
             active: self.active,
             widths: Some(self.screen.widths),
-            issues,
+            issues: self.issues.saved(),
             changes,
             todo: self.screen.side == Some(Side::Todo),
             files: self.screen.side == Some(Side::Files),
@@ -509,11 +468,11 @@ impl App {
     pub(crate) fn restore(&mut self, saved: &State, area: Rect) -> bool {
         self.screen.widths = saved.widths.unwrap_or_default();
         if let Some(changes) = saved.changes {
-            self.panels.changes.mode = changes.mode;
-            self.panels.changes.scope = changes.scope.unwrap_or_default();
+            self.panels.changes.set_mode(changes.mode);
+            self.panels.changes.set_scope(changes.scope.unwrap_or_default());
         }
         self.show_side(saved_side(saved));
-        self.restore_issues(saved);
+        self.issues.restore(saved.issues.as_ref());
         let first_group = self.groups.len();
         for entry in &saved.groups {
             let icon = group::known_icon(entry.icon);
@@ -531,14 +490,6 @@ impl App {
             self.messages.toast = Some(Toast::new(not_restored(&missed), ui::ToastIcon::Bug));
         }
         missed.is_empty()
-    }
-
-    fn restore_issues(&mut self, saved: &State) {
-        if let Some(issues) = &saved.issues {
-            self.issues.tab = issues.tab.as_deref().and_then(IssueTab::from_id);
-            self.issues.closed = issues.closed;
-            self.issues.people = issues.people.clone();
-        }
     }
 
     fn restore_projects(
@@ -626,7 +577,7 @@ impl App {
     }
 
     fn output(&mut self, id: u64, bytes: &[u8]) {
-        for launch in self.agents.launches.iter_mut().filter(|l| l.term == id) {
+        for launch in self.agents.launches.of_pane_mut(id) {
             launch.output(Instant::now());
         }
         if let Some(t) = self.projects.pane_by_mut(id) {
@@ -653,20 +604,20 @@ impl App {
     }
 
     pub(crate) fn take_host_writes(&mut self) -> Vec<Vec<u8>> {
-        std::mem::take(&mut self.outbox.host_writes)
+        self.outbox.take_host_writes()
     }
 
     pub(crate) fn take_notifications(&mut self) -> Vec<Notification> {
-        std::mem::take(&mut self.outbox.notifications)
+        self.outbox.take_notifications()
     }
 
     pub(crate) fn take_sounds(&mut self) -> Vec<Cue> {
-        std::mem::take(&mut self.outbox.sounds)
+        self.outbox.take_sounds()
     }
 
     #[cfg(test)]
     pub(crate) fn queue_sound(&mut self, cue: Cue) {
-        self.outbox.sounds.push(cue);
+        self.outbox.play(cue);
     }
 
     pub(crate) fn set_stats(&mut self, stats: agents::stats::Stats) {
@@ -674,8 +625,7 @@ impl App {
     }
 
     pub(crate) fn set_star(&mut self, path: PathBuf) {
-        self.messages.star.saved = crate::star::load(&path);
-        self.messages.star.path = Some(path);
+        self.messages.star.load(path);
     }
 
     pub(crate) fn stats(&self) -> &agents::stats::Stats {
@@ -683,8 +633,7 @@ impl App {
     }
 
     fn begin_draw(&mut self, area: Rect, now: Instant) {
-        self.messages.star.window = Some(now);
-        self.star_seen();
+        self.star_seen(now);
         self.follow(area);
         if !self.screen.drawn.compact() {
             self.screen.nav = None;

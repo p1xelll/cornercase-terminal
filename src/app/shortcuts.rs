@@ -12,7 +12,6 @@ use crate::project::Project;
 use crate::project::search::{Finder, Goto};
 use crate::project::split::{self, Place};
 use crate::shortcuts::{self, Action, Group, Step};
-use crate::todo::Field;
 use crate::ui::{self, keys};
 
 const NO_AGENT_WAITS: &str = "no agent needs you";
@@ -125,7 +124,7 @@ impl App {
             Action::NewWorkspace => self.new_workspace_by_key(),
             Action::CloseWorkspace => self.ask_close_workspace(),
             Action::Away => self.toggle_away_everywhere(),
-            Action::Quit => self.outbox.detach = true,
+            Action::Quit => self.outbox.detach(),
             other => return Some(other),
         }
         None
@@ -169,7 +168,7 @@ impl App {
         let opening = self.screen.side != Some(Side::Todo);
         self.toggle_todo();
         if opening {
-            self.panels.todo.field = Some(Field::default());
+            self.panels.todo.start_adding();
         }
     }
 
@@ -325,7 +324,7 @@ impl App {
         let opening = self.screen.side != Some(Side::Changes);
         self.toggle_changes();
         if opening {
-            self.panels.changes.filter.get_or_insert_default().focused = true;
+            self.panels.changes.focus_filter();
         }
     }
 

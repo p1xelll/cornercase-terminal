@@ -113,7 +113,7 @@ fn panel_area(app: &App) -> Rect {
 
 fn fake_shortcut<B: Into<Vec<u8>>>(app: &mut App, routes: Vec<(&'static str, u16, B)>) -> crate::test_util::FakeHttp {
     let server = crate::test_util::FakeHttp::start(routes);
-    app.issues.apis.shortcut = format!("{}/api/v3", server.url());
+    app.issues.api_at(Source::Shortcut, &format!("{}/api/v3", server.url()));
     server
 }
 
@@ -155,7 +155,7 @@ fn new_app(config_path: PathBuf) -> (App, Receiver<AppEvent>) {
     let mut app = App::new("/bin/sh".into(), HostTheme::default(), config_path, tx);
     app.config.sidebar = config::Sidebar::SideBySide.id().into();
     app.config.sound = false;
-    app.clients.typing_holds = Duration::ZERO;
+    app.clients.set_typing_holds(Duration::ZERO);
     app.set_default_homes(&std::env::temp_dir().join("cornercase-test-no-default-homes"));
     if app.config.gh == config::DEFAULT_GH {
         app.config.gh = "/nonexistent/gh".into();
@@ -331,16 +331,16 @@ fn entry_pos() -> Position {
 }
 
 fn sidebar_pos(app: &App, row: SidebarRow) -> Position {
-    let r = ui::entry_row(list(), 1, &app.sidebar_rows(), app.scroll.projects, row);
+    let r = ui::entry_row(list(), 1, &app.sidebar_rows(), app.scroll.of(List::Projects), row);
     Position::new(r.x + 3, r.y)
 }
 
 fn sidebar_close(app: &App, row: SidebarRow) -> Position {
-    ui::close_button(list(), 1, &app.sidebar_rows(), app.scroll.projects, row).as_position()
+    ui::close_button(list(), 1, &app.sidebar_rows(), app.scroll.of(List::Projects), row).as_position()
 }
 
 fn row_rect(app: &App, row: WorkspaceRow) -> Rect {
-    ui::workspace_row(areas().workspaces_list, areas().pitch, &app.tab_lines(), app.scroll.workspaces, row)
+    ui::workspace_row(areas().workspaces_list, areas().pitch, &app.tab_lines(), app.scroll.of(List::Workspaces), row)
 }
 
 fn row_pos(app: &App, row: WorkspaceRow) -> Position {

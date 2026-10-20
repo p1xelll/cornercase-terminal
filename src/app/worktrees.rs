@@ -334,7 +334,7 @@ impl App {
             self.projects[p].workspaces[w].active = t;
             let term = self.projects[p].workspaces[w].tab().and_then(Tab::pane).map(|t| t.id);
             if let (Some(term), Some(start)) = (term, start) {
-                self.agents.launches.push(Launch::new(term, start.spec, Instant::now()));
+                self.agents.launches.add(Launch::new(term, start.spec, Instant::now()));
             }
         }
         self.projects[p].active = w;
@@ -347,7 +347,7 @@ impl App {
         let project = &self.projects[p];
         project.workspaces.iter().filter(|owner| owner.open()).find_map(|owner| {
             let tree = owner.role_worktrees.iter().find(|tree| &tree.path == path)?;
-            self.runs.list.iter().any(|run| run.workspace == owner.id).then(|| {
+            self.runs.of_workspace(owner.id).is_some().then(|| {
                 format!(
                     "this worktree belongs to `{}` in the flow running in {} › {}: it is removed with that workspace",
                     tree.role,

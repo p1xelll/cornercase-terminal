@@ -19,11 +19,16 @@ use crate::term::Term;
 use crate::ui;
 
 pub(super) struct Setups {
-    pub(super) running: HashMap<u64, (u64, PathBuf)>,
-    pub(super) dir: PathBuf,
+    running: HashMap<u64, (u64, PathBuf)>,
+    dir: PathBuf,
 }
 
 impl Setups {
+    #[cfg(test)]
+    pub(super) fn running(&self) -> &HashMap<u64, (u64, PathBuf)> {
+        &self.running
+    }
+
     pub(super) fn new(config_path: &Path) -> Self {
         Self { running: HashMap::new(), dir: config_path.parent().map(Path::to_path_buf).unwrap_or_default() }
     }
@@ -70,7 +75,7 @@ impl App {
         let status = setup::status_file(&self.setups.dir, id);
         let _ = std::fs::remove_file(&status);
         let branch = git::branch(&path).unwrap_or_default();
-        let args = setup::args(script, &status, &self.shells.shell, &self.projects[project].path, &branch);
+        let args = setup::args(script, &status, self.shells.shell(), &self.projects[project].path, &branch);
         let spawning = Spawning { id, size, shell: "/bin/sh", args: &args, cwd: path, run };
         let mut term = self.spawn_term(spawning, accounts)?;
         self.setups.running.insert(id, (workspace, status.clone()));
@@ -181,13 +186,11 @@ impl App {
     fn drop_workspace_launches(&mut self, workspace: u64, gone: Option<u64>, reason: &str) -> (usize, usize) {
         let mut panes = self.workspace_panes(workspace);
         panes.extend(gone);
-        let dropped: Vec<_> = self.agents.launches.iter().filter(|l| panes.contains(&l.term)).map(|l| l.key).collect();
-        self.agents.launches.retain(|l| !panes.contains(&l.term));
+        let dropped = self.agents.launches.drop_panes(&panes);
         for key in dropped.iter().flatten() {
             self.clients.requests.launched(*key, false);
         }
-        let ended = self.runs.list.iter().filter(|r| r.workspace == workspace).count();
-        self.runs.list.retain(|r| r.workspace != workspace);
+        let ended = self.runs.end_in(workspace);
         if ended > 0 {
             log::info!("flow", "run ended", workspace = workspace, reason = reason);
         }
@@ -226,9 +229,7 @@ impl App {
             self.projects[p].workspaces[w].clear_failed_setups();
         }
         let panes = self.workspace_panes(workspace);
-        for launch in self.agents.launches.iter_mut().filter(|l| panes.contains(&l.term)) {
-            launch.wait_from(now);
-        }
+        self.agents.launches.wait_from(&panes, now);
     }
 
     fn setup_failed(&mut self, pane: u64, failed: String, (project, workspace): (u64, u64), unseen: bool) {
@@ -242,8 +243,7 @@ impl App {
         let message = format!("setup failed in {place}{tail}");
         if unseen {
             self.outbox
-                .notifications
-                .extend(Notification::new(&crate::host::notify::clean(&message), &self.config.desktop_notifications));
+                .notify(Notification::new(&crate::host::notify::clean(&message), &self.config.desktop_notifications));
         }
         self.messages.toast = Some(Toast::new(message, ui::ToastIcon::Agent(Status::Failed)));
     }

@@ -14,13 +14,55 @@ pub(super) struct Focus {
 
 #[derive(Default)]
 pub(super) struct Scrolls {
-    pub(super) projects: usize,
-    pub(super) workspaces: usize,
-    pub(super) agents: usize,
-    pub(super) tab_bar: usize,
-    pub(super) followed: Focus,
-    pub(super) followed_pane: Option<u64>,
-    pub(super) pane_followed: bool,
+    projects: usize,
+    workspaces: usize,
+    agents: usize,
+    tab_bar: usize,
+    followed: Focus,
+    followed_pane: Option<u64>,
+    pane_followed: bool,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum List {
+    Projects,
+    Workspaces,
+    Agents,
+    TabBar,
+}
+
+impl Scrolls {
+    pub(super) fn of(&self, list: List) -> usize {
+        match list {
+            List::Projects => self.projects,
+            List::Workspaces => self.workspaces,
+            List::Agents => self.agents,
+            List::TabBar => self.tab_bar,
+        }
+    }
+
+    pub(super) fn set(&mut self, list: List, offset: usize) {
+        match list {
+            List::Projects => self.projects = offset,
+            List::Workspaces => self.workspaces = offset,
+            List::Agents => self.agents = offset,
+            List::TabBar => self.tab_bar = offset,
+        }
+    }
+
+    pub(super) fn follow_again(&mut self) {
+        self.followed = Focus::default();
+    }
+
+    #[cfg(test)]
+    pub(super) fn forget_followed_pane(&mut self) {
+        self.followed_pane = None;
+    }
+
+    #[cfg(test)]
+    pub(super) fn before_first_follow(&mut self) {
+        self.pane_followed = false;
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,7 +120,7 @@ impl App {
     }
 
     pub(super) fn close_panel(&mut self) {
-        self.panels.todo.field = None;
+        self.panels.todo.cancel();
         self.show_side(None);
     }
 
@@ -106,12 +148,12 @@ impl App {
         let before = std::mem::replace(&mut self.scroll.followed_pane, pane);
         let seen = std::mem::replace(&mut self.scroll.pane_followed, true);
         if seen && before != pane && pane.is_some_and(|pane| self.reveal_agent(pane)) {
-            self.clients.events.snapshots.changed = true;
+            self.clients.events.snapshots.mark_changed();
         }
     }
 
     pub(super) fn follow(&mut self, area: Rect) {
-        self.panels.queued.area = Some(area);
+        self.set_queue_area(area);
         if self.focus() != self.scroll.followed {
             self.panels.files.set_full_screen(false);
         }

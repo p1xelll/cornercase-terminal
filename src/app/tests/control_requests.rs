@@ -173,7 +173,7 @@ impl Agent {
         };
         let config_path = write_config(config.path(), &settings);
         let (mut app, rx) = app_in(project.path(), config_path);
-        app.agents.claude_dir = Some(fake.dir().to_path_buf());
+        app.agents.set_claude_dir(fake.dir());
         Self { app, rx, fake, config_dir: config, _project: project }
     }
 
@@ -291,7 +291,7 @@ fn a_local_command_needs_no_record(app: &mut App, rx: &Receiver<AppEvent>, text:
 }
 
 fn an_unconfirmed_send_gives_up(app: &mut App, rx: &Receiver<AppEvent>) {
-    app.clients.confirm_within = Duration::from_millis(300);
+    app.clients.set_confirm_within(Duration::from_millis(300));
     send_enter(app, "fix the login");
     let message = error(answered(app, rx, "the send gives up"));
     assert!(message.contains("not confirmed"), "{message}");

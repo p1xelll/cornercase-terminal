@@ -328,7 +328,7 @@ mod dialog {
         click(&mut repo.app, ui::update_extra(AREA, COPY_LINK, DONE, ASK_AGENT).as_position());
 
         let text = "pull request #486 has merge conflicts with main";
-        assert_eq!(repo.app.outbox.host_writes, [clipboard::osc52(text)]);
+        assert_eq!(repo.app.take_host_writes(), [clipboard::osc52(text)]);
         assert_eq!(toast(&repo.app), Some(NO_AGENT));
     }
 
@@ -360,7 +360,7 @@ mod dialog {
         click(&mut repo.app, ui::update_buttons(AREA, COPY_LINK, DONE)[0].as_position());
 
         assert!(repo.app.overlay.is_none());
-        assert_eq!(repo.app.outbox.host_writes, [clipboard::osc52(URL)]);
+        assert_eq!(repo.app.take_host_writes(), [clipboard::osc52(URL)]);
         assert_eq!(toast(&repo.app), Some(COPIED));
     }
 
@@ -373,7 +373,7 @@ mod dialog {
 
         let text = "pull request #482 failed its checks: tests (ubuntu-24.04) \
                     https://github.com/acme/web-shop/actions/runs/1001/job/2001";
-        assert_eq!(repo.app.outbox.host_writes, [clipboard::osc52(text)]);
+        assert_eq!(repo.app.take_host_writes(), [clipboard::osc52(text)]);
         assert_eq!(toast(&repo.app), Some(NO_AGENT));
     }
 
@@ -508,7 +508,7 @@ mod badge {
         render(&mut repo.app, area);
         let list = ui::layout_with(area, state::Widths::default(), false, config::Sidebar::Tree).list;
         let shape = repo.app.tree_shape();
-        let r = ui::tree_row(list, &shape, repo.app.scroll.projects, ui::TreeRow::Workspace(0, 1));
+        let r = ui::tree_row(list, &shape, repo.app.scroll.of(List::Projects), ui::TreeRow::Workspace(0, 1));
         let pos = find_in(&mut repo.app, r, area, '#');
 
         click_in(&mut repo.app, pos, area);
@@ -528,7 +528,7 @@ mod badge {
             areas.workspaces_list,
             areas.pitch,
             &repo.app.tab_lines(),
-            repo.app.scroll.workspaces,
+            repo.app.scroll.of(List::Workspaces),
             WorkspaceRow::Workspace(1),
         );
         let pos = find_in(&mut repo.app, r, small, '#');

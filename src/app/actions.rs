@@ -7,7 +7,6 @@ use crate::accounts::Accounts;
 use crate::agents;
 use crate::changes::Checkout;
 use crate::error::Result;
-use crate::host::clipboard;
 use crate::project::search::Goto;
 use crate::project::{Hierarchy, Tab};
 use crate::term::{SpawnOptions, Term};
@@ -30,7 +29,7 @@ impl App {
         let id = self.take_id();
         let file = target.dir.join(path).display().to_string();
         let args = ["-c".to_string(), EDIT_SCRIPT.to_string(), "sh".to_string(), line.max(1).to_string(), file];
-        let env = [self.pane_env(id, None, &Accounts::default()), self.shells.editor_env.clone()].concat();
+        let env = [self.pane_env(id, None, &Accounts::default()), self.shells.editor_env().to_vec()].concat();
         let opts = SpawnOptions {
             id,
             shell: "/bin/sh",
@@ -65,12 +64,12 @@ impl App {
                 .map(|i| (t, tab.panes[i].id))
         });
         let Some((t, id)) = found else {
-            self.outbox.host_writes.push(clipboard::osc52(text.trim_end()));
+            self.outbox.copy(text.trim_end());
             self.messages.toast = Some(Toast::new(NO_AGENT, ui::ToastIcon::Check));
             return;
         };
         if self.resume_holds(id) || self.sending(id) {
-            self.outbox.host_writes.push(clipboard::osc52(text.trim_end()));
+            self.outbox.copy(text.trim_end());
             self.jump_to_pane(id);
             let why = if self.sending(id) { BUSY } else { RESUMING };
             self.messages.toast = Some(Toast::new(why, ui::ToastIcon::Check));

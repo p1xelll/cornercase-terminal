@@ -358,11 +358,9 @@ impl App {
     fn launch_in_worktree(&mut self, spec: launch::Spec, pane: u64, wait: Option<Condition>, pending: &mut Pending) {
         let mut launch = Launch::new(pane, spec, Instant::now());
         launch.key = Some(pending.key);
-        launch.trust = pending
-            .client
-            .is_some_and(|client| self.panels.queued.running.contains_key(&client))
-            .then_some(launch::Trust::Accepted);
-        self.agents.launches.push(launch);
+        launch.trust =
+            pending.client.is_some_and(|client| self.panels.queued.trust(client)).then_some(launch::Trust::Accepted);
+        self.agents.launches.add(launch);
         pending.stage = Stage::launch(wait);
     }
 }

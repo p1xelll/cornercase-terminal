@@ -132,7 +132,7 @@ impl App {
     fn settle(&mut self, mut pending: Pending, launched: &[(u64, bool)], now: Instant) -> Option<Pending> {
         let Some(reply) = self.advance(&mut pending, launched, now) else { return Some(pending) };
         if reply.is_ok() && matches!(pending.stage, Stage::Restart { .. }) {
-            self.outbox.restart = true;
+            self.outbox.restart();
         }
         self.answer(pending.client, reply);
         matches!(pending.stage, Stage::Worktree(_)).then(|| Pending { client: None, timeout: None, ..pending })
@@ -233,7 +233,7 @@ impl App {
 
     fn restart_reply(&self, pending: &Pending, now: Instant) -> Option<Reply> {
         let Stage::Restart { caller } = pending.stage else { return None };
-        (self.agents.watched == Some(now) && self.holding(caller, now).is_empty())
+        (self.agents.watched() == Some(now) && self.holding(caller, now).is_empty())
             .then(|| Ok(json(&self.report(caller))))
     }
 
