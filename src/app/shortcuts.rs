@@ -42,7 +42,7 @@ impl App {
     pub(super) fn keys_mouse(&mut self, group: Option<Group>, ev: MouseEvent, pos: Position, area: Rect) -> Result<()> {
         let MouseEventKind::Down(button) = ev.kind else { return Ok(()) };
         let view = self.keys_view(group);
-        let menu = keys::area(keys::frame(self.layout(area).shown(self.nav).pane, area, &view), &view);
+        let menu = keys::area(keys::frame(self.layout(area).shown(self.screen.nav).pane, area, &view), &view);
         let picked = keys::hit(menu, &view, pos).and_then(|i| shortcuts::items(group)[i].step);
         self.overlay = None;
         if button == MouseButton::Left {
@@ -69,6 +69,18 @@ impl App {
 
     fn shortcut(&mut self, action: Action, area: Rect) -> Result<()> {
         log::info!("ui", "shortcut", action = format!("{action:?}"));
+        let Some(action) = self.go_shortcut(action, area) else { return Ok(()) };
+        let Some(action) = self.panel_shortcut(action) else { return Ok(()) };
+        let Some(action) = self.edit_shortcut(action) else { return Ok(()) };
+        match action {
+            Action::NewTab => self.new_tab_by_key(area),
+            Action::Split(dir) => self.split_by_key(dir, area),
+            Action::Issues => self.issues_by_key(area),
+            _ => Ok(()),
+        }
+    }
+
+    pub(in crate::app) fn go_shortcut(&mut self, action: Action, area: Rect) -> Option<Action> {
         match action {
             Action::NextTab => self.step_tab(1),
             Action::PreviousTab => self.step_tab(-1),
@@ -80,83 +92,108 @@ impl App {
             Action::Pane(side) => self.focus_beside(side, area),
             Action::Agent => self.next_agent(),
             Action::Mark => self.mark_focused(),
-            Action::Search => {
-                self.nav = None;
-                self.overlay = Some(Overlay::Search(Finder::default()));
-            }
-            Action::NewTab => {
-                if let Some((p, w)) = self.open_workspace_index() {
-                    self.nav = None;
-                    return self.add_tab(p, w, area);
-                }
-            }
-            Action::Split(dir) => {
-                let pane = self.layout(area).pane;
-                let Some((tab, id)) = self.tab().and_then(|t| Some((t, t.pane()?.id))) else { return Ok(()) };
-                if tab.can_split(pane, id, dir) {
-                    return self.split_pane(id, dir, area, true).map(drop);
-                }
-                self.toast = Some(Toast::new(NO_ROOM, ui::ToastIcon::Bug));
-            }
-            Action::ClosePane => self.ask_close_pane(),
-            Action::RenameTab => {
-                let found = self.open_workspace_index().and_then(|(p, w)| {
-                    let workspace = &self.projects[p].workspaces[w];
-                    (!workspace.tabs.is_empty()).then_some((p, w, workspace.active))
-                });
-                self.ask_rename(self.tab_target(found));
-            }
-            Action::FindSaid => {
-                self.nav = None;
-                self.overlay = Some(Overlay::Search(Finder::sessions()));
-            }
+            Action::Search => self.search_by_key(Finder::default()),
+            Action::FindSaid => self.search_by_key(Finder::sessions()),
             Action::FindNames => self.find_files(Mode::Name),
             Action::FindText => self.find_files(Mode::Text),
+            other => return Some(other),
+        }
+        None
+    }
+
+    pub(in crate::app) fn panel_shortcut(&mut self, action: Action) -> Option<Action> {
+        match action {
             Action::Files => self.toggle_files(),
             Action::Changes => self.changes_by_key(),
             Action::Base => self.compare_base(),
             Action::PullRequest => self.pull_request_by_key(),
             Action::Flow => self.flow_by_key(),
-            Action::NewWorkspace => {
-                if self.project().is_some() {
-                    self.nav = None;
-                    self.ask_new_workspace(self.active);
-                }
-            }
             Action::StartFlow => self.open_start_flow(self.start_flow_here()),
-            Action::RenameWorkspace => {
-                let target = self.open_workspace_index().map(|(p, w)| {
-                    let project = &self.projects[p];
-                    Target::Workspace(project.id, project.workspaces[w].id)
-                });
-                self.ask_rename(target);
-            }
+            Action::Todo => self.todo_by_key(),
+            Action::Settings => self.dialog_by_key(Self::open_settings),
+            Action::Usage => self.dialog_by_key(Self::open_usage),
+            other => return Some(other),
+        }
+        None
+    }
+
+    pub(in crate::app) fn edit_shortcut(&mut self, action: Action) -> Option<Action> {
+        match action {
+            Action::ClosePane => self.ask_close_pane(),
+            Action::RenameTab => self.rename_tab_by_key(),
+            Action::RenameWorkspace => self.rename_workspace_by_key(),
+            Action::NewWorkspace => self.new_workspace_by_key(),
             Action::CloseWorkspace => self.ask_close_workspace(),
-            Action::Issues => {
-                if self.issues_available() {
-                    self.nav = None;
-                    return self.open_issues(area);
-                }
-            }
-            Action::Todo => {
-                let opening = self.side != Some(Side::Todo);
-                self.toggle_todo();
-                if opening {
-                    self.todo.field = Some(Field::default());
-                }
-            }
-            Action::Settings => {
-                self.nav = None;
-                self.open_settings();
-            }
-            Action::Usage => {
-                self.nav = None;
-                self.open_usage();
-            }
             Action::Away => self.toggle_away_everywhere(),
             Action::Quit => self.outbox.detach = true,
+            other => return Some(other),
         }
+        None
+    }
+
+    fn search_by_key(&mut self, finder: Finder) {
+        self.screen.nav = None;
+        self.overlay = Some(Overlay::Search(finder));
+    }
+
+    fn dialog_by_key(&mut self, open: fn(&mut Self)) {
+        self.screen.nav = None;
+        open(self);
+    }
+
+    fn new_tab_by_key(&mut self, area: Rect) -> Result<()> {
+        let Some((p, w)) = self.open_workspace_index() else { return Ok(()) };
+        self.screen.nav = None;
+        self.add_tab(p, w, area)
+    }
+
+    fn split_by_key(&mut self, dir: split::Dir, area: Rect) -> Result<()> {
+        let pane = self.layout(area).pane;
+        let Some((tab, id)) = self.tab().and_then(|t| Some((t, t.pane()?.id))) else { return Ok(()) };
+        if tab.can_split(pane, id, dir) {
+            return self.split_pane(id, dir, area, true).map(drop);
+        }
+        self.messages.toast = Some(Toast::new(NO_ROOM, ui::ToastIcon::Bug));
         Ok(())
+    }
+
+    fn issues_by_key(&mut self, area: Rect) -> Result<()> {
+        if !self.issues_available() {
+            return Ok(());
+        }
+        self.screen.nav = None;
+        self.open_issues(area)
+    }
+
+    fn todo_by_key(&mut self) {
+        let opening = self.screen.side != Some(Side::Todo);
+        self.toggle_todo();
+        if opening {
+            self.panels.todo.field = Some(Field::default());
+        }
+    }
+
+    fn rename_tab_by_key(&mut self) {
+        let found = self.open_workspace_index().and_then(|(p, w)| {
+            let workspace = &self.projects[p].workspaces[w];
+            (!workspace.tabs.is_empty()).then_some((p, w, workspace.active))
+        });
+        self.ask_rename(self.tab_target(found));
+    }
+
+    fn rename_workspace_by_key(&mut self) {
+        let target = self.open_workspace_index().map(|(p, w)| {
+            let project = &self.projects[p];
+            Target::Workspace(project.id, project.workspaces[w].id)
+        });
+        self.ask_rename(target);
+    }
+
+    fn new_workspace_by_key(&mut self) {
+        if self.project().is_some() {
+            self.screen.nav = None;
+            self.ask_new_workspace(self.active);
+        }
     }
 
     fn open_workspace_index(&self) -> Option<(usize, usize)> {
@@ -166,7 +203,7 @@ impl App {
 
     fn ask_rename(&mut self, target: Option<Target>) {
         if let Some((target, input)) = target.and_then(|t| Some((t, self.current_name(t)?))) {
-            self.nav = None;
+            self.screen.nav = None;
             self.overlay = Some(Overlay::Rename { target, input });
         }
     }
@@ -227,7 +264,7 @@ impl App {
             .map(|place| pane(place).id);
         match next {
             Some(id) => self.jump_to_pane(id),
-            None => self.toast = Some(Toast::new(NO_AGENT_WAITS, ui::ToastIcon::Check)),
+            None => self.messages.toast = Some(Toast::new(NO_AGENT_WAITS, ui::ToastIcon::Check)),
         }
     }
 
@@ -244,7 +281,7 @@ impl App {
             }
             _ => Toast::new(NO_AGENT_HERE, ui::ToastIcon::Bug),
         };
-        self.toast = Some(toast);
+        self.messages.toast = Some(toast);
     }
 
     fn ask_close_pane(&mut self) {
@@ -257,13 +294,13 @@ impl App {
         } else {
             Overlay::ClosePane { pane: pane.id }
         };
-        self.nav = None;
+        self.screen.nav = None;
         self.overlay = Some(overlay);
     }
 
     fn ask_close_workspace(&mut self) {
         let Some((p, w)) = self.open_workspace_index() else { return };
-        self.nav = None;
+        self.screen.nav = None;
         let project = &self.projects[p];
         if project.workspaces[w].worktree {
             self.ask_removal(p, w);
@@ -274,30 +311,30 @@ impl App {
 
     fn find_files(&mut self, mode: Mode) {
         let Some(workspace) = self.project().and_then(Project::workspace).map(|w| w.id) else { return };
-        if self.side != Some(Side::Files) {
+        if self.screen.side != Some(Side::Files) {
             self.toggle_files();
         }
-        self.files.search(workspace, mode);
+        self.panels.files.search(workspace, mode);
     }
 
     fn changes_by_key(&mut self) {
         if self.changes_target().is_none() {
-            self.toast = Some(Toast::new(NOT_GIT, ui::ToastIcon::Bug));
+            self.messages.toast = Some(Toast::new(NOT_GIT, ui::ToastIcon::Bug));
             return;
         }
-        let opening = self.side != Some(Side::Changes);
+        let opening = self.screen.side != Some(Side::Changes);
         self.toggle_changes();
         if opening {
-            self.changes.filter.get_or_insert_default().focused = true;
+            self.panels.changes.filter.get_or_insert_default().focused = true;
         }
     }
 
     fn compare_base(&mut self) {
         let Some(target) = self.changes_target() else {
-            self.toast = Some(Toast::new(NOT_GIT, ui::ToastIcon::Bug));
+            self.messages.toast = Some(Toast::new(NOT_GIT, ui::ToastIcon::Bug));
             return;
         };
-        if self.side != Some(Side::Changes) {
+        if self.screen.side != Some(Side::Changes) {
             self.toggle_changes();
         }
         self.open_branches(&target);

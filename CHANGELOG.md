@@ -2,6 +2,10 @@
 
 Every pull request that changes the app adds a section here for its new version. The section becomes the notes of the GitHub Release and shows up in the app's update dialog, so write it for users.
 
+## 0.12.161
+
+- No changes in the app. Its functions are split into smaller ones.
+
 ## 0.12.160
 
 - **Name the branch before an issue's worktree is made.** **start** in the Issues tab now shows the branch and the workspace's name, filled in as before: change them to follow your team's convention, or press `Enter` to keep them. A branch that already exists is checked out, and one a workspace has open gets a new tab there, as before. Starting in a new tab asks nothing.

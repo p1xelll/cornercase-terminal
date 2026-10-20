@@ -50,6 +50,15 @@ impl Notices {
         self.windows.remove(&client);
     }
 
+    fn next_token(&mut self) -> String {
+        self.next += 1;
+        let token = format!("cc-{}-{}", self.run, self.next);
+        if self.sent.len() >= notify::KEPT {
+            self.sent.pop_front();
+        }
+        token
+    }
+
     fn find(&self, token: &str) -> Option<&Notice> {
         self.sent.iter().find(|notice| notice.token == token)
     }
@@ -68,12 +77,7 @@ pub(super) struct Said<'a> {
 
 impl App {
     pub(super) fn tell(&mut self, said: Said<'_>) {
-        let notices = &mut self.notices;
-        notices.next += 1;
-        let token = format!("cc-{}-{}", notices.run, notices.next);
-        if notices.sent.len() >= notify::KEPT {
-            notices.sent.pop_front();
-        }
+        let token = self.messages.notices.next_token();
         let notice = Notice {
             token: token.clone(),
             agent: said.agent.to_string(),
@@ -88,12 +92,7 @@ impl App {
             go: Some(token.clone()),
             ..Toast::new(notice.message.clone(), ui::ToastIcon::Agent(notice.status))
         };
-        if let Some(n) = Notification::new(&notice.message, &self.config.desktop_notifications) {
-            self.outbox.notifications.push(Notification { token: Some(token.clone()), ..n });
-            for window in notices.windows.values_mut().filter(|w| w.unfocused) {
-                window.missed = Some(token.clone());
-            }
-        }
+        self.alert_windows(&notice.message, &token);
         if let Some(kind) = said.sound {
             let path = match kind {
                 sound::Kind::NeedsYou => &self.config.sound_waiting,
@@ -101,30 +100,27 @@ impl App {
             };
             self.outbox.sounds.push(Cue { kind, path: path.clone() });
         }
-        let event = Event {
-            time: crate::time::Stamp(std::time::SystemTime::now()).to_string(),
-            what: What::Notice {
-                token,
-                agent: notice.agent.clone(),
-                status: notice.status.name().to_string(),
-                place: notify::clean(&notice.place),
-                message: notice.message.clone(),
-                panes: notice.panes.clone(),
-                sound: said.sound.map(|kind| kind.id().to_string()),
-            },
-            ids: Ids { project: Some(notice.project), workspace: Some(notice.workspace), ..Ids::default() },
-        };
-        notices.sent.push_back(notice);
-        self.toast = Some(toast);
-        self.events.publish(&[event]);
+        let event = notice_event(token, &notice, said.sound);
+        self.messages.notices.sent.push_back(notice);
+        self.messages.toast = Some(toast);
+        self.wire.events.publish(&[event]);
+    }
+
+    fn alert_windows(&mut self, message: &str, token: &str) {
+        if let Some(n) = Notification::new(message, &self.config.desktop_notifications) {
+            self.outbox.notifications.push(Notification { token: Some(token.to_string()), ..n });
+            for window in self.messages.notices.windows.values_mut().filter(|w| w.unfocused) {
+                window.missed = Some(token.to_string());
+            }
+        }
     }
 
     pub(in crate::app) fn act_on_notice(&mut self, token: &str) -> Option<Result<(u64, Item), String>> {
-        let notice = self.notices.find(token).cloned()?;
-        if self.toast.as_ref().is_some_and(|toast| toast.go.as_deref() == Some(token)) {
-            self.toast = None;
+        let notice = self.messages.notices.find(token).cloned()?;
+        if self.messages.toast.as_ref().is_some_and(|toast| toast.go.as_deref() == Some(token)) {
+            self.messages.toast = None;
         }
-        for window in self.notices.windows.values_mut().filter(|w| w.missed.as_deref() == Some(token)) {
+        for window in self.messages.notices.windows.values_mut().filter(|w| w.missed.as_deref() == Some(token)) {
             window.missed = None;
         }
         if let Some(pane) = self.notice_pane(&notice) {
@@ -154,7 +150,7 @@ impl App {
             }
             Ok(_) => return,
             Err(gone) => {
-                self.toast = Some(Toast::new(gone, ui::ToastIcon::Check));
+                self.messages.toast = Some(Toast::new(gone, ui::ToastIcon::Check));
                 (0, "gone")
             }
         };
@@ -174,13 +170,13 @@ impl App {
     }
 
     pub(crate) fn window_focus(&mut self, client: u64, focused: bool) {
-        let window = self.notices.windows.entry(client).or_default();
+        let window = self.messages.notices.windows.entry(client).or_default();
         window.unfocused = !focused;
         if !focused {
             return;
         }
         let Some(token) = window.missed.take() else { return };
-        let Some(notice) = self.notices.find(&token).cloned() else { return };
+        let Some(notice) = self.messages.notices.find(&token).cloned() else { return };
         let needs = self.projects.workspace_in(notice.project, notice.workspace).is_some_and(|(p, w)| {
             let tabs = &self.projects[p].workspaces[w].tabs;
             let terms = || tabs.iter().flat_map(|tab| &tab.panes).filter(|term| notice.panes.contains(&term.id));
@@ -191,12 +187,28 @@ impl App {
             !shown && terms().any(|term| term.agent.status().is_some_and(Status::needs_you))
         });
         if needs {
-            self.toast = Some(Toast {
+            self.messages.toast = Some(Toast {
                 at: Instant::now(),
                 go: Some(token),
                 ..Toast::new(notice.message, ui::ToastIcon::Agent(notice.status))
             });
             log::info!("activity", "notification shown again", client = client);
         }
+    }
+}
+
+fn notice_event(token: String, notice: &Notice, sound: Option<sound::Kind>) -> Event {
+    Event {
+        time: crate::time::Stamp(std::time::SystemTime::now()).to_string(),
+        what: What::Notice {
+            token,
+            agent: notice.agent.clone(),
+            status: notice.status.name().to_string(),
+            place: notify::clean(&notice.place),
+            message: notice.message.clone(),
+            panes: notice.panes.clone(),
+            sound: sound.map(|kind| kind.id().to_string()),
+        },
+        ids: Ids { project: Some(notice.project), workspace: Some(notice.workspace), ..Ids::default() },
     }
 }

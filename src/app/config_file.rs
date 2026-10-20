@@ -50,39 +50,43 @@ impl App {
             return;
         }
         self.config_file.checked = Some(now);
-        if persist::mark(&self.config_path) != self.config_file.mark {
+        if persist::mark(&self.paths.config_path) != self.config_file.mark {
             let _ = self.reload_config();
         }
     }
 
     pub(super) fn reload_config(&mut self) -> Result<(), String> {
-        let mark = persist::mark(&self.config_path);
+        let mark = persist::mark(&self.paths.config_path);
         if mark != self.config_file.mark {
             self.config_file.mark = mark;
-            match config::read(&self.config_path) {
-                Ok(read) => {
-                    self.config_file.problem = None;
-                    if let Some(read) = read.filter(|read| *read != self.config) {
-                        let changes = config::Changes::between(&self.config, &read);
-                        log::info!("app", "config.json changed outside", keys = changes.keys().join(","));
-                        warn_unknown_profile(Some(&self.config), &read);
-                        self.set_config(read);
-                    }
-                }
-                Err(why) => {
-                    if self.config_file.problem.as_deref() != Some(why.as_str()) {
-                        log::warning!("app", "config.json cannot be read", why = why.as_str());
-                        let message = format!("config.json cannot be read: {why}; the settings in use stay");
-                        self.toast = Some(Toast::new(message, ui::ToastIcon::Bug));
-                        self.config_file.problem = Some(why);
-                        self.settings_changed();
-                    }
-                }
+            match config::read(&self.paths.config_path) {
+                Ok(read) => self.config_read(read),
+                Err(why) => self.config_unreadable(why),
             }
         }
         match &self.config_file.problem {
             Some(why) => Err(unreadable(why)),
             None => Ok(()),
+        }
+    }
+
+    fn config_read(&mut self, read: Option<Config>) {
+        self.config_file.problem = None;
+        if let Some(read) = read.filter(|read| *read != self.config) {
+            let changes = config::Changes::between(&self.config, &read);
+            log::info!("app", "config.json changed outside", keys = changes.keys().join(","));
+            warn_unknown_profile(Some(&self.config), &read);
+            self.set_config(read);
+        }
+    }
+
+    fn config_unreadable(&mut self, why: String) {
+        if self.config_file.problem.as_deref() != Some(why.as_str()) {
+            log::warning!("app", "config.json cannot be read", why = why.as_str());
+            let message = format!("config.json cannot be read: {why}; the settings in use stay");
+            self.messages.toast = Some(Toast::new(message, ui::ToastIcon::Bug));
+            self.config_file.problem = Some(why);
+            self.settings_changed();
         }
     }
 
@@ -94,7 +98,7 @@ impl App {
             return Ok(());
         }
         self.config_file.mark =
-            config::save(&self.config_path, &next).map_err(|e| format!("failed to save the settings: {e}"))?;
+            config::save(&self.paths.config_path, &next).map_err(|e| format!("failed to save the settings: {e}"))?;
         warn_unknown_profile(Some(&self.config), &next);
         self.set_config(next);
         Ok(())
@@ -107,6 +111,6 @@ impl App {
 
     pub(super) fn settings_changed(&mut self) {
         self.config_file.revision += 1;
-        self.events.snapshots.changed = true;
+        self.wire.events.snapshots.changed = true;
     }
 }

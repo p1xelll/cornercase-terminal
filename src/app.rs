@@ -8,7 +8,9 @@ use std::time::{Duration, Instant};
 
 use crossterm::event::{Event, KeyEventKind};
 use ratatui::Frame;
-use ratatui::layout::{Position, Rect};
+#[cfg(test)]
+use ratatui::layout::Position;
+use ratatui::layout::Rect;
 
 use crate::agents;
 use crate::agents::activity::{self};
@@ -16,11 +18,13 @@ use crate::agents::activity::{self};
 use crate::agents::awake::Awake;
 #[cfg(test)]
 use crate::agents::launch::Launch;
+#[cfg(test)]
 use crate::agents::usage;
 use crate::changes::{self};
 use crate::config::Config;
 use crate::control::theme::{ThemeFrom, ThemeInfo};
 use crate::error::{Error, Result};
+#[cfg(test)]
 use crate::files;
 use crate::host::notify::Notification;
 use crate::host::open::Open;
@@ -35,7 +39,7 @@ use crate::issues::{Account, Source};
 use crate::paths;
 use crate::project::search::said;
 use crate::project::split::Dir;
-use crate::project::{Group, Hierarchy, Project, Tab, group};
+use crate::project::{Group, Hierarchy, Project, group};
 use crate::settings::Page;
 use crate::state::{self, ChangesState, IssuesState, ProjectState, State};
 use crate::todo::{self, Todos};
@@ -49,27 +53,22 @@ use changes_panel::ChangesEvent;
 use files_panel::FilesEvent;
 use interaction::AUTO_SCROLL_EVERY;
 use interaction::Drag;
-use interaction::Grab;
 use interaction::LINES_SCROLL_EVERY;
 use issues_dialog::IssueEvent;
 use launches::LAUNCH_EVERY;
 #[cfg(test)]
 use layout::Focus;
 use layout::{Scrolls, Side};
-use merged_pull_requests::MergedPulls;
 use messenger::{Messenger, MessengerEvent};
-use notifications::Notices;
 use overlay::Overlay;
 use plugins::{PluginEvent, Plugins};
-use pull_requests::PullRequests;
-use queue_panel::{QueueEvent, QueueRuntime};
+use queue_panel::QueueEvent;
 use search_dialog::SearchEvent;
 use session::not_restored;
-use star_prompt::StarPrompt;
 use toast::Toast;
 use trackers::IssueConnections;
 use update_dialog::{UpdateEvent, UpdateState};
-use worktrees::{SYNC_EVERY, Upstream, WorktreeEvent};
+use worktrees::{SYNC_EVERY, WorktreeEvent};
 
 mod account_menu;
 mod accounts_page;
@@ -85,6 +84,7 @@ mod files_panel;
 mod flow_panel;
 mod flow_runs;
 mod flows_dialog;
+mod groups;
 mod hierarchy;
 mod images;
 mod input;
@@ -149,9 +149,15 @@ struct Outbox {
 }
 
 pub(crate) struct App {
-    upstream: Upstream,
-    pulls: PullRequests,
-    merged: MergedPulls,
+    screen: groups::Screen,
+    git: groups::Git,
+    spawn: groups::Spawn,
+    messages: groups::Messages,
+    panels: groups::Panels,
+    paths: groups::Paths,
+    themes: groups::Themes,
+    wire: groups::Wire,
+    usages: groups::Usages,
     scroll: Scrolls,
     outbox: Outbox,
     opening: opening::Opening,
@@ -162,62 +168,20 @@ pub(crate) struct App {
     deleting_groups: Vec<u64>,
     projects: Vec<Project>,
     active: usize,
-    drawn: ui::Areas,
-    nav: Option<ui::Nav>,
-    side: Option<Side>,
     next_id: u64,
-    hover: Option<Position>,
-    widths: state::Widths,
-    drag: Option<Drag>,
-    border_click: Option<(ui::Border, Instant)>,
-    divider_click: Option<(u64, Vec<bool>, Instant)>,
-    toast: Option<Toast>,
-    star: StarPrompt,
-    notices: Notices,
     overlay: Option<Overlay>,
     config: Config,
     config_file: config_file::ConfigFile,
-    config_path: PathBuf,
-    setup_dir: PathBuf,
-    runs_dir: PathBuf,
-    accounts_dir: PathBuf,
-    default_homes: Option<PathBuf>,
     logins: control::accounts::Logins,
-    pane_socket: Option<String>,
-    pending_run_dirs: Vec<(u64, Vec<PathBuf>)>,
-    setups: std::collections::HashMap<u64, (u64, PathBuf)>,
     shell: String,
-    home: Option<PathBuf>,
-    theme: HostTheme,
-    window_theme: bool,
-    client_theme: Option<HostTheme>,
     tx: Sender<AppEvent>,
-    synced: Option<Instant>,
     booted: Instant,
     settings_page: Page,
-    changes: changes::Panel,
-    editor_env: Vec<(String, String)>,
     remote: remote_access::Remote,
     messengers: Vec<Messenger>,
-    usage: usage::State,
-    usage_page: usage::Page,
-    usage_timeout: Duration,
-    confirm_within: Duration,
-    typing_holds: Duration,
-    queued: QueueRuntime,
-    todos: Todos,
     runs: Vec<crate::flows::run::Run>,
-    flow: flow_panel::FlowPanel,
-    todo: todo::Panel,
-    files: files::Panel,
     sessions: said::Sessions,
     images: images::Payloads,
-    requests: control::Requests,
-    events: events::Events,
-    change_streams: changes_panel::Streams,
-    surfaces: surfaces::Surfaces,
-    views: views::Views,
-    seen: trace::Seen,
     plugins: Plugins,
 }
 
@@ -225,81 +189,42 @@ impl App {
     pub(crate) fn new(shell: String, theme: HostTheme, config_path: PathBuf, tx: Sender<AppEvent>) -> Self {
         let secrets_path = paths::secrets(&config_path);
         let home = std::env::var_os("HOME").map(PathBuf::from);
-        let web = Web::new(paths::browsers(&config_path), paths::socket(), tx.clone());
-        let messengers = messenger::messengers(&config_path, &secrets_path);
-        let plugins = Plugins::new(crate::plugins::Places::new(&config_path, &config_path));
         let (config, config_file) = config_file::ConfigFile::open(&config_path);
         Self {
-            upstream: Upstream::default(),
-            pulls: PullRequests::default(),
-            merged: MergedPulls::default(),
+            screen: groups::Screen::default(),
+            git: groups::Git::default(),
+            spawn: groups::Spawn::default(),
+            messages: groups::Messages::default(),
+            panels: groups::Panels::default(),
+            wire: groups::Wire::default(),
+            usages: groups::Usages::default(),
+            themes: groups::Themes::new(theme),
             scroll: Scrolls::default(),
             outbox: Outbox::default(),
             opening: opening::Opening::default(),
             agents: AgentRuntime::new(home.as_deref()),
-            home,
             update: UpdateState::from_env(),
-            issues: IssueConnections::new(secrets_path),
+            issues: IssueConnections::new(secrets_path.clone()),
             groups: Vec::new(),
             projects: Vec::new(),
             active: 0,
-            drawn: ui::Areas::default(),
-            nav: None,
-            side: None,
             deleting_groups: Vec::new(),
             next_id: 1,
-            hover: None,
-            widths: state::Widths::default(),
-            drag: None,
-            border_click: None,
-            divider_click: None,
-            toast: None,
-            star: StarPrompt::default(),
-            notices: Notices::default(),
             overlay: None,
             config,
             config_file,
-            setups: std::collections::HashMap::new(),
-            setup_dir: config_path.parent().map(std::path::Path::to_path_buf).unwrap_or_default(),
-            runs_dir: config_path.with_file_name("runs"),
-            accounts_dir: config_path.with_file_name("accounts"),
-            default_homes: None,
             logins: control::accounts::Logins::default(),
-            pane_socket: None,
-            pending_run_dirs: Vec::new(),
-            config_path,
             shell,
-            theme,
-            window_theme: false,
-            client_theme: None,
-            tx,
-            synced: None,
             booted: Instant::now(),
             settings_page: Page::default(),
-            changes: changes::Panel::default(),
-            editor_env: Vec::new(),
-            remote: remote_access::Remote::new(web),
-            messengers,
-            usage: usage::State::default(),
-            usage_page: usage::Page::default(),
-            usage_timeout: usage::TIMEOUT,
-            confirm_within: control::CONFIRM_WITHIN,
-            typing_holds: control::INPUT_HOLDS,
-            queued: QueueRuntime::default(),
-            todos: Todos::default(),
+            remote: remote_access::Remote::new(Web::new(paths::browsers(&config_path), paths::socket(), tx.clone())),
+            messengers: messenger::messengers(&config_path, &secrets_path),
             runs: Vec::new(),
-            flow: flow_panel::FlowPanel::default(),
-            todo: todo::Panel::default(),
-            files: files::Panel::default(),
             sessions: said::Sessions::default(),
             images: images::Payloads::default(),
-            requests: control::Requests::default(),
-            events: events::Events::default(),
-            change_streams: changes_panel::Streams::default(),
-            surfaces: surfaces::Surfaces::default(),
-            views: views::Views::default(),
-            seen: trace::Seen::default(),
-            plugins,
+            plugins: Plugins::new(crate::plugins::Places::new(&config_path, &config_path)),
+            paths: groups::Paths::new(config_path, home),
+            tx,
         }
     }
 
@@ -322,14 +247,14 @@ impl App {
     }
 
     pub(crate) fn set_theme(&mut self, theme: HostTheme) {
-        self.theme = theme;
-        self.window_theme = true;
+        self.themes.theme = theme;
+        self.themes.window_theme = true;
     }
 
     pub(crate) fn theme_info(&self) -> ThemeInfo {
-        let from = if self.client_theme.is_some() {
+        let from = if self.themes.client_theme.is_some() {
             ThemeFrom::Client
-        } else if self.window_theme {
+        } else if self.themes.window_theme {
             ThemeFrom::Window
         } else {
             ThemeFrom::Default
@@ -343,9 +268,9 @@ impl App {
     }
 
     pub(crate) fn retheme(&mut self, theme: HostTheme) -> bool {
-        self.theme = theme;
-        self.window_theme = true;
-        let paint = self.client_theme.is_none();
+        self.themes.theme = theme;
+        self.themes.window_theme = true;
+        let paint = self.themes.client_theme.is_none();
         if paint {
             self.paint_terminals();
         }
@@ -353,24 +278,24 @@ impl App {
     }
 
     pub(crate) fn report_bug(&mut self) {
-        self.toast = Some(Toast::new(Error::Bug.to_string(), ui::ToastIcon::Bug));
+        self.messages.toast = Some(Toast::new(Error::Bug.to_string(), ui::ToastIcon::Bug));
     }
 
     pub(crate) fn reset_interaction(&mut self) {
         self.overlay = None;
-        self.nav = None;
-        self.hover = None;
-        self.drag = None;
-        self.todo.field = None;
-        self.files.unfocus();
-        self.files.set_full_screen(false);
-        if let Some(filter) = &mut self.changes.filter {
+        self.screen.nav = None;
+        self.screen.hover = None;
+        self.screen.drag = None;
+        self.panels.todo.field = None;
+        self.panels.files.unfocus();
+        self.panels.files.set_full_screen(false);
+        if let Some(filter) = &mut self.panels.changes.filter {
             filter.focused = false;
         }
     }
 
     pub(crate) fn pointer(&self, area: Rect) -> pointer::Shape {
-        let areas = self.layout(area).shown(self.nav);
+        let areas = self.layout(area).shown(self.screen.nav);
         let border = |border: ui::Border| match border {
             ui::Border::Stack | ui::Border::Agents => pointer::Shape::Rows,
             ui::Border::Projects | ui::Border::Workspaces | ui::Border::Changes => pointer::Shape::Columns,
@@ -379,7 +304,7 @@ impl App {
             Dir::Right => pointer::Shape::Columns,
             Dir::Down => pointer::Shape::Rows,
         };
-        match &self.drag {
+        match &self.screen.drag {
             Some(Drag::Border(b)) => return border(*b),
             Some(Drag::Divider { tab, path }) => {
                 let dividers = self.tab().filter(|t| t.id == *tab).map(|t| t.layout.dividers(areas.pane));
@@ -392,7 +317,7 @@ impl App {
             }
             None => {}
         }
-        let Some(pos) = self.hover.filter(|_| self.overlay.is_none()) else {
+        let Some(pos) = self.screen.hover.filter(|_| self.overlay.is_none()) else {
             return pointer::Shape::Default;
         };
         if self.panel_shown() && areas.changes.contains(pos) {
@@ -401,7 +326,7 @@ impl App {
         if let Some(b) = areas.border_hit(pos) {
             return border(b);
         }
-        let in_pane = areas.pane.contains(pos) && !(self.nav.is_some() && areas.compact());
+        let in_pane = areas.pane.contains(pos) && !(self.screen.nav.is_some() && areas.compact());
         self.tab()
             .filter(|_| in_pane)
             .and_then(|t| t.layout.divider_at(areas.pane, pos))
@@ -417,7 +342,8 @@ impl App {
     }
 
     pub(crate) fn open_here(&mut self, area: Rect) -> Result<()> {
-        let here = std::env::current_dir().ok().or_else(|| self.home.clone()).unwrap_or_else(|| PathBuf::from("/"));
+        let here =
+            std::env::current_dir().ok().or_else(|| self.paths.home.clone()).unwrap_or_else(|| PathBuf::from("/"));
         self.open_project(here, area)
     }
 
@@ -441,13 +367,13 @@ impl App {
             self.flow_frame(now),
             self.next_request(now),
             self.next_pairing(now),
-            self.events.snapshots.wake(now, !self.views.is_empty()),
-            self.events.app.wake(now, false),
-            self.events.runs.wake(now, false),
-            self.change_streams.wake(now),
-            self.events.bell_wake(now),
+            self.wire.events.snapshots.wake(now, !self.wire.views.is_empty()),
+            self.wire.events.app.wake(now, false),
+            self.wire.events.runs.wake(now, false),
+            self.wire.change_streams.wake(now),
+            self.wire.events.bell_wake(now),
             self.surface_wake(now),
-            self.queued.area.and_then(|_| self.queued.queue.next(clock)),
+            self.panels.queued.area.and_then(|_| self.panels.queued.queue.next(clock)),
         ]
         .into_iter()
         .flatten()
@@ -463,6 +389,17 @@ impl App {
     }
 
     pub(super) fn refresh_at(&mut self, now: Instant, clock: i64) {
+        self.refresh_sources(now, clock);
+        self.refresh_agents(now, clock);
+        self.refresh_panels(now);
+        if self.git.synced.is_some_and(|at| now.duration_since(at) < SYNC_EVERY) {
+            return;
+        }
+        self.git.synced = Some(now);
+        self.refresh_slowly(now);
+    }
+
+    fn refresh_sources(&mut self, now: Instant, clock: i64) {
         self.reap();
         self.watch_config(now);
         self.watch_setups(now);
@@ -473,6 +410,9 @@ impl App {
         {
             self.list_running(now);
         }
+    }
+
+    fn refresh_agents(&mut self, now: Instant, clock: i64) {
         self.drive_launches(now);
         self.latch_run_ends();
         self.watch_agents(now);
@@ -487,6 +427,9 @@ impl App {
         self.ring_bells(now);
         self.close_gone_flow_message();
         self.check_updates(now);
+    }
+
+    fn refresh_panels(&mut self, now: Instant) {
         self.refresh_files(now);
         self.refresh_run_files(now);
         self.flush_run_dirs();
@@ -494,10 +437,9 @@ impl App {
         self.refresh_changes(now);
         self.auto_scroll(now);
         self.auto_scroll_lines(now);
-        if self.synced.is_some_and(|at| now.duration_since(at) < SYNC_EVERY) {
-            return;
-        }
-        self.synced = Some(now);
+    }
+
+    fn refresh_slowly(&mut self, now: Instant) {
         self.watch_accounts();
         self.watch_accounts_page(now);
         self.sync_worktrees();
@@ -510,7 +452,7 @@ impl App {
     }
 
     pub(crate) fn shows(&self, pane: u64) -> bool {
-        self.nav.is_none() && !self.file_full_screen() && self.tab().is_some_and(|t| t.index_of(pane).is_some())
+        self.screen.nav.is_none() && !self.file_full_screen() && self.tab().is_some_and(|t| t.index_of(pane).is_some())
     }
 
     pub(crate) fn state(&self) -> State {
@@ -528,73 +470,74 @@ impl App {
             people: self.issues.people.clone(),
         });
         let groups = self.groups.iter().map(|g| g.entry.clone()).collect();
-        let changes = (self.side == Some(Side::Changes)
-            || self.changes.mode != changes::Mode::default()
-            || self.changes.scope != changes::Scope::default())
+        let changes = (self.screen.side == Some(Side::Changes)
+            || self.panels.changes.mode != changes::Mode::default()
+            || self.panels.changes.scope != changes::Scope::default())
         .then_some(ChangesState {
-            open: self.side == Some(Side::Changes),
-            mode: self.changes.mode,
-            scope: (self.changes.scope != changes::Scope::default()).then_some(self.changes.scope),
+            open: self.screen.side == Some(Side::Changes),
+            mode: self.panels.changes.mode,
+            scope: (self.panels.changes.scope != changes::Scope::default()).then_some(self.panels.changes.scope),
         });
         State {
             version: state::VERSION,
             groups,
             projects,
             active: self.active,
-            widths: Some(self.widths),
+            widths: Some(self.screen.widths),
             issues,
             changes,
-            todo: self.side == Some(Side::Todo),
-            files: self.side == Some(Side::Files),
-            flow: self.side == Some(Side::Flow),
+            todo: self.screen.side == Some(Side::Todo),
+            files: self.screen.side == Some(Side::Files),
+            flow: self.screen.side == Some(Side::Flow),
         }
     }
 
     pub(crate) fn restore(&mut self, saved: &State, area: Rect) -> bool {
-        self.widths = saved.widths.unwrap_or_default();
+        self.screen.widths = saved.widths.unwrap_or_default();
         if let Some(changes) = saved.changes {
-            self.changes.mode = changes.mode;
-            self.changes.scope = changes.scope.unwrap_or_default();
+            self.panels.changes.mode = changes.mode;
+            self.panels.changes.scope = changes.scope.unwrap_or_default();
         }
-        let side = if saved.files {
-            Some(Side::Files)
-        } else if saved.todo {
-            Some(Side::Todo)
-        } else if saved.changes.is_some_and(|changes| changes.open) {
-            Some(Side::Changes)
-        } else {
-            None
-        };
-        self.show_side(side);
-        if let Some(issues) = &saved.issues {
-            self.issues.tab = issues.tab.as_deref().and_then(IssueTab::from_id);
-            self.issues.closed = issues.closed;
-            self.issues.people = issues.people.clone();
-        }
+        self.show_side(saved_side(saved));
+        self.restore_issues(saved);
         let first_group = self.groups.len();
         for entry in &saved.groups {
             let icon = group::known_icon(entry.icon);
             let id = self.take_id();
             self.groups.push(Group { id, entry: group::GroupEntry { icon, ..entry.clone() } });
         }
-        let mut missed: Vec<(String, usize)> = Vec::new();
         let mut parents = session::Parents::default();
+        let missed = self.restore_projects(saved, first_group, area, &mut parents);
+        self.adopt_saved(parents);
+        self.sync_worktrees();
+        if saved.flow {
+            self.show_flow();
+        }
+        if !missed.is_empty() {
+            self.messages.toast = Some(Toast::new(not_restored(&missed), ui::ToastIcon::Bug));
+        }
+        missed.is_empty()
+    }
+
+    fn restore_issues(&mut self, saved: &State) {
+        if let Some(issues) = &saved.issues {
+            self.issues.tab = issues.tab.as_deref().and_then(IssueTab::from_id);
+            self.issues.closed = issues.closed;
+            self.issues.people = issues.people.clone();
+        }
+    }
+
+    fn restore_projects(
+        &mut self,
+        saved: &State,
+        first_group: usize,
+        area: Rect,
+        parents: &mut session::Parents,
+    ) -> Vec<(String, usize)> {
+        let mut missed = Vec::new();
         for (i, saved_project) in saved.projects.iter().enumerate() {
-            let path = saved_project.path.canonicalize().unwrap_or_else(|_| saved_project.path.clone());
-            if !path.is_dir() || self.projects.iter().any(|p| p.path == path) {
-                continue;
-            }
-            let id = self.take_id();
             let group = saved_project.group.and_then(|g| self.groups.get(first_group + g)).map(|g| g.id);
-            let mut workspaces = Vec::new();
-            let mut lost = 0;
-            for saved_ws in &saved_project.workspaces {
-                if let Some((workspace, missing)) = self.restore_workspace(saved_ws, area, &mut parents) {
-                    workspaces.push(workspace);
-                    lost += missing;
-                }
-            }
-            let project = saved_project.restore(id, path, group, workspaces);
+            let Some((project, lost)) = self.restore_project(saved_project, group, area, parents) else { continue };
             if lost > 0 {
                 missed.push((self.project_label(&project), lost));
             }
@@ -603,15 +546,30 @@ impl App {
             }
             self.projects.push(project);
         }
-        self.adopt_saved(parents);
-        self.sync_worktrees();
-        if saved.flow {
-            self.show_flow();
+        missed
+    }
+
+    fn restore_project(
+        &mut self,
+        saved_project: &ProjectState,
+        group: Option<u64>,
+        area: Rect,
+        parents: &mut session::Parents,
+    ) -> Option<(Project, usize)> {
+        let path = saved_project.path.canonicalize().unwrap_or_else(|_| saved_project.path.clone());
+        if !path.is_dir() || self.projects.iter().any(|p| p.path == path) {
+            return None;
         }
-        if !missed.is_empty() {
-            self.toast = Some(Toast::new(not_restored(&missed), ui::ToastIcon::Bug));
+        let id = self.take_id();
+        let mut workspaces = Vec::new();
+        let mut lost = 0;
+        for saved_ws in &saved_project.workspaces {
+            if let Some((workspace, missing)) = self.restore_workspace(saved_ws, area, parents) {
+                workspaces.push(workspace);
+                lost += missing;
+            }
         }
-        missed.is_empty()
+        Some((saved_project.restore(id, path, group, workspaces), lost))
     }
 
     pub(crate) fn handle_event(&mut self, ev: AppEvent, area: Rect) -> Result<()> {
@@ -626,7 +584,7 @@ impl App {
             AppEvent::Update(event) => self.update_answered(event),
             AppEvent::Search(event) => self.search_answered(event),
             AppEvent::Queue(event) => self.queue_prepared(*event),
-            AppEvent::Usage(key, result) => self.usage.answered(key, result, Instant::now()),
+            AppEvent::Usage(key, result) => self.usages.state.answered(key, result, Instant::now()),
             AppEvent::FlowModels(agent, models) => self.flow_models(agent, models),
             AppEvent::FlowFetched(source, result) => self.flow_fetched(&source, result),
             AppEvent::LastMessage { request, result } => self.message_read(request, result),
@@ -673,11 +631,11 @@ impl App {
     }
 
     pub(crate) fn set_todos(&mut self, todos: Todos) {
-        self.todos = todos;
+        self.panels.todos = todos;
     }
 
     pub(crate) fn todos_saved(&self) -> todo::Saved {
-        self.todos.saved()
+        self.panels.todos.saved()
     }
 
     pub(crate) fn take_host_writes(&mut self) -> Vec<Vec<u8>> {
@@ -702,8 +660,8 @@ impl App {
     }
 
     pub(crate) fn set_star(&mut self, path: PathBuf) {
-        self.star.saved = crate::star::load(&path);
-        self.star.path = Some(path);
+        self.messages.star.saved = crate::star::load(&path);
+        self.messages.star.path = Some(path);
     }
 
     pub(crate) fn stats(&self) -> &agents::stats::Stats {
@@ -711,111 +669,37 @@ impl App {
     }
 
     fn begin_draw(&mut self, area: Rect, now: Instant) {
-        self.star.window = Some(now);
+        self.messages.star.window = Some(now);
         self.star_seen();
         self.follow(area);
-        if !self.drawn.compact() {
-            self.nav = None;
+        if !self.screen.drawn.compact() {
+            self.screen.nav = None;
         }
     }
 
     pub(crate) fn draw(&mut self, f: &mut Frame, sight: &Sight, now: Instant) -> Option<Placed> {
-        self.begin_draw(f.area(), now);
-        let projects = self.project_entries();
-        let groups = self.groups.iter().map(|g| g.entry.clone()).collect();
-        let (has_project, workspaces, active_workspace, active_tab) = match self.project() {
-            Some(p) => (
-                true,
-                if self.drawn.tree {
-                    Vec::new()
-                } else {
-                    p.workspaces.iter().map(|w| self.workspace_entry(w)).collect()
-                },
-                p.active,
-                p.workspace().filter(|w| !w.tabs.is_empty()).map(|w| w.active),
-            ),
-            None => (false, Vec::new(), 0, None),
-        };
         let area = f.area();
+        self.begin_draw(area, now);
         let overlay = self.overlay.as_ref().and_then(|o| self.overlay_view(o, area));
         let modal = overlay.as_ref().is_some_and(ui::Overlay::is_modal);
         let (files, placed) = self.files_seen(sight, area, modal);
-        let dim_inactive = self.config.dim_inactive_panes;
-        let dragging = self.drag.as_ref().and_then(Drag::divider);
-        let pane_area = self.layout(area).shown(self.nav).pane;
-        let landing = self.pane_landing(pane_area);
-        let pointer = self.link_hover();
-        let root = self.project().and_then(Project::workspace).map(|w| w.path.clone());
-        let (home, bands) = (self.home.clone(), self.pane_bands());
-        let tab = self.tab_mut().and_then(|tab| {
-            let layout = tab.layout_by_index()?;
-            let screens: Vec<_> = tab.panes.iter_mut().map(|t| t.emulator.snapshot().unwrap_or_default()).collect();
-            let dragging = dragging.filter(|(id, _)| *id == tab.id).map(|(_, path)| path);
-            let link = pointer
-                .zip(root.as_deref())
-                .and_then(|(at, root)| Self::hovered_link(tab, &screens, pane_area, at, root, home.as_deref()));
-            let bands = tab.panes.iter().map(|t| bands.get(&t.id).cloned()).collect();
-            Some(ui::TabView { layout, screens, active: tab.active, dim_inactive, dragging, link, landing, bands })
-        });
-        self.toast = self.toast.take().filter(|t| t.at.elapsed() < t.lasts());
-        let visible = self.visible_tab();
-        let tabs = self.projects.tabs();
-        let attention = activity::attention(tabs.filter(|t| Some(t.id) != visible).map(Tab::status));
-        let elapsed = now.saturating_duration_since(self.booted);
-        let spin = self.config.spinner().then(|| if self.agent_working() { activity::spin_frame(elapsed) } else { 0 });
-        let moved = self.row_drag().filter(|d| d.moved).zip(self.hover);
-        let drag = moved.and_then(|(d, pos)| match d.target {
-            Grab::Row(target) => self.drag_view(target, pos, area),
-            Grab::Todo(id) => Some(ui::Drag::Todo(id)),
-            Grab::Agent(_) => None,
-        });
-        let tree = self.drawn.tree.then(|| self.tree_view());
-        let agents = self.config.agents_section.then(|| self.agents_view());
-        let view = ui::View {
-            tree,
-            agents,
-            counts: self.config.counts,
-            icons: self.config.icon_bar,
-            groups,
-            projects,
-            active: self.active,
-            projects_scroll: self.scroll.projects,
-            has_project,
-            workspaces,
-            active_workspace,
-            active_tab,
-            workspaces_scroll: self.scroll.workspaces,
-            issues: self.issues_available(),
-            hover: self.hover.filter(|_| self.drag.as_ref().is_none_or(Drag::shows_hover)),
-            widths: self.widths,
-            sidebar: self.sidebar(),
-            resizing: self.drag.as_ref().and_then(Drag::border),
-            light: self.theme.is_light() == Some(true),
-            muted: ui::muted(&self.theme),
-            soft: ui::soft(&self.theme),
-            tab,
-            overlay,
-            toast: self.toast.as_ref().map(Toast::view),
-            star: self.star.card,
-            nav: self.nav,
-            update: self.update_label(),
-            remote: self.remote_button(),
-            accounts: self.account_pills(),
-            changes: if self.changes_shown() { self.panel_view() } else { None },
-            changes_button: self.changes_button_view(),
-            todo: (self.side == Some(Side::Todo)).then(|| self.todo_view(self.layout(area).shown(self.nav).changes)),
-            flow: (self.side == Some(Side::Flow)).then(|| self.flow_view(now, spin)).flatten(),
-            flow_run: self.has_run(),
-            todo_dot: self.config.todo_dot,
-            todo_pending: self.todos.pending() > 0,
-            files,
-            attention,
-            spin,
-            drag,
-            tab_bar: (!self.drawn.tab_bar.is_empty()).then(|| self.tab_bar_view()),
-        };
+        let tab = self.tab_view(area);
+        self.messages.toast = self.messages.toast.take().filter(|t| t.at.elapsed() < t.lasts());
+        let view = ui::View { tab, overlay, files, ..self.lists_view(area, now) };
         ui::draw(f, &view);
         placed.map(|placed| images::owned(f.buffer_mut(), placed))
+    }
+}
+
+fn saved_side(saved: &State) -> Option<Side> {
+    if saved.files {
+        Some(Side::Files)
+    } else if saved.todo {
+        Some(Side::Todo)
+    } else if saved.changes.is_some_and(|changes| changes.open) {
+        Some(Side::Changes)
+    } else {
+        None
     }
 }
 

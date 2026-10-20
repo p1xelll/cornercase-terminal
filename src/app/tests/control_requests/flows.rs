@@ -414,7 +414,7 @@ fn yours_replaces_a_built_in_of_its_name_and_a_projects_comes_after_the_built_in
     let mut team = Team::new();
     let mut quick = pair();
     quick.name = "Quick".into();
-    store::save(&paths::flows(&team.app.config_path), &quick, None).expect("save your Quick");
+    store::save(&paths::flows(&team.app.paths.config_path), &quick, None).expect("save your Quick");
     let mut theirs = pair();
     theirs.name = "Full issue".into();
     store::save(&store::project_dir(team.repo.path()), &theirs, None).expect("save the project's flow");
@@ -554,7 +554,7 @@ fn a_run_never_opens_in_a_workspace_or_project_that_is_going(
         name: None,
     };
 
-    let refused = team.app.open_run(0, 0, starting, AREA, false).expect_err("refused");
+    let refused = team.app.open_run((0, 0), starting, AREA, false).expect_err("refused");
 
     assert!(refused.contains(said), "{refused}");
     assert_eq!((team.app.projects[0].workspaces[0].tabs.len(), team.app.runs.len()), (1, 0));
@@ -601,11 +601,7 @@ fn the_run_ends_with_its_workspace() {
     refreshing(&mut team.app, &team.rx, "the run goes with its workspace", |a| a.runs.is_empty());
 }
 
-#[test]
-fn a_run_is_saved_and_comes_back_with_its_roles_resumed_and_the_orchestrator_told_its_new_panes() {
-    let mut team = Team::new();
-    team.started();
-    team.until_got(3);
+fn saved_run_with_conversations(team: &Team) -> State {
     let mut saved = team.app.state();
     let workspace = saved.projects[0].workspaces.iter_mut().find(|w| w.run.is_some()).expect("the run is saved");
     let state = workspace.run.as_ref().expect("the run");
@@ -616,6 +612,15 @@ fn a_run_is_saved_and_comes_back_with_its_roles_resumed_and_the_orchestrator_tol
         tab.panes[0].agent =
             Some(AgentState { kind: "claude".into(), conversation: format!("c{i}"), mode: None, account: None });
     }
+    saved
+}
+
+#[test]
+fn a_run_is_saved_and_comes_back_with_its_roles_resumed_and_the_orchestrator_told_its_new_panes() {
+    let mut team = Team::new();
+    team.started();
+    team.until_got(3);
+    let saved = saved_run_with_conversations(&team);
     std::fs::write(team.log.path().join("order"), "").expect("empty the log");
     let (mut again, rx) = new_app(team.config.path().join("config.json"));
 

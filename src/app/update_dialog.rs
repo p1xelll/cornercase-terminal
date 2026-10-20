@@ -127,7 +127,7 @@ impl App {
         {
             log::info!("update", "release found", version = release.version);
             if self.update.updates.available.as_ref().is_none_or(|known| known.version != release.version) {
-                self.toast = Some(Toast::new(UPDATE_AVAILABLE, ui::ToastIcon::Check));
+                self.messages.toast = Some(Toast::new(UPDATE_AVAILABLE, ui::ToastIcon::Check));
             }
             self.update.updates.available = Some(release);
         }
@@ -286,17 +286,7 @@ impl App {
                 .map(|(version, text)| Notes { version: version.clone(), text: text.clone() })
                 .collect(),
         });
-        let none = release.is_none().then(|| {
-            if !updates.enabled {
-                NoUpdate::Disabled
-            } else if updates.answered.is_some() {
-                if updates.error.is_some() { NoUpdate::Failed } else { NoUpdate::UpToDate }
-            } else if !self.config.check_updates {
-                NoUpdate::Off
-            } else {
-                NoUpdate::Unchecked
-            }
-        });
+        let none = release.is_none().then(|| self.no_update());
         let install = match updates.install.on(update::target()) {
             Install::Replace(path) => InstallInfo::Replace { path },
             Install::Command(command) => InstallInfo::Command { command: command.into() },
@@ -314,6 +304,19 @@ impl App {
         }
     }
 
+    fn no_update(&self) -> NoUpdate {
+        let updates = &self.update.updates;
+        if !updates.enabled {
+            NoUpdate::Disabled
+        } else if updates.answered.is_some() {
+            if updates.error.is_some() { NoUpdate::Failed } else { NoUpdate::UpToDate }
+        } else if !self.config.check_updates {
+            NoUpdate::Off
+        } else {
+            NoUpdate::Unchecked
+        }
+    }
+
     pub(super) fn update_view(&self, step: &UpdateStep, area: Rect) -> ui::Overlay {
         let version = self.update.updates.available.as_ref().map_or("", |r| r.version.as_str());
         let current = version::CURRENT;
@@ -324,7 +327,7 @@ impl App {
             }
             UpdateStep::Ask | UpdateStep::Updating | UpdateStep::Failed(_) => {
                 let exe = match &self.update.updates.install {
-                    Install::Replace(exe) => crate::text::display_path(exe, self.home.as_deref()),
+                    Install::Replace(exe) => crate::text::display_path(exe, self.paths.home.as_deref()),
                     Install::Command(_) => String::new(),
                 };
                 format!(

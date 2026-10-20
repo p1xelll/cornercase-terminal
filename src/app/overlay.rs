@@ -182,12 +182,15 @@ impl Overlay {
     }
 
     pub(super) fn busy(&self) -> bool {
-        matches!(self, Self::Queue(form) if form.busy)
-            || matches!(self, Self::NewWorkspace { creating: true, .. })
-            || matches!(self, Self::Issues(b) if b.starting)
-            || matches!(self, Self::Settings(s) if s.busy())
-            || matches!(self, Self::Update(UpdateStep::Updating))
-            || matches!(self, Self::StartFlow { start, .. } if start.waiting)
+        match self {
+            Self::Queue(form) => form.busy,
+            Self::NewWorkspace { creating, .. } => *creating,
+            Self::Issues(b) => b.starting,
+            Self::Settings(s) => s.busy(),
+            Self::Update(step) => matches!(step, UpdateStep::Updating),
+            Self::StartFlow { start, .. } => start.waiting,
+            _ => false,
+        }
     }
 }
 
@@ -234,14 +237,12 @@ impl App {
     }
 
     pub(super) fn overlay_view(&self, overlay: &Overlay, area: Rect) -> Option<ui::Overlay> {
-        let home = self.home.as_deref();
+        let home = self.paths.home.as_deref();
         Some(match overlay {
             Overlay::Menu { at, actions } => self.menu_view(*at, actions),
             Overlay::GroupStyle { group } => self.group_style_view(*group)?,
             Overlay::NewGroup { input } => Self::new_group_view(input),
-            Overlay::NewWorkspace { project, input, worktree, error, creating } => {
-                self.new_workspace_view(*project, input, *worktree, error.as_deref(), *creating)
-            }
+            Overlay::NewWorkspace { .. } => self.new_workspace_view(overlay)?,
             Overlay::Settings(s) => ui::Overlay::Settings(settings_view(s)),
             Overlay::RemoveAccount { kind, name } => Self::remove_account_view(*kind, name),
             Overlay::Flows { dialog, .. } => flows_view(dialog, area),
@@ -249,7 +250,7 @@ impl App {
             Overlay::ProjectSettings(form) => super::project_settings_dialog::project_settings_overlay(form),
             Overlay::Rename { target, input } => Self::rename_view(*target, input),
             Overlay::RemoveWorkspace { project, workspace, check, lock } => {
-                self.remove_view(*project, *workspace, *check, lock.as_ref(), overlay.submit_label())
+                self.remove_view((*project, *workspace), *check, lock.as_ref(), overlay.submit_label())
             }
             Overlay::DeleteGroup { group } => self.delete_group_view(*group)?,
             Overlay::CloseProject { project } => self.close_project_view(*project)?,

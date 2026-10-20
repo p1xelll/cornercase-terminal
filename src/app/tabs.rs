@@ -15,29 +15,38 @@ use crate::project::{Hierarchy, Project, Tab, Workspace};
 use crate::protocol;
 use crate::term::{SpawnOptions, Term};
 
+pub(super) struct Spawning<'a> {
+    pub(super) id: u64,
+    pub(super) size: (u16, u16),
+    pub(super) shell: &'a str,
+    pub(super) args: &'a [String],
+    pub(super) cwd: PathBuf,
+    pub(super) run: Option<&'a Path>,
+}
+
 impl App {
     pub(crate) fn set_pane_socket(&mut self, socket: &Path) {
-        self.pane_socket = socket.to_str().map(str::to_owned);
+        self.spawn.pane_socket = socket.to_str().map(str::to_owned);
     }
 
     pub(crate) fn set_accounts_dir(&mut self, dir: &Path) {
-        self.accounts_dir = std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf());
+        self.paths.accounts_dir = std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf());
     }
 
     #[cfg(test)]
     pub(crate) fn set_default_homes(&mut self, dir: &Path) {
-        self.default_homes = Some(dir.to_path_buf());
+        self.paths.default_homes = Some(dir.to_path_buf());
     }
 
     pub(super) fn default_home(&self, kind: Known) -> Option<PathBuf> {
-        match &self.default_homes {
+        match &self.paths.default_homes {
             Some(root) => kind.account().map(|_| root.join(kind.name())),
             None => accounts::default_home(kind),
         }
     }
 
     pub(super) fn active_accounts(&self) -> Accounts {
-        Accounts::of(&self.accounts_dir, self.config.selected_accounts())
+        Accounts::of(&self.paths.accounts_dir, self.config.selected_accounts())
     }
 
     pub(super) fn pane_env(&self, id: u64, run: Option<&Path>, accounts: &Accounts) -> Vec<(String, String)> {
@@ -49,7 +58,7 @@ impl App {
         if let Some(dir) = run.and_then(Path::to_str) {
             env.push((folder::ENV.to_string(), dir.to_string()));
         }
-        if let Some(socket) = &self.pane_socket {
+        if let Some(socket) = &self.spawn.pane_socket {
             env.push((paths::SOCKET_ENV.to_string(), socket.clone()));
         }
         env.extend(accounts.env());
@@ -68,15 +77,20 @@ impl App {
         run: Option<&Path>,
         accounts: Accounts,
     ) -> Result<Term> {
-        let (rows, cols) = self.pane_size(area);
+        let size = self.pane_size(area);
         let id = self.take_id();
+        self.spawn_term(Spawning { id, size, shell: &self.shell, args: &[], cwd, run }, accounts)
+    }
+
+    pub(super) fn spawn_term(&self, spawning: Spawning, accounts: Accounts) -> Result<Term> {
+        let Spawning { id, size: (rows, cols), shell, args, cwd, run } = spawning;
         accounts.link(|kind| self.default_home(kind));
         let env = self.pane_env(id, run, &accounts);
         let removed = accounts.removed();
         let opts = SpawnOptions {
             id,
-            shell: &self.shell,
-            args: &[],
+            shell,
+            args,
             env: &env,
             remove: &removed,
             rows,
@@ -130,7 +144,7 @@ impl App {
         let source = tab.pane_by(pane);
         let cwd = source.and_then(Term::cwd).filter(|dir| dir.is_dir()).unwrap_or_else(|| path.to_path_buf());
         let accounts =
-            source.map(|term| Accounts::of(&self.accounts_dir, &term.accounts().chosen())).unwrap_or_default();
+            source.map(|term| Accounts::of(&self.paths.accounts_dir, &term.accounts().chosen())).unwrap_or_default();
         let term = self.spawn_in(area, cwd, None, accounts)?;
         let id = term.id;
         if let Some((_, tab)) = self.projects.tab_with_pane_mut(pane) {
@@ -164,24 +178,28 @@ impl App {
 
     pub(super) fn push_tab(&mut self, p: usize, w: usize, area: Rect, name: Option<String>) -> Result<usize> {
         let accounts = self.active_accounts();
-        self.push_tab_in(p, w, area, name, accounts)
+        self.push_tab_in((p, w), area, name, accounts)
     }
 
     pub(super) fn push_tab_in(
         &mut self,
-        p: usize,
-        w: usize,
+        place: (usize, usize),
         area: Rect,
         name: Option<String>,
         accounts: Accounts,
     ) -> Result<usize> {
+        let (p, w) = place;
         self.projects[p].workspaces[w].stop_blaming_setup();
         let path = self.projects[p].workspaces[w].path.clone();
         let term = self.spawn_in(area, path, None, accounts)?;
+        Ok(self.insert_tab(place, name, term))
+    }
+
+    pub(super) fn insert_tab(&mut self, (p, w): (usize, usize), name: Option<String>, term: Term) -> usize {
         let tab = Tab::new(self.take_id(), name, term);
         let workspace = &mut self.projects[p].workspaces[w];
         workspace.tabs.push(tab);
-        Ok(workspace.tabs.len() - 1)
+        workspace.tabs.len() - 1
     }
 
     pub(super) fn ensure_workspace(&mut self, p: usize) -> usize {

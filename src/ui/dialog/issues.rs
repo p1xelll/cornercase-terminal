@@ -87,15 +87,22 @@ pub(crate) fn issue_button_hit(area: Rect, buttons: &[&str], pos: Position) -> O
     issue_buttons(issues_area(area), buttons).iter().position(|r| r.contains(pos))
 }
 
-pub(crate) fn issues_hit(
-    area: Rect,
-    tabs: &[&str],
-    toggles: &[&str],
-    buttons: &[&str],
-    items: usize,
-    scroll: usize,
-    pos: Position,
-) -> Option<IssuesHit> {
+#[derive(Clone, Copy)]
+pub(crate) struct Labels<'a> {
+    pub(crate) tabs: &'a [&'a str],
+    pub(crate) toggles: &'a [&'a str],
+    pub(crate) buttons: &'a [&'a str],
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct Shown {
+    pub(crate) items: usize,
+    pub(crate) scroll: usize,
+}
+
+pub(crate) fn issues_hit(area: Rect, labels: Labels, shown: Shown, pos: Position) -> Option<IssuesHit> {
+    let Labels { tabs, toggles, buttons } = labels;
+    let Shown { items, scroll } = shown;
     let issues = issues_area(area);
     if let Some(i) = issue_tabs(issues, tabs).iter().position(|r| r.contains(pos)) {
         return Some(IssuesHit::Tab(i));
@@ -160,25 +167,11 @@ pub(in crate::ui) fn draw_issues(f: &mut Frame, view: &View, issues: &Issues) {
             if items.is_empty() {
                 f.render_widget(Paragraph::new(Span::styled(format!(" {empty}"), dim)), list);
             }
-            draw_issue_rows(f, view, list, items, *selected, *scroll);
+            draw_issue_rows(f, view, list, RowsShown { items, selected: *selected, scroll: *scroll });
             cursor
         }
         IssuesBody::Name { heading, fields, focus, help } => {
-            let [tabs, _, list, _, _] = issues_rows(r);
-            let heading = truncate_right(heading, usize::from(tabs.width));
-            f.render_widget(Paragraph::new(Span::styled(heading, Style::default().add_modifier(Modifier::BOLD))), tabs);
-            let rects = issue_name_fields(r);
-            let mut cursor = None;
-            for (i, (rect, (label, value))) in rects.iter().zip(fields).enumerate() {
-                let at = draw_input(f, view.muted, *rect, label, value);
-                if i == *focus {
-                    cursor = at;
-                }
-            }
-            let text: Vec<Line> = help.iter().map(|h| Line::from(Span::styled(h.as_str(), dim))).collect();
-            let below = Rect::new(list.x, list.y.saturating_add(2), list.width, list.height.saturating_sub(2));
-            f.render_widget(Paragraph::new(text).wrap(Wrap { trim: false }), below.inner(Margin::new(1, 0)));
-            cursor
+            draw_issue_name(f, view, r, (heading, fields, *focus), help)
         }
         IssuesBody::Token { label, input: typed, help } => {
             draw_issue_tabs(f, view, issues, r);
@@ -189,6 +182,38 @@ pub(in crate::ui) fn draw_issues(f: &mut Frame, view: &View, issues: &Issues) {
         }
     };
 
+    draw_issue_note(f, dim, issues, note);
+    draw_issue_buttons(f, view, issues, r);
+    if let Some(pos) = cursor.filter(|_| !matches!(issues.note, Some(Note::Busy(_)))) {
+        f.set_cursor_position(pos);
+    }
+}
+
+fn draw_issue_name(
+    f: &mut Frame,
+    view: &View,
+    r: Rect,
+    (heading, fields, focus): (&str, &[(&'static str, String); 2], usize),
+    help: &[String],
+) -> Option<Position> {
+    let [tabs, _, list, _, _] = issues_rows(r);
+    let dim = Style::default().fg(view.muted);
+    let heading = truncate_right(heading, usize::from(tabs.width));
+    f.render_widget(Paragraph::new(Span::styled(heading, Style::default().add_modifier(Modifier::BOLD))), tabs);
+    let mut cursor = None;
+    for (i, (rect, (label, value))) in issue_name_fields(r).iter().zip(fields).enumerate() {
+        let at = draw_input(f, view.muted, *rect, label, value);
+        if i == focus {
+            cursor = at;
+        }
+    }
+    let text: Vec<Line> = help.iter().map(|h| Line::from(Span::styled(h.as_str(), dim))).collect();
+    let below = Rect::new(list.x, list.y.saturating_add(2), list.width, list.height.saturating_sub(2));
+    f.render_widget(Paragraph::new(text).wrap(Wrap { trim: false }), below.inner(Margin::new(1, 0)));
+    cursor
+}
+
+fn draw_issue_note(f: &mut Frame, dim: Style, issues: &Issues, note: Rect) {
     let (text, style) = match &issues.note {
         Some(Note::Error(text)) => (text.as_str(), Style::default().fg(Color::Red)),
         Some(Note::Busy(text)) => (*text, dim),
@@ -196,15 +221,13 @@ pub(in crate::ui) fn draw_issues(f: &mut Frame, view: &View, issues: &Issues) {
         None => (issues.hint.as_str(), dim),
     };
     f.render_widget(Paragraph::new(Span::styled(truncate_right(text, usize::from(note.width)), style)), note);
+}
 
+fn draw_issue_buttons(f: &mut Frame, view: &View, issues: &Issues, r: Rect) {
     let rects = issue_buttons(r, &issues.buttons);
     for (i, (rect, label)) in rects.iter().zip(&issues.buttons).enumerate() {
         let style = dialog_button_style(view, *rect, i == 0);
         f.render_widget(Paragraph::new(Span::styled(format!(" {label} "), style)), *rect);
-    }
-
-    if let Some(pos) = cursor.filter(|_| !matches!(issues.note, Some(Note::Busy(_)))) {
-        f.set_cursor_position(pos);
     }
 }
 
@@ -218,7 +241,15 @@ fn draw_issue_tabs(f: &mut Frame, view: &View, issues: &Issues, r: Rect) {
     }
 }
 
-fn draw_issue_rows(f: &mut Frame, view: &View, list: Rect, items: &[IssueRow], selected: Option<usize>, scroll: usize) {
+#[derive(Clone, Copy)]
+struct RowsShown<'a> {
+    items: &'a [IssueRow],
+    selected: Option<usize>,
+    scroll: usize,
+}
+
+fn draw_issue_rows(f: &mut Frame, view: &View, list: Rect, shown: RowsShown) {
+    let RowsShown { items, selected, scroll } = shown;
     let key_width = items.iter().map(|i| i.key.chars().count()).max().unwrap_or(0);
     for (i, item) in items.iter().enumerate() {
         let row = list_item(list, items.len(), scroll, i);

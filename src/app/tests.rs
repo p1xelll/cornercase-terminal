@@ -54,6 +54,7 @@ use crate::issues::browser::{Browser, Screen};
 use crate::issues::{self, Secret};
 use crate::paths;
 use crate::process;
+use crate::project::Tab;
 use crate::project::picker::Picker;
 use crate::project::search::Finder;
 use crate::project::search::{Goto, Kind};
@@ -154,7 +155,7 @@ fn new_app(config_path: PathBuf) -> (App, Receiver<AppEvent>) {
     let mut app = App::new("/bin/sh".into(), HostTheme::default(), config_path, tx);
     app.config.sidebar = config::Sidebar::SideBySide.id().into();
     app.config.sound = false;
-    app.typing_holds = Duration::ZERO;
+    app.wire.typing_holds = Duration::ZERO;
     app.set_default_homes(&std::env::temp_dir().join("cornercase-test-no-default-homes"));
     if app.config.gh == config::DEFAULT_GH {
         app.config.gh = "/nonexistent/gh".into();
@@ -228,7 +229,7 @@ fn overlay_shown(app: &App, area: Rect) -> ui::Overlay {
 }
 
 fn toast(app: &App) -> Option<&str> {
-    app.toast.as_ref().map(|t| t.message.as_str())
+    app.messages.toast.as_ref().map(|t| t.message.as_str())
 }
 
 fn screen(app: &mut App) -> String {
@@ -457,6 +458,7 @@ mod agent_status;
 mod click_outside;
 mod compact;
 mod context_menu;
+mod dispatch;
 mod groups;
 mod icon_bar;
 mod keys;

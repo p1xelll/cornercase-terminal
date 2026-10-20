@@ -17,7 +17,7 @@ use crate::ui::{self, SidebarRow, WorkspaceRow};
 
 impl App {
     pub(in crate::app) fn grab(&mut self, target: Target, row: Rect, area: Rect, fold: bool) {
-        self.drag =
+        self.screen.drag =
             Some(Drag::Row(RowDrag { target: Grab::Row(target), row, moved: false, area, scrolled: None, fold }));
     }
 
@@ -25,11 +25,12 @@ impl App {
         let pos = Position::new(ev.column, ev.row);
         match ev.kind {
             MouseEventKind::Drag(MouseButton::Left) => {
-                self.drag = Some(Drag::Row(RowDrag { moved: drag.moved || !drag.row.contains(pos), area, ..drag }));
+                self.screen.drag =
+                    Some(Drag::Row(RowDrag { moved: drag.moved || !drag.row.contains(pos), area, ..drag }));
                 self.auto_scroll(Instant::now());
             }
             MouseEventKind::Up(MouseButton::Left) => {
-                self.drag = None;
+                self.screen.drag = None;
                 let dropped = drag.moved || !drag.row.contains(pos);
                 match drag.target {
                     Grab::Row(target) if dropped => self.drop_row(target, pos, area),
@@ -49,9 +50,9 @@ impl App {
                         Grab::Todo(_) => self.scroll_todo(areas.changes, delta),
                     }
                 }
-                self.drag = Some(Drag::Row(RowDrag { moved: true, area, ..drag }));
+                self.screen.drag = Some(Drag::Row(RowDrag { moved: true, area, ..drag }));
             }
-            _ => self.drag = None,
+            _ => self.screen.drag = None,
         }
     }
 
@@ -65,7 +66,7 @@ impl App {
             Target::Project(id) => {
                 if let Some(p) = self.projects.project_index(id) {
                     self.active = p;
-                    self.nav = self.nav.map(|_| ui::Nav::Workspaces);
+                    self.screen.nav = self.screen.nav.map(|_| ui::Nav::Workspaces);
                     self.unfold_focus();
                 }
             }
@@ -79,7 +80,7 @@ impl App {
     }
 
     pub(in crate::app) fn drag_view(&self, target: Target, pos: Position, area: Rect) -> Option<ui::Drag> {
-        let areas = self.layout(area).shown(self.nav);
+        let areas = self.layout(area).shown(self.screen.nav);
         let row = self.tree_row_of(target)?;
         if let ui::TreeRow::Tab(p, w, t) = row
             && !areas.tab_bar.is_empty()
@@ -93,11 +94,13 @@ impl App {
         }
         let sidebar = |row: SidebarRow| {
             let rows = self.sidebar_rows();
-            ui::Drag::Sidebar(row, ui::sidebar_drop(areas.list, areas.pitch, &rows, self.scroll.projects, row, pos))
+            let layout = ui::project_rows(areas.list, areas.pitch, &rows, self.scroll.projects);
+            ui::Drag::Sidebar(row, ui::sidebar_drop(&layout, &rows, row, pos))
         };
         let workspaces = |row: WorkspaceRow| {
             let (list, tabs) = (areas.workspaces_list, self.tab_lines());
-            ui::Drag::Workspaces(row, ui::workspace_drop(list, areas.pitch, &tabs, self.scroll.workspaces, row, pos))
+            let layout = ui::workspace_layout(list, areas.pitch, &tabs, self.scroll.workspaces);
+            ui::Drag::Workspaces(row, ui::workspace_drop(&layout, &tabs, row, pos))
         };
         match row {
             ui::TreeRow::Group(g) => Some(sidebar(SidebarRow::Group(g))),
@@ -135,16 +138,16 @@ impl App {
 
     pub(in crate::app) fn auto_scroll(&mut self, now: Instant) {
         let Some(drag) = self.row_drag().filter(|d| d.moved) else { return };
-        let Some(pos) = self.hover else { return };
+        let Some(pos) = self.screen.hover else { return };
         if drag.scrolled.is_some_and(|at| now.duration_since(at) < AUTO_SCROLL_EVERY) {
             return;
         }
-        let areas = self.layout(drag.area).shown(self.nav);
+        let areas = self.layout(drag.area).shown(self.screen.nav);
         let target = match drag.target {
             Grab::Row(target) => target,
             Grab::Todo(_) => {
                 if self.auto_scroll_todo(areas.changes, pos) {
-                    self.drag = Some(Drag::Row(RowDrag { scrolled: Some(now), ..drag }));
+                    self.screen.drag = Some(Drag::Row(RowDrag { scrolled: Some(now), ..drag }));
                 }
                 return;
             }
@@ -153,7 +156,7 @@ impl App {
         if matches!(target, Target::Tab(..)) && !areas.tab_bar.is_empty() {
             if let Some(delta) = self.tab_strip(&areas).edge(pos) {
                 self.scroll.tab_bar = self.tab_strip(&areas).scrolled(delta);
-                self.drag = Some(Drag::Row(RowDrag { scrolled: Some(now), ..drag }));
+                self.screen.drag = Some(Drag::Row(RowDrag { scrolled: Some(now), ..drag }));
             }
             return;
         }
@@ -166,6 +169,6 @@ impl App {
         let Some(delta) = rows.edge(pos) else { return };
         let scroll = if sidebar { &mut self.scroll.projects } else { &mut self.scroll.workspaces };
         *scroll = rows.scrolled(delta);
-        self.drag = Some(Drag::Row(RowDrag { scrolled: Some(now), ..drag }));
+        self.screen.drag = Some(Drag::Row(RowDrag { scrolled: Some(now), ..drag }));
     }
 }
