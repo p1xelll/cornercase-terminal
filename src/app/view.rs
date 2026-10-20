@@ -127,7 +127,7 @@ impl App {
         let landing = self.pane_landing(pane_area);
         let pointer = self.link_hover();
         let root = self.project().and_then(Project::workspace).map(|w| w.path.clone());
-        let (home, bands) = (self.paths.home.clone(), self.pane_bands());
+        let (home, bands) = (self.home.clone(), self.pane_bands());
         let dim_inactive = self.config.dim_inactive_panes;
         self.tab_mut().and_then(|tab| {
             let layout = tab.layout_by_index()?;
@@ -205,7 +205,7 @@ impl App {
     }
 
     fn spin(&self, now: Instant) -> Option<u8> {
-        let elapsed = now.saturating_duration_since(self.booted);
+        let elapsed = now.saturating_duration_since(self.clock.booted);
         self.config.spinner().then(|| if self.agent_working() { activity::spin_frame(elapsed) } else { 0 })
     }
 

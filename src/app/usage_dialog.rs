@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::time::{Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::{Position, Rect};
@@ -17,6 +17,18 @@ use crate::host::clipboard;
 use crate::log::{Job, Level};
 use crate::time;
 use crate::ui;
+
+pub(super) struct Usages {
+    pub(super) state: usage::State,
+    pub(super) page: usage::Page,
+    pub(super) timeout: Duration,
+}
+
+impl Default for Usages {
+    fn default() -> Self {
+        Self { state: usage::State::default(), page: usage::Page::default(), timeout: usage::TIMEOUT }
+    }
+}
 
 impl App {
     pub(super) fn open_usage(&mut self) {
@@ -40,13 +52,13 @@ impl App {
     }
 
     pub(super) fn usage_probes(&self) -> Vec<(agents::Known, Option<Account>)> {
-        let listed = accounts::list(&self.paths.accounts_dir);
+        let listed = accounts::list(&self.accounts.dir);
         let mut probes = Vec::new();
         for agent in self.usage_agents() {
             probes.push((agent, None));
             let names = listed.iter().find(|(kind, _)| *kind == agent).map(|(_, names)| names.as_slice());
             for name in names.unwrap_or_default() {
-                let home = accounts::path(&self.paths.accounts_dir, agent, name);
+                let home = accounts::path(&self.accounts.dir, agent, name);
                 let home = home.canonicalize().unwrap_or(home);
                 probes.push((agent, Some(Account { kind: agent, name: name.clone(), home })));
             }

@@ -18,6 +18,17 @@ use crate::project::{Hierarchy, Project};
 use crate::term::Term;
 use crate::ui;
 
+pub(super) struct Setups {
+    pub(super) running: HashMap<u64, (u64, PathBuf)>,
+    pub(super) dir: PathBuf,
+}
+
+impl Setups {
+    pub(super) fn new(config_path: &Path) -> Self {
+        Self { running: HashMap::new(), dir: config_path.parent().map(Path::to_path_buf).unwrap_or_default() }
+    }
+}
+
 pub(super) struct SetupRun<'a> {
     pub(super) project: usize,
     pub(super) workspace: u64,
@@ -28,12 +39,12 @@ pub(super) struct SetupRun<'a> {
 
 impl App {
     pub(crate) fn set_setup_dir(&mut self, dir: &Path) {
-        self.paths.setup_dir = std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf());
-        setup::sweep(&self.paths.setup_dir);
+        self.setups.dir = std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf());
+        setup::sweep(&self.setups.dir);
     }
 
     pub(super) fn setup_script(&self, p: usize) -> Option<String> {
-        let text = self.config.project(&self.projects[p].path, self.paths.home.as_deref()).setup;
+        let text = self.config.project(&self.projects[p].path, self.home.as_deref()).setup;
         (!text.trim().is_empty()).then_some(text)
     }
 
@@ -45,7 +56,7 @@ impl App {
     }
 
     pub(super) fn teardown_script(&self, p: usize) -> Option<String> {
-        let text = self.config.project(&self.projects[p].path, self.paths.home.as_deref()).teardown;
+        let text = self.config.project(&self.projects[p].path, self.home.as_deref()).teardown;
         (!text.trim().is_empty()).then_some(text)
     }
 
@@ -53,16 +64,16 @@ impl App {
         let SetupRun { project, workspace, path, script, run } = setup;
         let size = self.pane_size(area);
         let id = self.take_id();
-        if let Err(e) = std::fs::create_dir_all(&self.paths.setup_dir) {
+        if let Err(e) = std::fs::create_dir_all(&self.setups.dir) {
             log::warning!("worktree", "cannot make the setup folder", error = e);
         }
-        let status = setup::status_file(&self.paths.setup_dir, id);
+        let status = setup::status_file(&self.setups.dir, id);
         let _ = std::fs::remove_file(&status);
         let branch = git::branch(&path).unwrap_or_default();
-        let args = setup::args(script, &status, &self.shell, &self.projects[project].path, &branch);
+        let args = setup::args(script, &status, &self.shells.shell, &self.projects[project].path, &branch);
         let spawning = Spawning { id, size, shell: "/bin/sh", args: &args, cwd: path, run };
         let mut term = self.spawn_term(spawning, accounts)?;
-        self.spawn.setups.insert(id, (workspace, status.clone()));
+        self.setups.running.insert(id, (workspace, status.clone()));
         term.setup = Some(setup::Pane::Running { status, since: Instant::now() });
         log::info!("worktree", "setup started", pane = id, bytes = script.len());
         Ok(term)
@@ -140,8 +151,8 @@ impl App {
         let seen = self.seen_tabs();
         let (running, ended) = scan_setups(&mut self.projects, &seen);
         let vanished: Vec<_> = self
-            .spawn
             .setups
+            .running
             .iter()
             .filter(|(pane, _)| !running.contains_key(pane))
             .map(|(pane, (workspace, status))| (*pane, *workspace, status.clone()))
@@ -149,7 +160,7 @@ impl App {
         for (pane, workspace, status) in vanished {
             self.setup_vanished(pane, workspace, &status);
         }
-        self.spawn.setups = running;
+        self.setups.running = running;
         for (pane, code) in ended {
             self.setup_finished(pane, code, now);
         }
@@ -173,10 +184,10 @@ impl App {
         let dropped: Vec<_> = self.agents.launches.iter().filter(|l| panes.contains(&l.term)).map(|l| l.key).collect();
         self.agents.launches.retain(|l| !panes.contains(&l.term));
         for key in dropped.iter().flatten() {
-            self.wire.requests.launched(*key, false);
+            self.clients.requests.launched(*key, false);
         }
-        let ended = self.runs.iter().filter(|r| r.workspace == workspace).count();
-        self.runs.retain(|r| r.workspace != workspace);
+        let ended = self.runs.list.iter().filter(|r| r.workspace == workspace).count();
+        self.runs.list.retain(|r| r.workspace != workspace);
         if ended > 0 {
             log::info!("flow", "run ended", workspace = workspace, reason = reason);
         }
@@ -198,7 +209,7 @@ impl App {
         let Some(setup::Pane::Running { status, since }) = term.setup.take() else { return };
         term.became_shell();
         let _ = std::fs::remove_file(&status);
-        self.spawn.setups.remove(&pane);
+        self.setups.running.remove(&pane);
         let ms = u64::try_from(now.saturating_duration_since(since).as_millis()).unwrap_or(u64::MAX);
         if code == 0 {
             self.setup_succeeded(pane, (project, workspace), ms, now);

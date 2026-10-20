@@ -148,16 +148,26 @@ struct Outbox {
     start: Option<(u64, (u16, u16))>,
 }
 
+struct Clock {
+    booted: Instant,
+    synced: Option<Instant>,
+}
+
+impl Clock {
+    fn new() -> Self {
+        Self { booted: Instant::now(), synced: None }
+    }
+}
+
 pub(crate) struct App {
     screen: groups::Screen,
     git: groups::Git,
-    spawn: groups::Spawn,
+    setups: worktree_setup::Setups,
     messages: groups::Messages,
     panels: groups::Panels,
-    paths: groups::Paths,
-    themes: groups::Themes,
-    wire: groups::Wire,
-    usages: groups::Usages,
+    themes: theme::Themes,
+    clients: control::Clients,
+    usages: usage_dialog::Usages,
     scroll: Scrolls,
     outbox: Outbox,
     opening: opening::Opening,
@@ -172,58 +182,61 @@ pub(crate) struct App {
     overlay: Option<Overlay>,
     config: Config,
     config_file: config_file::ConfigFile,
-    logins: control::accounts::Logins,
-    shell: String,
+    accounts: control::accounts::AccountState,
+    shells: tabs::Shells,
     tx: Sender<AppEvent>,
-    booted: Instant,
+    clock: Clock,
+    home: Option<PathBuf>,
     settings_page: Page,
     remote: remote_access::Remote,
     messengers: Vec<Messenger>,
-    runs: Vec<crate::flows::run::Run>,
+    runs: flow_runs::Runs,
     sessions: said::Sessions,
+    seen: trace::Seen,
     images: images::Payloads,
     plugins: Plugins,
 }
 
 impl App {
     pub(crate) fn new(shell: String, theme: HostTheme, config_path: PathBuf, tx: Sender<AppEvent>) -> Self {
-        let secrets_path = paths::secrets(&config_path);
         let home = std::env::var_os("HOME").map(PathBuf::from);
-        let (config, config_file) = config_file::ConfigFile::open(&config_path);
+        let (config, config_file) = config_file::ConfigFile::open(config_path);
+        let config_path = &config_file.path;
         Self {
             screen: groups::Screen::default(),
             git: groups::Git::default(),
-            spawn: groups::Spawn::default(),
+            setups: worktree_setup::Setups::new(config_path),
             messages: groups::Messages::default(),
             panels: groups::Panels::default(),
-            wire: groups::Wire::default(),
-            usages: groups::Usages::default(),
-            themes: groups::Themes::new(theme),
+            clients: control::Clients::default(),
+            usages: usage_dialog::Usages::default(),
+            themes: theme::Themes::new(theme),
             scroll: Scrolls::default(),
             outbox: Outbox::default(),
             opening: opening::Opening::default(),
             agents: AgentRuntime::new(home.as_deref()),
             update: UpdateState::from_env(),
-            issues: IssueConnections::new(secrets_path.clone()),
+            issues: IssueConnections::new(paths::secrets(config_path)),
             groups: Vec::new(),
             projects: Vec::new(),
             active: 0,
             deleting_groups: Vec::new(),
             next_id: 1,
             overlay: None,
+            accounts: control::accounts::AccountState::new(config_path),
+            shells: tabs::Shells::new(shell),
+            clock: Clock::new(),
+            settings_page: Page::default(),
+            remote: remote_access::Remote::new(Web::new(paths::browsers(config_path), paths::socket(), tx.clone())),
+            messengers: messenger::messengers(config_path, &paths::secrets(config_path)),
+            runs: flow_runs::Runs::new(config_path),
+            sessions: said::Sessions::default(),
+            seen: trace::Seen::default(),
+            images: images::Payloads::default(),
+            plugins: Plugins::new(crate::plugins::Places::new(config_path, config_path)),
             config,
             config_file,
-            logins: control::accounts::Logins::default(),
-            shell,
-            booted: Instant::now(),
-            settings_page: Page::default(),
-            remote: remote_access::Remote::new(Web::new(paths::browsers(&config_path), paths::socket(), tx.clone())),
-            messengers: messenger::messengers(&config_path, &secrets_path),
-            runs: Vec::new(),
-            sessions: said::Sessions::default(),
-            images: images::Payloads::default(),
-            plugins: Plugins::new(crate::plugins::Places::new(&config_path, &config_path)),
-            paths: groups::Paths::new(config_path, home),
+            home,
             tx,
         }
     }
@@ -342,8 +355,7 @@ impl App {
     }
 
     pub(crate) fn open_here(&mut self, area: Rect) -> Result<()> {
-        let here =
-            std::env::current_dir().ok().or_else(|| self.paths.home.clone()).unwrap_or_else(|| PathBuf::from("/"));
+        let here = std::env::current_dir().ok().or_else(|| self.home.clone()).unwrap_or_else(|| PathBuf::from("/"));
         self.open_project(here, area)
     }
 
@@ -358,7 +370,7 @@ impl App {
         let launch =
             self.agents.launches.iter().any(|l| !l.waits_for_you() && !held.contains(&l.term)).then_some(LAUNCH_EVERY);
         let spin = (self.config.spinner() && self.agent_working())
-            .then(|| activity::spin_wait(now.saturating_duration_since(self.booted)));
+            .then(|| activity::spin_wait(now.saturating_duration_since(self.clock.booted)));
         [
             drag,
             lines,
@@ -367,11 +379,11 @@ impl App {
             self.flow_frame(now),
             self.next_request(now),
             self.next_pairing(now),
-            self.wire.events.snapshots.wake(now, !self.wire.views.is_empty()),
-            self.wire.events.app.wake(now, false),
-            self.wire.events.runs.wake(now, false),
-            self.wire.change_streams.wake(now),
-            self.wire.events.bell_wake(now),
+            self.clients.events.snapshots.wake(now, !self.clients.views.is_empty()),
+            self.clients.events.app.wake(now, false),
+            self.clients.events.runs.wake(now, false),
+            self.clients.change_streams.wake(now),
+            self.clients.events.bell_wake(now),
             self.surface_wake(now),
             self.panels.queued.area.and_then(|_| self.panels.queued.queue.next(clock)),
         ]
@@ -392,10 +404,10 @@ impl App {
         self.refresh_sources(now, clock);
         self.refresh_agents(now, clock);
         self.refresh_panels(now);
-        if self.git.synced.is_some_and(|at| now.duration_since(at) < SYNC_EVERY) {
+        if self.clock.synced.is_some_and(|at| now.duration_since(at) < SYNC_EVERY) {
             return;
         }
-        self.git.synced = Some(now);
+        self.clock.synced = Some(now);
         self.refresh_slowly(now);
     }
 
@@ -461,7 +473,7 @@ impl App {
             .projects
             .iter()
             .zip(crate::project::group_indices(&self.projects, &self.groups))
-            .map(|(p, group)| ProjectState::of(p, group, &self.runs, &parents))
+            .map(|(p, group)| ProjectState::of(p, group, &self.runs.list, &parents))
             .collect();
         let chosen = self.issues.tab.is_some() || self.issues.closed || self.issues.people != People::default();
         let issues = chosen.then(|| IssuesState {
