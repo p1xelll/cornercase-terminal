@@ -202,7 +202,7 @@ screen_close_agent() {
   cc_wait '×'
   cc_click '×'
   cc_wait 'Close agent'
-  cc_wait ' close and remove '
+  cc_wait 'keep running'
   cc_shot close-agent
 }
 
