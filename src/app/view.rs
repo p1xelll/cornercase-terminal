@@ -214,6 +214,7 @@ impl App {
                 .then(|| self.todo_view(self.layout(area).shown(self.screen.nav).changes)),
             flow: (self.screen.side == Some(Side::Flow)).then(|| self.flow_view(now, self.spin(now))).flatten(),
             flow_run: self.has_run(),
+            tour: self.tour_card(area),
             todo_dot: self.config.todo_dot,
             todo_pending: self.panels.todos.pending() > 0,
             ..ui::View::default()

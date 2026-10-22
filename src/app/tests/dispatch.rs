@@ -1,6 +1,7 @@
 use super::*;
 use crate::agents::Known;
 use crate::app::account_menu::AccountItem;
+use crate::app::help_menu::HelpItem;
 use crate::app::menus::Marked;
 use crate::app::opening::Subject;
 use crate::app::plugins::Spot;
@@ -46,6 +47,7 @@ fn every_action() -> Vec<Action> {
         Action::Usage,
         Action::Away,
         Action::Quit,
+        Action::Help,
     ]
 }
 
@@ -86,6 +88,7 @@ fn action_index(action: &Action) -> usize {
         Action::Usage => 32,
         Action::Away => 33,
         Action::Quit => 34,
+        Action::Help => 35,
     }
 }
 
@@ -145,6 +148,8 @@ fn every_menu_action() -> Vec<MenuAction> {
         MenuAction::CloseAgents(1),
         MenuAction::ReopenAgents(1),
         MenuAction::ForgetAgents(1),
+        MenuAction::Help(HelpItem::Docs),
+        MenuAction::Tour(0),
     ]
 }
 
@@ -184,6 +189,8 @@ fn menu_index(action: &MenuAction) -> usize {
         MenuAction::CloseAgents(_) => 31,
         MenuAction::ReopenAgents(_) => 32,
         MenuAction::ForgetAgents(_) => 33,
+        MenuAction::Help(_) => 34,
+        MenuAction::Tour(_) => 35,
     }
 }
 

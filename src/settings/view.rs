@@ -186,6 +186,7 @@ impl Settings {
                 let value = if config.star_prompt { "[x] now and then" } else { "[ ] never" };
                 ("star prompt".into(), value.into(), "asks for a GitHub star after two weeks of use".into(), false)
             }
+            Row::Tour | Row::TourStart | Row::TourReset => tour_row(config, row),
             _ => self.prefix_row(),
         }
     }
@@ -352,6 +353,19 @@ fn layout_row(config: &Config, row: &Row) -> (String, String, String, bool) {
             ("icon bar", value, ICON_BAR_NOTE)
         }
         _ => ("sidebar", Sidebar::from_setting(&config.sidebar).id(), "how projects, workspaces and tabs are laid out"),
+    };
+    (label.into(), value.into(), note.into(), false)
+}
+
+fn tour_row(config: &Config, row: &Row) -> (String, String, String, bool) {
+    let (label, value, note) = match row {
+        Row::Tour => (
+            "guided tour",
+            if config.tour { "[x] on a new install" } else { "[ ] only from Help" },
+            "the first steps, shown once on a new install",
+        ),
+        Row::TourStart => ("start the tour", "", "it also opens from Help"),
+        _ => ("reset tour progress", "", "every tour starts again from its first step"),
     };
     (label.into(), value.into(), note.into(), false)
 }

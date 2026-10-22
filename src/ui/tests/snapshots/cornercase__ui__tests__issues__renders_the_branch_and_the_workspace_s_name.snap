@@ -1,6 +1,5 @@
 ---
 source: src/ui/tests/issues.rs
-assertion_line: 83
 expression: render(&with(naming())).backend()
 ---
 "  ⌕ search projects, workspaces, tabs                    │                                          "
@@ -20,4 +19,4 @@ expression: render(&with(naming())).backend()
 " ─│ enter starts                                                                                 │  "
 "  │                                                                                start   back  │  "
 "  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯  "
-"  Quit                         │                         │                                          "
+"  Quit                   Help  │                         │                                          "

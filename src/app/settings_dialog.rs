@@ -202,6 +202,7 @@ impl App {
             }
             settings::Action::Accounts(order) => self.account_order(&order, area),
             settings::Action::RemoveAccount(kind, name) => self.overlay = Some(Overlay::RemoveAccount { kind, name }),
+            settings::Action::Tour { reset } => self.tour_from_settings(reset),
         }
         self.watch_accounts_page(Instant::now());
     }

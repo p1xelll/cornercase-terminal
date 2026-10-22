@@ -36,6 +36,7 @@ mod status;
 mod terminal;
 mod theme;
 mod todo;
+mod tour;
 mod update;
 mod usage;
 mod view;
@@ -248,6 +249,7 @@ fn other_commands(command: Control) -> ControlFlow<Result<bool>, Control> {
     ControlFlow::Break(match command {
         Control::Issue(args) => return ControlFlow::Break(issue::run(args.action)),
         Control::Usage(args) => return ControlFlow::Break(usage::run(&args)),
+        Control::Tour(args) => tour::run(&args).map(|()| true),
         Control::Queue(queue) => queue::run(queue.action).map(|()| true),
         Control::Away(away) => run_away(&away).map(|()| true),
         Control::Flow(flow) => flow::run(flow.action).map(|()| true),

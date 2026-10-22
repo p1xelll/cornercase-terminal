@@ -33,6 +33,7 @@ Why cornercase works the way it does, area by area. The rules every change follo
 - [Changes panel](design/changes-panel.md) (`changes/`, `ui/changes.rs`, `app/changes_panel.rs`): the git diff, its modes, filter, scope, pacing and digests.
 - [TODO panel](design/todo-panel.md) (`todo/`, `ui/todo.rs`, `app/todo_panel.rs`): the TODO list, its requests, sending an item to an agent.
 - [Star prompt](design/star-prompt.md) (`star.rs`, `app/star_prompt.rs`, `ui/star.rs`, #276): the card that asks for a GitHub star now and then.
+- [Tour](design/tour.md) (`tour.rs`, `tour/steps.rs`, `app/tour_card.rs`, `app/tour_card/`, `app/help_menu.rs`, `ui/tour.rs`, `control/tour.rs`, `app/control/tour.rs`, `cli/tour.rs`, #400): the guided tour on first run, the catalogue of short tours, the Help button.
 - [Queue](design/queue.md) (`queue/`, `issues/browser.rs`, `ui/dialog/queue.rs`, `app/queue_panel.rs`, `app/queue_dialog.rs`, `app/control/queue/`): scheduled agent starts, their times, places and form.
 - [Files panel](design/files-panel.md) (`files/`, `highlight/syntax.rs`, `ui/files.rs`, `app/files_panel.rs`, `app/links.rs`): tree, viewer, highlighting, search, paths in panes, full screen.
 - [Images](design/images.md) (`graphics/`, files panel): pictures in the files panel, by kitty, iTerm2 or sixel.

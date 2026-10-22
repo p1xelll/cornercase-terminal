@@ -545,6 +545,7 @@ mod star_prompt;
 mod start_flow_dialog;
 mod tab_bar;
 mod tabs;
+mod tour;
 mod tree_sidebar;
 mod workspace_folds;
 mod workspaces;

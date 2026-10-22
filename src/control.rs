@@ -25,6 +25,7 @@ pub(crate) mod surface;
 pub(crate) mod terminal;
 pub(crate) mod theme;
 mod todo;
+pub(crate) mod tour;
 pub(crate) mod usage;
 pub(crate) mod view;
 mod watch;
@@ -206,6 +207,7 @@ pub(crate) enum Command {
     AgentsClose(AgentsClose),
     AgentsReopen(AgentsReopen),
     AgentsForget(AgentsForget),
+    Tour(tour::TourRequest),
 }
 
 impl Command {
@@ -365,6 +367,7 @@ impl Command {
             Self::StartServer(_) => 30,
             Self::Away(_) => 20,
             Self::Usage(_) => 67,
+            Self::Tour(_) => 95,
             Self::PluginList(_) => 68,
             Self::PluginActions(_) => 69,
             Self::PluginRun(_) => 70,
@@ -372,7 +375,7 @@ impl Command {
         })
     }
 
-    pub(crate) const NAMES: [&str; 95] = [
+    pub(crate) const NAMES: [&str; 96] = [
         "status",
         "open",
         "new-workspace",
@@ -468,6 +471,7 @@ impl Command {
         "agents-close",
         "agents-reopen",
         "agents-forget",
+        "tour",
     ];
 
     pub(crate) fn chatty(name: &str) -> bool {

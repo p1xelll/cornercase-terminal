@@ -152,6 +152,7 @@ mod tab_bar_drawing;
 mod tab_context;
 mod tall_rows;
 mod toast;
+mod tour;
 mod tree_drawing;
 mod tree_drop;
 mod tree_layout;

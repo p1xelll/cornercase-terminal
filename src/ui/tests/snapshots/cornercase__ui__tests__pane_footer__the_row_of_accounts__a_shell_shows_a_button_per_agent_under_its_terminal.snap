@@ -19,4 +19,4 @@ expression: render(&one(shell())).backend()
 " ───────────────────────────── │                         │                                          "
 "  Settings                     │                         │                                          "
 "  Usage                        │                         │                                          "
-"  Quit                         │                         │   claude: personal ▾   codex: System ▾   "
+"  Quit                   Help  │                         │   claude: personal ▾   codex: System ▾   "

@@ -17,6 +17,7 @@ mod search;
 mod status;
 mod talk;
 mod terminal;
+mod tour;
 mod updates;
 mod usage;
 mod wait;
@@ -444,7 +445,10 @@ impl App {
         if let Some((at, command)) = self.clients.requests.asked.remove(&client) {
             log_answered(client, at, command, &reply);
         }
-        if self.queue_answered(client, &reply) || self.todo_answered(client, &reply) {
+        if self.queue_answered(client, &reply)
+            || self.todo_answered(client, &reply)
+            || self.tour_answered(client, &reply)
+        {
             return;
         }
         if client >= MESSENGER_CLIENTS {
@@ -658,6 +662,7 @@ impl App {
             Command::StartServer(start) => self.start_server_request(client, &start),
             Command::Away(away) => self.away_request(away.off).map_err(Refusal::from),
             Command::Usage(usage) => Ok(self.usage_request(client, &usage, now)),
+            Command::Tour(tour) => self.tour_request(&tour),
             Command::PluginList(_) => Ok(Some(self.plugin_list_request(now))),
             Command::PluginActions(actions) => Ok(Some(self.plugin_actions_request(&actions))),
             Command::PluginRun(run) => self.plugin_run_request(client, &run),

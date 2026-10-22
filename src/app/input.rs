@@ -55,6 +55,7 @@ impl App {
                 self.usage_key(key);
             }
             Some(Overlay::Search(_)) => self.search_key(key, area),
+            None if self.tour_typing() => self.tour_key(key, area),
             None if self.todo_typing() => self.todo_key(key, area),
             None if self.files_typing() => self.files_key(key, area),
             None if self.filtering() => self.filter_key(key),
@@ -104,7 +105,11 @@ impl App {
         areas: &ui::Areas,
         area: Rect,
     ) -> ControlFlow<Result<()>> {
-        if self.continue_drag(ev, areas, area) || self.star_mouse(ev, pos, area) || self.toast_mouse(ev, pos, area) {
+        if self.continue_drag(ev, areas, area)
+            || self.star_mouse(ev, pos, area)
+            || self.tour_mouse(ev, pos, area)
+            || self.toast_mouse(ev, pos, area)
+        {
             return ControlFlow::Break(Ok(()));
         }
         if self.overlay.is_some() {
@@ -192,8 +197,8 @@ impl App {
             Ok(true) => return ControlFlow::Break(Ok(())),
             Ok(false) => {}
         }
-        if self.footer_mouse(areas, pos, left) {
-            return ControlFlow::Break(Ok(()));
+        if let Some(item) = self.footer_hit(areas, pos) {
+            return ControlFlow::Break(if left { self.activity_click(item, pos, area) } else { Ok(()) });
         }
         if areas.list.contains(pos) {
             return ControlFlow::Break(self.list_mouse(areas, pos, ev.kind, area));
@@ -366,6 +371,7 @@ impl App {
             ui::ActivityItem::Flow => self.toggle_flow(),
             ui::ActivityItem::Update => self.open_update(),
             ui::ActivityItem::Remote => self.open_remote_menu(pos),
+            ui::ActivityItem::Help => self.open_help(pos),
             ui::ActivityItem::Usage => self.open_usage(),
             ui::ActivityItem::Settings => self.open_settings(),
             ui::ActivityItem::Quit => self.outbox.detach(),
@@ -373,31 +379,25 @@ impl App {
         Ok(())
     }
 
-    fn open_remote_menu(&mut self, at: Position) {
+    pub(super) fn open_remote_menu(&mut self, at: Position) {
         let away = Via::ALL.into_iter().map(super::menus::MenuAction::Away);
         let actions = std::iter::once(super::menus::MenuAction::Browser).chain(away).collect();
         self.overlay = Some(Overlay::Menu { at, actions });
     }
 
-    fn footer_mouse(&mut self, areas: &ui::Areas, pos: Position, left: bool) -> bool {
+    fn footer_hit(&self, areas: &ui::Areas, pos: Position) -> Option<ui::ActivityItem> {
         let update = self.update_label().is_some_and(|label| ui::update_button(areas.settings, &label).contains(pos));
         let remote = self.remote_button().is_some_and(|on| ui::remote_button(areas.usage, on).contains(pos));
-        let hit = update || remote || [areas.quit, areas.usage, areas.settings].iter().any(|r| r.contains(pos));
-        if hit && left {
-            self.screen.nav = None;
-            if update {
-                self.open_update();
-            } else if remote {
-                self.open_remote_menu(pos);
-            } else if areas.quit.contains(pos) {
-                self.outbox.detach();
-            } else if areas.usage.contains(pos) {
-                self.open_usage();
-            } else {
-                self.open_settings();
-            }
-        }
-        hit
+        [
+            (update, ui::ActivityItem::Update),
+            (remote, ui::ActivityItem::Remote),
+            (ui::help_button(areas.quit).contains(pos), ui::ActivityItem::Help),
+            (ui::quit_button(areas.quit).contains(pos), ui::ActivityItem::Quit),
+            (areas.usage.contains(pos), ui::ActivityItem::Usage),
+            (areas.settings.contains(pos), ui::ActivityItem::Settings),
+        ]
+        .into_iter()
+        .find_map(|(hit, item)| hit.then_some(item))
     }
 
     pub(super) fn handle_paste(&mut self, text: &str, area: Rect) {
@@ -451,6 +451,10 @@ impl App {
     }
 
     fn typing_paste(&mut self, text: &str, area: Rect) -> bool {
+        if self.tour_typing() {
+            self.tour_paste(text);
+            return true;
+        }
         if self.todo_typing() {
             self.todo_paste(text);
             return true;

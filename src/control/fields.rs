@@ -194,6 +194,7 @@ impl Command {
                 fields.add("off", away.off);
             }
             Self::Usage(usage) => usage.fields(fields),
+            Self::Tour(tour) => tour.fields(fields),
             Self::PluginActions(actions) => actions.fields(fields),
             Self::PluginRun(run) => run.fields(fields),
             _ => return false,

@@ -52,6 +52,9 @@ pub(crate) enum Row {
     SoundSubagents,
     Updates,
     StarPrompt,
+    Tour,
+    TourStart,
+    TourReset,
     Prefix,
     Token(Source),
     GitlabUrl,
@@ -91,30 +94,6 @@ impl Row {
 
     pub(crate) fn section(&self) -> &'static str {
         match self {
-            Self::Folder
-            | Self::IssueBranch
-            | Self::Fetch
-            | Self::PullRequests
-            | Self::MergedPullRequests
-            | Self::Worktrees
-            | Self::Sidebar
-            | Self::Tabs
-            | Self::IconBar
-            | Self::AgentsSection
-            | Self::WorkingIcon
-            | Self::Counts
-            | Self::TodoDot
-            | Self::DimPanes
-            | Self::Detail(_)
-            | Self::Notifications
-            | Self::Sound
-            | Self::SoundWaiting
-            | Self::SoundDone
-            | Self::SoundSubagents
-            | Self::Updates
-            | Self::StarPrompt
-            | Self::Prefix
-            | Self::ServerTokens => "",
             Self::Remote | Self::Browsers => "Browser",
             Self::Bot(via) | Self::Chat(via) => via.name(),
             Self::Plugin(_) | Self::NoPlugins => "Installed",
@@ -129,6 +108,7 @@ impl Row {
             Self::Tab(_) => "Sources shown",
             Self::DefaultAgent | Self::Submit | Self::Trust | Self::Resume | Self::KeepAwake => "Agent",
             Self::Kind(_) | Self::AddAgent => "How each agent starts",
+            _ => "",
         }
     }
 
@@ -243,7 +223,7 @@ impl Detail {
     }
 }
 
-const LOOK_ROWS: [Row; 23] = [
+const LOOK_ROWS: [Row; 26] = [
     Row::AddAgent,
     Row::Sidebar,
     Row::Tabs,
@@ -266,6 +246,9 @@ const LOOK_ROWS: [Row; 23] = [
     Row::SoundSubagents,
     Row::Updates,
     Row::StarPrompt,
+    Row::Tour,
+    Row::TourStart,
+    Row::TourReset,
     Row::Prefix,
 ];
 
@@ -340,6 +323,7 @@ pub(crate) enum Action {
     Plugin(String, bool),
     Accounts(Order),
     RemoveAccount(Known, String),
+    Tour { reset: bool },
     Worktrees,
 }
 

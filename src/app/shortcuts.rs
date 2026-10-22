@@ -120,6 +120,7 @@ impl App {
             Action::Todo => self.todo_by_key(),
             Action::Settings => self.dialog_by_key(Self::open_settings),
             Action::Usage => self.dialog_by_key(Self::open_usage),
+            Action::Help => self.dialog_by_key(Self::help_by_key),
             other => return Some(other),
         }
         None
@@ -142,6 +143,11 @@ impl App {
     fn search_by_key(&mut self, finder: Finder) {
         self.screen.nav = None;
         self.overlay = Some(Overlay::Search(finder));
+    }
+
+    fn help_by_key(&mut self) {
+        let pane = self.screen.drawn.pane;
+        self.open_help(Position::new(pane.x + 1, pane.y + 1));
     }
 
     fn dialog_by_key(&mut self, open: fn(&mut Self)) {

@@ -152,6 +152,7 @@ fn last_commands() -> Vec<Command> {
         Command::AgentsClose(AgentsClose::default()),
         Command::AgentsReopen(AgentsReopen::default()),
         Command::AgentsForget(AgentsForget::default()),
+        Command::Tour(tour::TourRequest::default()),
     ]
 }
 

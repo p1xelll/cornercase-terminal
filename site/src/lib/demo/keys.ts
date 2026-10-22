@@ -38,6 +38,7 @@ export type KeysAction =
   | { kind: 'todo' }
   | { kind: 'settings' }
   | { kind: 'usage' }
+  | { kind: 'help' }
   | { kind: 'away' }
   | { kind: 'quit' };
 
@@ -76,6 +77,7 @@ const ROOT: KeysItem[] = [
   run('t', 'todo', { kind: 'todo' }),
   run(',', 'settings', { kind: 'settings' }),
   run('u', 'usage', { kind: 'usage' }),
+  run('h', 'help', { kind: 'help' }),
   run('o', 'away on chat apps', { kind: 'away' }),
   run('q', 'quit', { kind: 'quit' }),
 ];

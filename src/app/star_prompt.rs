@@ -34,6 +34,10 @@ impl StarPrompt {
         self.card
     }
 
+    pub(super) fn window_open(&self, now: Instant) -> bool {
+        self.window.is_some_and(|at| now.saturating_duration_since(at) <= WINDOW_GAP)
+    }
+
     #[cfg(test)]
     pub(super) fn with_saved(&mut self, saved: Saved, path: PathBuf) {
         self.saved = saved;
@@ -65,7 +69,7 @@ impl App {
         if self.messages.star.saved.settled() {
             return;
         }
-        let window = self.messages.star.window.is_some_and(|at| now.saturating_duration_since(at) <= WINDOW_GAP);
+        let window = self.messages.star.window_open(now);
         if window && self.projects.terms().any(|t| t.agent.status().is_some()) && self.messages.star.saved.count(clock)
         {
             self.save_star();

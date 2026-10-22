@@ -3,6 +3,7 @@ use ratatui::layout::{Position, Rect};
 
 use super::App;
 use super::account_menu::AccountItem;
+use super::help_menu::HelpItem;
 use super::opening::Subject;
 use super::overlay::Overlay;
 use super::plugins::Spot;
@@ -115,6 +116,8 @@ pub(super) enum MenuAction {
     AccountsOf(AccountItem),
     AccountMenu(u64),
     ManageAccounts,
+    Help(HelpItem),
+    Tour(u8),
 }
 
 impl App {
@@ -145,8 +148,14 @@ impl App {
         actions.iter().map(|&a| self.menu_label(a, blocker)).collect()
     }
 
+    fn concern_menu_label(&self, action: MenuAction, blocker: Option<&str>) -> Option<String> {
+        self.account_menu_label(action, blocker)
+            .or_else(|| self.help_menu_label(action))
+            .or_else(|| self.closed_agents_label(action))
+    }
+
     fn menu_label(&self, action: MenuAction, blocker: Option<&str>) -> String {
-        if let Some(label) = self.account_menu_label(action, blocker).or_else(|| self.closed_agents_label(action)) {
+        if let Some(label) = self.concern_menu_label(action, blocker) {
             return label;
         }
         match action {
@@ -312,6 +321,8 @@ impl App {
             MenuAction::ForgetAgents(workspace) => self.ask_forget_agents(workspace),
             MenuAction::AccountMenu(pane) => self.open_account_submenu(pane, at),
             MenuAction::AccountsOf(item) => self.open_accounts_of(item, at),
+            MenuAction::Help(item) => self.help_action(item, at),
+            MenuAction::Tour(index) => self.start_tour(usize::from(index), None, true),
             other => return Some(other),
         }
         None

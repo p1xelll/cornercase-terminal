@@ -12,6 +12,7 @@ use super::notifications::Notices;
 use super::queue_panel::QueueRuntime;
 use super::star_prompt::StarPrompt;
 use super::toast::Toast;
+use super::tour_card::TourRuntime;
 use super::worktrees::Upstream;
 use super::worktrees_dialog::{Cleanup, Scans};
 use super::{flow_panel, merged_pull_requests, pull_requests};
@@ -40,6 +41,7 @@ pub(super) struct Git {
 pub(super) struct Messages {
     pub(super) toast: Option<Toast>,
     pub(super) star: StarPrompt,
+    pub(super) tour: TourRuntime,
     pub(super) notices: Notices,
 }
 

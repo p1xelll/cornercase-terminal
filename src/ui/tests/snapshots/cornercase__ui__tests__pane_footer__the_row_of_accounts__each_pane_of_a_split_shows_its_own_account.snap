@@ -19,4 +19,4 @@ expression: render(&v).backend()
 " ───────────────────────────── │                         │                     │                    "
 "  Settings                     │                         │                     │                    "
 "  Usage                        │                         │                     │                    "
-"  Quit                         │                         │   claude: work ▾    │   personal ▾       "
+"  Quit                   Help  │                         │   claude: work ▾    │   personal ▾       "

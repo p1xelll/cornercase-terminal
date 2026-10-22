@@ -185,7 +185,10 @@ export type MenuAction =
   | { kind: 'projectSettings'; project: number }
   | { kind: 'openIn' }
   | { kind: 'sendTodo'; todo: number; pane: number }
-  | { kind: 'worktrees'; project: number };
+  | { kind: 'worktrees'; project: number }
+  | { kind: 'help'; item: HelpItem };
+
+export type HelpItem = 'tour' | 'catalogue' | 'docs' | 'keys' | 'bug';
 
 export interface PickItem {
   value: string;
