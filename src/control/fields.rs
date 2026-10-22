@@ -183,8 +183,13 @@ impl Command {
 
     fn server_fields(&self, fields: &mut Fields) -> bool {
         match self {
-            Self::Go(_) | Self::UpdateCheck(_) | Self::UpdateInstall(_) | Self::PluginList(_) => {}
+            Self::Go(_)
+            | Self::UpdateCheck(_)
+            | Self::UpdateInstall(_)
+            | Self::PluginList(_)
+            | Self::ConfigExport(_) => {}
             Self::Config(config) => config.fields(fields),
+            Self::ConfigImport(import) => import.fields(fields),
             Self::Theme(theme) => theme.fields(fields),
             Self::RestartWhenIdle(restart) => {
                 fields.maybe("timeout", restart.timeout);

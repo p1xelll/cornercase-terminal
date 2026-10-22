@@ -53,6 +53,82 @@ impl Configure {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub(crate) struct ConfigExport {}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub(crate) struct SetupExported {
+    pub(crate) text: String,
+    pub(crate) settings: usize,
+    pub(crate) repositories: usize,
+    pub(crate) left_out: Vec<String>,
+    pub(crate) warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub(crate) struct ConfigImport {
+    pub(crate) text: String,
+    pub(crate) sections: Option<Vec<String>>,
+    pub(crate) apply: bool,
+}
+
+impl ConfigImport {
+    pub(super) fn fields(&self, fields: &mut Fields) {
+        fields
+            .add("text_bytes", self.text.len())
+            .maybe("sections", self.sections.as_ref().map(|sections| sections.join(",")))
+            .add("apply", self.apply);
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum NoteKind {
+    Risk,
+    Missing,
+    Connect,
+    Unknown,
+    Repository,
+    Secret,
+    #[default]
+    #[serde(other)]
+    Other,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub(crate) struct SetupNote {
+    pub(crate) kind: NoteKind,
+    pub(crate) text: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub(crate) struct SetupChange {
+    pub(crate) key: String,
+    pub(crate) label: String,
+    pub(crate) from: String,
+    pub(crate) to: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub(crate) struct SectionPreview {
+    pub(crate) id: String,
+    pub(crate) changes: Vec<SetupChange>,
+    pub(crate) notes: Vec<SetupNote>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub(crate) struct SetupPreview {
+    pub(crate) sections: Vec<SectionPreview>,
+    pub(crate) notes: Vec<SetupNote>,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum Kind {
@@ -173,6 +249,21 @@ pub(crate) struct Described {
 #[serde(default)]
 pub(crate) struct ConfigInfo {
     pub(crate) revision: u64,
+}
+
+#[cfg(test)]
+pub(crate) fn change(key: &str, label: &str, from: &str, to: &str) -> SetupChange {
+    SetupChange { key: key.into(), label: label.into(), from: from.into(), to: to.into() }
+}
+
+#[cfg(test)]
+pub(crate) fn note(kind: NoteKind, text: &str) -> SetupNote {
+    SetupNote { kind, text: text.into() }
+}
+
+#[cfg(test)]
+pub(crate) fn section(id: &str, changes: Vec<SetupChange>, notes: Vec<SetupNote>) -> SectionPreview {
+    SectionPreview { id: id.into(), changes, notes }
 }
 
 #[cfg(test)]

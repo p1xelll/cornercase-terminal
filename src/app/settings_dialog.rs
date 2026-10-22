@@ -55,7 +55,7 @@ impl App {
         self.overlay = Some(Overlay::Settings(Box::new(settings)));
     }
 
-    fn token_statuses(&self) -> Vec<(Source, Status)> {
+    pub(super) fn token_statuses(&self) -> Vec<(Source, Status)> {
         Source::REMOTE
             .into_iter()
             .map(|source| {
@@ -164,16 +164,18 @@ impl App {
         }
     }
 
+    fn save_settings(&mut self, config: &Config) {
+        if let Err(e) = self.write_config(config) {
+            self.settings_message(e);
+        }
+    }
+
     fn settings_act(&mut self, action: settings::Action, area: Rect) {
         match action {
             settings::Action::None => {}
             settings::Action::Close => self.overlay = None,
             settings::Action::Restart => self.open_restart(),
-            settings::Action::Save(config) => {
-                if let Err(e) = self.write_config(&config) {
-                    self.settings_message(e);
-                }
-            }
+            settings::Action::Save(config) => self.save_settings(&config),
             settings::Action::CheckToken(source, token) => self.check_token(source, token),
             settings::Action::ForgetBrowsers => {
                 let forgotten = self.forget_browsers();
@@ -195,6 +197,7 @@ impl App {
             }
             settings::Action::Plugin(id, on) => self.switch_plugin(&id, on),
             settings::Action::Worktrees => self.open_worktrees(None),
+            settings::Action::Share => self.open_share_settings(),
             settings::Action::RemoveToken(source) => {
                 if let Err(e) = self.remove_token(source) {
                     self.settings_message(e);
@@ -226,6 +229,7 @@ fn settings_click(s: &mut Settings, area: Rect, pos: Position) -> settings::Acti
     match ui::settings_hit(area, &layout, pos) {
         Some(ui::SettingsHit::Done) => settings::Action::Close,
         Some(ui::SettingsHit::Restart) => settings::Action::Restart,
+        Some(ui::SettingsHit::Share) => settings::Action::Share,
         Some(ui::SettingsHit::Tab(i)) => {
             s.open_page(Page::ALL[i]);
             settings::Action::None
