@@ -384,8 +384,8 @@ fn new_columns_of_a_pane_row_go_after_the_released_ones() {
 }
 
 #[test]
-fn a_pane_row_ends_with_its_pid_and_memory() {
-    assert_eq!(PaneRow::COLUMNS[PaneRow::COLUMNS.len() - 3..], ["account_restart", "pid", "memory"]);
+fn a_pane_row_ends_with_its_pid_memory_and_compacted() {
+    assert_eq!(PaneRow::COLUMNS[PaneRow::COLUMNS.len() - 4..], ["account_restart", "pid", "memory", "compacted"]);
 }
 
 #[test]
@@ -705,13 +705,15 @@ mod watch_v1 {
     }
 
     #[test]
-    fn a_pane_leaves_collapsed_out_unless_it_is_true() {
+    fn a_pane_leaves_collapsed_and_compacted_out_unless_they_are_true() {
         let plain = serde_json::to_value(pane(4, false)).expect("a pane");
-        let folded = serde_json::to_value(PaneInfo { collapsed: true, ..pane(4, false) }).expect("a pane");
+        let on = PaneInfo { collapsed: true, compacted: true, ..pane(4, false) };
+        let folded = serde_json::to_value(on).expect("a pane");
 
-        assert!(plain.get("collapsed").is_none(), "{plain}");
-        assert_eq!(folded["collapsed"], true);
-        assert!(!serde_json::from_value::<PaneInfo>(plain).expect("a pane").collapsed);
+        assert!(plain.get("collapsed").is_none() && plain.get("compacted").is_none(), "{plain}");
+        assert_eq!((&folded["collapsed"], &folded["compacted"]), (&json!(true), &json!(true)));
+        let read = serde_json::from_value::<PaneInfo>(plain).expect("a pane");
+        assert!(!read.collapsed && !read.compacted);
     }
 
     #[test]

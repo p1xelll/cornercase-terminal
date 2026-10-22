@@ -9,7 +9,7 @@ use crate::accounts::login::{Login, State};
 use crate::agents::activity::{Activity, BRAILLE, glyph};
 use crate::agents::context::counting::Ledger;
 use crate::agents::context::discovery::Job;
-use crate::agents::context::{Context, Look, Record};
+use crate::agents::context::{Compaction, Context, Look, Record};
 
 pub(in crate::agents) const NAME: &str = "claude";
 pub(in crate::agents) const ACCOUNT: Option<crate::agents::AccountHome> = Some(crate::agents::AccountHome {
@@ -38,6 +38,9 @@ pub(in crate::agents) const TITLE: &str = "Claude Code";
 pub(in crate::agents) const COMMAND: &str = "claude";
 pub(in crate::agents) const MODEL_FLAG: &str = "--model";
 pub(in crate::agents) const MODEL_ALIAS: Option<&str> = None;
+pub(in crate::agents) const COMPACT: Option<crate::agents::Compact> =
+    Some(crate::agents::Compact { command: "/compact", keeps: true });
+
 pub(in crate::agents) const EFFORT: Option<crate::agents::Effort> = Some(crate::agents::Effort {
     levels: &["low", "medium", "high", "xhigh", "max"],
     flags: &["--effort"],
@@ -185,12 +188,12 @@ impl Reader {
             *shown = None;
         }
         let transcript = self.transcript.get_or_insert_with(|| Transcript::new(path));
-        let before = transcript.reply.clone();
+        let before = transcript.shown_key();
         transcript.update();
         let prompted = transcript.prompted;
         ledger.apply(&transcript.path.to_string_lossy(), since, std::mem::take(&mut transcript.counted));
-        if transcript.reply != before {
-            *shown = transcript.reply.as_ref().map(|reply| reply.context(&Limits::read(dir, cwd, look)));
+        if transcript.shown_key() != before {
+            *shown = transcript.shown(&Limits::read(dir, cwd, look));
         }
         let parent = transcript.path.with_extension("").join("subagents");
         if let Some(mut found) = self.following.take() {
@@ -219,6 +222,10 @@ impl Reader {
             self.home = Some((look.pid, look.args.clone(), own));
         }
         self.home.as_ref().and_then(|(_, _, own)| own.clone()).or_else(|| look.claude_dir.map(Path::to_path_buf))
+    }
+
+    pub(in crate::agents) fn compaction(&self) -> Compaction {
+        self.transcript.as_ref().map(|transcript| transcript.compaction).unwrap_or_default()
     }
 
     pub(in crate::agents) fn subagents(&self) -> usize {

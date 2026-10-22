@@ -3,7 +3,7 @@ use std::time::SystemTime;
 use crate::agents::activity::Activity;
 use crate::agents::context::counting::Ledger;
 use crate::agents::context::discovery::Job;
-use crate::agents::context::{Context, Look, Record};
+use crate::agents::context::{Compaction, Context, Look, Record};
 
 pub(in crate::agents) const NAME: &str = "opencode";
 pub(in crate::agents) const ACCOUNT: Option<crate::agents::AccountHome> = None;
@@ -11,6 +11,9 @@ pub(in crate::agents) const TITLE: &str = "opencode";
 pub(in crate::agents) const COMMAND: &str = "opencode";
 pub(in crate::agents) const MODEL_FLAG: &str = "--model";
 pub(in crate::agents) const MODEL_ALIAS: Option<&str> = Some("-m");
+pub(in crate::agents) const COMPACT: Option<crate::agents::Compact> =
+    Some(crate::agents::Compact { command: "/compact", keeps: false });
+
 pub(in crate::agents) const EFFORT: Option<crate::agents::Effort> = None;
 pub(in crate::agents) const ADD_DIR: Option<&str> = None;
 pub(in crate::agents) const UNATTENDED: &[&str] = &["--auto"];
@@ -74,6 +77,10 @@ impl Reader {
 
     pub(in crate::agents) fn activity(&self) -> Option<Activity> {
         self.session.as_ref().map(|session| activity(session.turn))
+    }
+
+    pub(in crate::agents) fn compaction(&self) -> Compaction {
+        self.session.as_ref().map(|session| session.compaction).unwrap_or_default()
     }
 
     pub(in crate::agents) fn record(&self) -> Option<Record> {

@@ -5,7 +5,7 @@ use crate::accounts::login::{Login, State};
 use crate::agents::activity::{Activity, BRAILLE, glyph};
 use crate::agents::context::counting::Ledger;
 use crate::agents::context::discovery::Job;
-use crate::agents::context::{Context, Look, Record};
+use crate::agents::context::{Compaction, Context, Look, Record};
 
 const ACTION_REQUIRED: [&str; 2] = ["[ ! ] Action Required", "[ . ] Action Required"];
 
@@ -24,6 +24,9 @@ pub(in crate::agents) const TITLE: &str = "Codex";
 pub(in crate::agents) const COMMAND: &str = "codex";
 pub(in crate::agents) const MODEL_FLAG: &str = "--model";
 pub(in crate::agents) const MODEL_ALIAS: Option<&str> = Some("-m");
+pub(in crate::agents) const COMPACT: Option<crate::agents::Compact> =
+    Some(crate::agents::Compact { command: "/compact", keeps: false });
+
 pub(in crate::agents) const EFFORT: Option<crate::agents::Effort> = Some(crate::agents::Effort {
     levels: &["minimal", "low", "medium", "high", "xhigh"],
     flags: &[],
@@ -126,6 +129,10 @@ impl Reader {
             return rollout.prompted();
         }
         None
+    }
+
+    pub(in crate::agents) fn compaction(&self) -> Compaction {
+        self.rollout.as_ref().map(rollout::Rollout::compaction).unwrap_or_default()
     }
 
     pub(in crate::agents) fn activity(&self, title: &str) -> Activity {

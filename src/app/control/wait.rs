@@ -109,6 +109,7 @@ impl App {
 pub(super) struct Confirm {
     pane: u64,
     since: SystemTime,
+    compacts: bool,
     by: Instant,
     wait: Option<Condition>,
 }
@@ -131,6 +132,15 @@ const SOONEST: Duration = Duration::from_millis(10);
 
 pub(super) fn holds_prompts(agent: Option<agents::Known>, status: Option<Status>) -> bool {
     agent.is_some_and(agents::Known::holds_prompts) && matches!(status, Some(Status::Working | Status::Waiting))
+}
+
+fn recorded(confirm: &Confirm, compacted: Option<SystemTime>, prompted: Option<SystemTime>) -> bool {
+    let since = confirm.since;
+    (confirm.compacts && compacted.is_some_and(|at| at >= since)) || prompted.is_some_and(|at| at >= since)
+}
+
+fn keeps_open(confirm: &Confirm, agent: Option<agents::Known>, status: Option<Status>) -> bool {
+    holds_prompts(agent, status) || confirm.compacts && matches!(status, Some(Status::Working | Status::Waiting))
 }
 
 fn not_confirmed(pane: u64) -> String {
@@ -208,14 +218,18 @@ impl App {
 
     fn launch_reply(&self, pending: &mut Pending, launched: &[(u64, bool)], now: Instant) -> Option<Reply> {
         let pane = pending.done.ids.pane.unwrap_or_default();
-        let Stage::Launch { confirm, wait } = &mut pending.stage else { return None };
+        let Stage::Launch { confirm, compacts, wait } = &mut pending.stage else { return None };
+        let compacts = *compacts;
         let &(_, started) = launched.iter().find(|(key, _)| *key == pending.key)?;
         if !started {
             return Some(Err(self.not_started(pane)));
         }
         let (confirm, wait) = (confirm.take(), wait.take());
         let next = match confirm {
-            Some(since) => Some(Stage::Confirm(Confirm { pane, since, by: now + self.clients.confirm_within, wait })),
+            Some(since) => {
+                let by = now + self.clients.confirm_within;
+                Some(Stage::Confirm(Confirm { pane, since, compacts, by, wait }))
+            }
             None => wait.map(|until| Stage::Watch(self.watch(pane, until, now))),
         };
         match next {
@@ -306,7 +320,7 @@ impl App {
             Stage::Setup(workspace) => {
                 return format!("workspace {workspace} is still running its setup in pane {pane}");
             }
-            Stage::Confirm(confirm) => return self.unrecorded(confirm.pane),
+            Stage::Confirm(confirm) => return self.unrecorded(confirm),
             Stage::Reading => return format!("the record of pane {pane} is still being read"),
             Stage::Restart { caller } => return holding(&self.holding(*caller, Instant::now())),
             Stage::Several { parts, .. } => {
@@ -336,7 +350,17 @@ impl App {
         }
     }
 
-    fn unrecorded(&self, pane: u64) -> String {
+    fn unrecorded(&self, confirm: &Confirm) -> String {
+        let pane = confirm.pane;
+        let working = self
+            .projects
+            .pane_by(pane)
+            .is_some_and(|term| matches!(term.agent.status(), Some(Status::Working | Status::Waiting)));
+        if confirm.compacts && working {
+            return format!(
+                "the agent in pane {pane} has not recorded the compaction yet: it is still compacting its conversation"
+            );
+        }
         let holding = self
             .projects
             .pane_by(pane)
@@ -348,10 +372,10 @@ impl App {
     fn confirmation(&self, confirm: &mut Confirm, now: Instant) -> Option<Result<(), String>> {
         let pane = confirm.pane;
         let Some(term) = self.projects.pane_by(pane) else { return Some(Err(format!("pane {pane} closed"))) };
-        if term.context.prompted().is_some_and(|at| at >= confirm.since) {
+        if recorded(confirm, term.context.compaction().at, term.context.prompted()) {
             return Some(Ok(()));
         }
-        if holds_prompts(term.agent.agent().and_then(agents::Known::of), term.agent.status()) {
+        if keeps_open(confirm, term.agent.agent().and_then(agents::Known::of), term.agent.status()) {
             confirm.by = confirm.by.max(now + self.clients.confirm_within);
         }
         (now >= confirm.by).then(|| Err(not_confirmed(pane)))
