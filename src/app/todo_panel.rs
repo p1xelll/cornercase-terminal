@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::{Position, Rect};
 use serde_json::Value;
 
@@ -7,11 +7,12 @@ use super::interaction::{Drag, Grab, RowDrag};
 use super::layout::Side;
 use super::menus::MenuAction;
 use super::overlay::Overlay;
+use super::text_fields::FieldArea;
 use super::toast::Undo;
 use super::{App, Toast};
+use crate::editor::Editor;
 use crate::project::Hierarchy;
 use crate::todo::Removed;
-use crate::todo::editor::Editor;
 use crate::ui;
 use crate::ui::todo::{self as panel, Hit};
 
@@ -22,6 +23,14 @@ const CLIENTS: u64 = 1 << 61;
 impl App {
     fn todo_area(&self, area: Rect) -> Rect {
         self.layout(area).shown(self.screen.nav).changes
+    }
+
+    pub(super) fn todo_text(&mut self, area: Rect) -> Option<(FieldArea, &mut Editor)> {
+        let panel_area = self.todo_area(area);
+        let row = panel::field_row(panel_area, &self.todo_view(panel_area))?;
+        let text =
+            FieldArea { text: panel::field_box(row), width: panel::text_width(panel_area), top: 0, scrolls: false };
+        self.panels.todo.editor_mut().map(|editor| (text, editor))
     }
 
     pub(super) fn todo_view(&self, panel_area: Rect) -> panel::View {
@@ -107,18 +116,7 @@ impl App {
             KeyCode::Esc if editor.is_empty() => self.close_panel(),
             KeyCode::Esc => self.panels.todo.cancel(),
             KeyCode::Enter => self.submit_todo(area),
-            KeyCode::Backspace => editor.backspace(),
-            KeyCode::Delete => editor.delete(),
-            KeyCode::Left => editor.left(),
-            KeyCode::Right => editor.right(),
-            KeyCode::Home => editor.home(),
-            KeyCode::End => editor.end(),
-            KeyCode::Up => editor.up(width),
-            KeyCode::Down => editor.down(width),
-            KeyCode::Char(c) if !key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
-                editor.insert(c.encode_utf8(&mut [0; 4]));
-            }
-            _ => {}
+            _ => _ = editor.one_line_key(key, width),
         }
     }
 

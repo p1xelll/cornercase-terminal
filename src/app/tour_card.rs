@@ -7,10 +7,10 @@ use ratatui::layout::{Position, Rect};
 use super::App;
 use super::overlay::Overlay;
 use super::toast::Toast;
+use crate::editor::Editor;
 use crate::git;
 use crate::log;
 use crate::project::Hierarchy;
-use crate::todo::editor::Editor;
 use crate::tour::{self, Dialog, Done, Facts, Offer, Saved, Show, Step, TOURS, Tour};
 use crate::ui::{self, TourButton};
 
@@ -343,11 +343,13 @@ impl App {
         if ev.kind != MouseEventKind::Down(MouseButton::Left) {
             return true;
         }
-        self.messages.tour.swallowed = true;
         if layout.field.contains(pos) {
             self.focus_tour_field(layout.field, pos);
-        } else if let Some(button) = ui::tour_hit(area, &card, pos) {
-            self.tour_button(button, area);
+        } else {
+            self.messages.tour.swallowed = true;
+            if let Some(button) = ui::tour_hit(area, &card, pos) {
+                self.tour_button(button, area);
+            }
         }
         true
     }

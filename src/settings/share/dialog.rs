@@ -3,8 +3,8 @@ use crossterm::event::{KeyCode, KeyEvent};
 use super::preview::change_text;
 use super::{MAX_BYTES, NEVER_SHARED, Section, Shared, too_large};
 use crate::control::config::{NoteKind, SectionPreview, SetupChange, SetupExported, SetupNote, SetupPreview};
+use crate::editor::Editor;
 use crate::text;
-use crate::todo::editor::Editor;
 
 pub(crate) const COPY: &str = "copy my setup";
 pub(crate) const PREVIEW: &str = "preview";
@@ -82,6 +82,20 @@ impl Line {
 }
 
 impl Dialog {
+    pub(crate) fn paste_editor(&self) -> Option<&Editor> {
+        match &self.page {
+            Page::Paste { editor, .. } => Some(editor),
+            Page::Preview { .. } => None,
+        }
+    }
+
+    pub(crate) fn paste_editor_mut(&mut self) -> Option<&mut Editor> {
+        match &mut self.page {
+            Page::Paste { editor, .. } => Some(editor),
+            Page::Preview { .. } => None,
+        }
+    }
+
     pub(crate) fn new(text: &str) -> Self {
         let mut editor = Editor::new(text);
         editor.home();

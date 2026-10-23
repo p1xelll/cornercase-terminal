@@ -6,9 +6,9 @@ use super::Flow;
 use super::dialog::{CANCEL, DIAGRAM, EDIT, FORM, agents_count, project_risks, scrolled};
 use super::store::{self, Listing, Origin, Saved};
 use crate::accounts::AgentAccounts;
+use crate::editor::Editor;
 use crate::issues::naming::check_branch;
 use crate::list::COMBO_ROWS;
-use crate::todo::editor::Editor;
 
 pub(crate) const START: &str = "start";
 const ACCOUNT_HINT: &str = "only this run: the default stays · enter opens the list";
@@ -328,7 +328,11 @@ impl Start {
         }
     }
 
-    fn typed(&mut self) {
+    pub(crate) fn typing_prompt(&self) -> bool {
+        self.focus == Focus::Prompt && !self.waiting && !self.accounts_open()
+    }
+
+    pub(crate) fn typed(&mut self) {
         if !self.named {
             self.branch = super::branch(&self.prompt.text());
         }

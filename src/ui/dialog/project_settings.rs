@@ -7,8 +7,8 @@ use ratatui::widgets::{Clear, Paragraph};
 use super::flows::{draw_buttons, draw_hint, draw_text, text_inside};
 use super::issues::issue_buttons_in;
 use super::{Note, form_inner};
+use crate::editor::Editor;
 use crate::project::settings::{Field, SAVE};
-use crate::todo::editor::Editor;
 use crate::ui::View;
 use crate::ui::widgets::overlay_block;
 
@@ -87,8 +87,8 @@ pub(in crate::ui) fn draw_project_settings(f: &mut Frame, view: &View, settings:
     let lit = |field: Field| if settings.focus == field { Style::default().fg(Color::Cyan) } else { dim };
     f.render_widget(Paragraph::new(Span::styled("setup", lit(Field::Setup))), rows[0]);
     f.render_widget(Paragraph::new(Span::styled("teardown", lit(Field::Teardown))), rows[2]);
-    let setup = draw_text(f, view, rows[1], &settings.setup).filter(|_| settings.focus == Field::Setup);
-    let teardown = draw_text(f, view, rows[3], &settings.teardown).filter(|_| settings.focus == Field::Teardown);
+    let setup = draw_text(f, view, rows[1], &settings.setup, settings.focus == Field::Setup);
+    let teardown = draw_text(f, view, rows[3], &settings.teardown, settings.focus == Field::Teardown);
     draw_hint(f, view, settings.note.as_ref(), &settings.hint, rows[4]);
     draw_buttons(f, view, &project_settings_buttons(area, &settings.buttons), &settings.buttons, SAVE);
     if let Some(pos) = setup.or(teardown) {

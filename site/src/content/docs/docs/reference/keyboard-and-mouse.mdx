@@ -155,7 +155,16 @@ See [Flows](../../guides/flows/#the-flow-panel).
 
 ### Dialogs and lists
 
-Click buttons and rows to use them. In lists (the folder picker, the issue browser, the settings, search results) and in an update's release notes, the wheel scrolls. A right-click menu closes when you click anywhere else, and so do the search and every dialog, as its cancel button would, so whatever you typed in it is dropped. A dialog that is busy (creating a worktree, installing an update, checking a token, starting an issue) stays open until it is done. A plugin's [popup](../../guides/plugins/#popups) is the exception: a click outside it does nothing, and it closes with its `×`.
+Click buttons and rows to use them. In lists (the folder picker, the issue browser, the settings, search results) and in an update's release notes, the wheel scrolls. A right-click menu closes when you click anywhere else (a text field's menu closes without its dialog), and so do the search and every dialog, as its cancel button would, so whatever you typed in it is dropped. A dialog that is busy (creating a worktree, installing an update, checking a token, starting an issue) stays open until it is done. A plugin's [popup](../../guides/plugins/#popups) is the exception: a click outside it does nothing, and it closes with its `×`.
+
+### Text fields
+
+| Gesture | Where | Does |
+| --- | --- | --- |
+| Click | A text field with a cursor | Puts the cursor there and drops any selection. |
+| Press, drag, release | A text field | Selects the text; a long field scrolls past its edge while you drag. Typing, `Backspace` and `Delete` replace or remove it. |
+| Double-click | A text field | Selects the word under the pointer. |
+| Right-click | A text field | Opens a small menu, **copy**, **cut** and **select all**; outside the selection it first moves the cursor there. `Esc` closes it, and a click anywhere else closes only the menu, not the dialog. |
 
 ### The resize pointer
 
@@ -216,7 +225,7 @@ While a dialog, the search, the settings, the issue browser, the changes panel's
 | Any dialog with a text field | Type, `Backspace`, paste. `Enter` confirms, `Esc` cancels. |
 | New workspace | `Tab` toggles **with its own worktree**. |
 | A plugin's popup | Every key, `Esc` and the prefix key included, goes to the program in it. Close it with its `×`. |
-| Right-click menus | `Esc` closes the menu. Other keys still go to the active pane. |
+| Right-click menus | `Esc` closes the menu. Other keys still go to the active pane. A text field's menu closes on any key and `Esc` only closes it; other keys go on to the field. |
 | While dragging a row or a pane | `Esc` cancels the drag. Other keys still go to the active pane. |
 | While dragging a border or a divider | `Esc` ends the drag where it is. Other keys still go to the active pane. |
 | Folder picker | Type to filter. `↑` `↓` select. `→` or `Tab` go into the selected folder, `←` goes up. `Enter` goes into the selected folder, or opens the folder you are in. `~` goes home and `/` to the root when the filter is empty. `Backspace` on an empty filter goes up. |
@@ -226,18 +235,22 @@ While a dialog, the search, the settings, the issue browser, the changes panel's
 | Agent, place and person pickers | Type to filter. `↑` `↓` select. `Enter` picks. `Esc` goes back. |
 | Changes panel filter | Type a piece of a path or a pattern: `*.test.js` keeps only those files, `!*.snap` leaves them out. `Enter` keeps the filter and gives the keys back to your program, `Esc` clears it, or closes the panel when the field is empty. A click in a pane gives the keys back too. |
 | Files panel search | Type to search. `↑` `↓` pick a result. `Enter` opens it. `Esc` clears the search and gives the keys back to your program, or closes the panel when the bar is empty. A click in a pane gives them back too and keeps the search. |
-| TODO field | Type, paste. `←` `→` move the cursor, `↑` `↓` move across the lines of a long item, `Home` `End` go to its start and end, `Backspace` `Delete` delete. `Enter` saves (a new item keeps the field open for the next one), `Esc` cancels, or closes the panel when the field is empty. A click outside the field saves it and gives the keys back. |
+| TODO field | Type, paste. `←` `→` move the cursor, `Ctrl+←` `Ctrl+→` (or `Option+←` `Option+→`) a word at a time, `↑` `↓` move across the lines of a long item, `Home` `End` go to its start and end, `Backspace` `Delete` delete. `Enter` saves (a new item keeps the field open for the next one), `Esc` cancels, or closes the panel when the field is empty. A click outside the field saves it and gives the keys back. |
 | Files panel find field | Type to find in the open file. `↓` or `Enter` go to the next match, `↑` to the previous one, wrapping. `Esc` clears it, or closes it when it is empty. A click in a pane gives the keys back and keeps it. |
 | Changes, files, TODO or Flow panel | `Esc` closes it, as its `×` does, unless one of its fields above has text; the files find field closes, and a file shown full screen goes back to its panel, first. That `Esc` does not reach your program; the next one does. |
 | Settings › Flows | `↑` `↓` select a flow (its diagram is drawn beside the list; the wheel over the diagram scrolls it), `Tab` `→` / `Shift+Tab` `←` switch settings tabs (in the page that **`edit`** opens from a start dialog, which has no tabs, `Tab` moves between flows), `Enter` opens it (on **deleted built-ins** it expands them, on one of them it restores it), `Delete` deletes it after asking (a built-in flow is hidden). On a flow: `↑` `↓` select a row, `Enter` or `Space` change it or open a stage, `Tab` `→` / `Shift+Tab` `←` switch tabs, `Shift+↑` `Shift+↓` move a stage, `Delete` removes it. `Esc` goes back to the list, then closes; with unsaved changes it asks first. A paste on the list opens the import page ([share a flow](../../guides/flows/#share-a-flow)). |
-| The import page, in Settings › Flows | Type or paste a flow's text. `Enter` starts a new line, the arrows, `Home` and `End` move. **`import`** opens it in the editor to check and save, `Esc` goes back. |
-| A prompt or the notes, in Settings › Flows | Type, paste. `Enter` starts a new line, the arrows, `Home` and `End` move, `Backspace` `Delete` delete. **`save`** keeps the text, `Esc` drops it. |
-| Start a flow | `Tab` / `Shift+Tab` move between the list, the prompt and the branch. In the list `↑` `↓` pick a flow and `Enter` moves to the prompt; in the prompt `Enter` starts a new line; in the branch it starts the flow. `Esc` closes it, back to the issue when it came from one. |
+| The import page, in Settings › Flows | Type or paste a flow's text. `Enter` starts a new line, the arrows (`Ctrl+←` `Ctrl+→` or `Option+←` `Option+→` by word), `Home` and `End` move. **`import`** opens it in the editor to check and save, `Esc` goes back. |
+| A prompt or the notes, in Settings › Flows | Type, paste. `Enter` starts a new line, the arrows (`Ctrl+←` `Ctrl+→` or `Option+←` `Option+→` by word), `Home` and `End` move, `Backspace` `Delete` delete. **`save`** keeps the text, `Esc` drops it. |
+| Start a flow | `Tab` / `Shift+Tab` move between the list, the prompt and the branch. In the list `↑` `↓` pick a flow and `Enter` moves to the prompt; in the prompt `Enter` starts a new line and `Ctrl+←` `Ctrl+→` move by word; in the branch it starts the flow. `Esc` closes it, back to the issue when it came from one. |
 | Branch to compare with | Type to filter. `↑` `↓` select. `Enter` picks the selected branch. `Esc` closes. |
 | Settings | `Enter` or `Space` change the selected row. `↑` `↓` select. `Tab` `→` / `Shift+Tab` `←` switch tabs. `Shift+↑` `Shift+↓` reorder sources. `Delete` removes a saved token. `Esc` closes. |
 | Update | `↑` `↓` scroll the release notes. `Enter` presses the dialog's first button: **update**, **try again**, **restart now** or **copy command**. `Esc` closes it, except while downloading, like **cancel** or, once the update is installed, **later**. |
 | Compact menu | `Esc` closes it. |
 | Keys menu | The key next to an entry runs it, or opens its group. `Esc` closes it. The prefix again types it in the pane. |
+
+In every field with a cursor (a TODO item, the schedule form, a prompt or a flow's text, a project's setup and teardown, the paste field in Settings › Share, the tour's prompt), `Ctrl+←` and `Ctrl+→` move by word and stop at line breaks. `Option+←` and `Option+→` do the same, in these fields only: a terminal sends them as `Alt+←` `Alt+→` or as `Esc b` and `Esc f`, and both work (on a Mac, a terminal may need Option set to send Esc or Meta). On macOS `Ctrl+←` and `Ctrl+→` switch desktops unless you turn off **Move left a space** and **Move right a space** in System Settings › Keyboard › Keyboard Shortcuts › Mission Control; Option needs no change.
+
+To select with the keys, hold `Shift` with `←` `→` `↑` `↓`, `Home` or `End`; with `Ctrl+Shift` or `Option+Shift` it goes a word at a time. A plain arrow drops the selection (`←` to its start, `→` to its end), and `Home` or `End` drops it too. Copy and cut come from the right-click menu, and your terminal's paste replaces the selection. `Shift`+click cannot extend a selection, because terminals keep it for their own. Some terminals take `Ctrl+Shift+←` `Ctrl+Shift+→` for their tabs (Ghostty on Linux with several tabs, kitty); `Option+Shift` is the alternative there.
 
 ## Keys in your panes
 

@@ -4,7 +4,7 @@ use ratatui::layout::{Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 
 use super::{GAP, Rows, Zone, action_style, dim, draw_close, hovered_at as hovered, more_above, put};
-use crate::todo::editor::{Editor, wrap};
+use crate::editor::{Editor, wrap};
 
 pub(crate) const TEXT_X: u16 = 5;
 const BUTTONS: u16 = 7;
@@ -88,6 +88,19 @@ pub(crate) fn clear_done(area: Rect, view: &View) -> Rect {
 
 pub(crate) fn text_width(area: Rect) -> usize {
     usize::from(area.width.saturating_sub(TEXT_X + BUTTONS).max(1))
+}
+
+pub(crate) fn field_box(row: Rect) -> Rect {
+    let x = row.x.saturating_add(TEXT_X).min(row.right());
+    Rect { x, width: row.right().saturating_sub(BUTTONS - 1).saturating_sub(x), ..row }
+}
+
+pub(crate) fn field_row(area: Rect, view: &View) -> Option<Rect> {
+    let layout = rows(area, view);
+    match view.items.iter().position(|item| item.editing.is_some()) {
+        Some(i) => Some(layout.item(i)),
+        None => view.adding.is_some().then(|| layout.button()),
+    }
 }
 
 pub fn rows(area: Rect, view: &View) -> Rows {
@@ -263,6 +276,7 @@ impl Painter<'_> {
             let part: String = text[range].iter().collect();
             put(self.buf, (x, y), &part, Style::default().bg(super::surface_colour(view.light)), field.right());
         }
+        super::widgets::paint_selection(self.buf, field_box(r), 0, &editor.highlight(width));
         let (line, col) = editor.position(width);
         let at = Position::new(x.saturating_add(height(col)), r.y.saturating_add(height(line)));
         r.contains(at).then_some(at)

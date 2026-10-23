@@ -10,11 +10,11 @@ use super::flows::{
 };
 use super::issues::issue_buttons_in;
 use super::{INPUT_PROMPT, Note, draw_input, form_inner, pick_background};
+use crate::editor::Editor;
 use crate::flows::Flow;
 use crate::flows::start::{Focus, Item, START};
 use crate::list::Combo;
 use crate::text::truncate_right;
-use crate::todo::editor::Editor;
 use crate::ui::View;
 use crate::ui::combo;
 use crate::ui::widgets::overlay_block;
@@ -281,7 +281,7 @@ fn draw_start_prompt(f: &mut Frame, view: &View, start: &StartFlow, area: Rect) 
     let dim = Style::default().fg(view.muted);
     let lit = if start.focus == Focus::Prompt { Style::default().fg(Color::Cyan) } else { dim };
     f.render_widget(Paragraph::new(Span::styled("prompt", lit)), label);
-    let cursor = draw_text(f, view, prompt, &start.prompt).filter(|_| start.focus == Focus::Prompt);
+    let cursor = draw_text(f, view, prompt, &start.prompt, start.focus == Focus::Prompt);
     if start.prompt.is_empty() {
         let at = text_inside(prompt);
         let placeholder = truncate_right(PLACEHOLDER, usize::from(at.width));

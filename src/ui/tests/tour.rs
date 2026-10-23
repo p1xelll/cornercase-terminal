@@ -1,5 +1,5 @@
 use super::*;
-use crate::todo::editor::Editor;
+use crate::editor::Editor;
 use crate::ui::{TourButton, TourCard, help_button, quit_button, tour_hit, tour_layout};
 
 const TALL: u16 = 30;
@@ -95,4 +95,21 @@ fn a_narrow_quit_row_drops_help_and_keeps_quit_whole() {
     let row = Rect::new(0, 0, 10, 1);
     assert!(help_button(row).is_empty());
     assert_eq!(quit_button(row), row);
+}
+
+#[test]
+fn the_focused_prompt_field_shows_its_selection_reversed() {
+    let pane = tall().pane;
+    let target = Rect { x: pane.x - 1, width: 1, ..pane };
+    let reversed = |focused: bool| {
+        let mut c = card(target, true);
+        c.focused = focused;
+        if let Some(field) = c.field.as_mut() {
+            field.select_all();
+        }
+        let v = View { tour: Some(c), ..view(&["~"]) };
+        let t = render_sized(&v, W, TALL);
+        t.backend().buffer().content().iter().filter(|c| c.modifier.contains(Modifier::REVERSED)).count()
+    };
+    assert_eq!(reversed(true), reversed(false) + "Explain this repository's structure.".len());
 }

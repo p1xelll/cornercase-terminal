@@ -5,10 +5,12 @@ use ratatui::layout::{Position, Rect};
 
 use super::App;
 use super::overlay::Overlay;
+use super::text_fields::FieldArea;
 use super::toast::Toast;
 use crate::accounts::AgentAccounts;
 use crate::agents;
 use crate::control::QueueAdd;
+use crate::editor::Editor;
 use crate::git;
 use crate::issues::browser::{Place, Screen, Tab};
 use crate::issues::{self, Issue};
@@ -16,7 +18,6 @@ use crate::list::{COMBO_ROWS, Combo};
 use crate::project::{Hierarchy, Project, Workspace};
 use crate::queue;
 use crate::queue::form::{Choice, Choices, Control, Form, Step, When};
-use crate::todo::editor::Editor;
 use crate::ui;
 
 impl App {
@@ -218,6 +219,14 @@ impl App {
             self.queue_modes();
             self.queue_accounts(None);
         }
+    }
+
+    pub(super) fn queue_text(&mut self, area: Rect, control: Control) -> Option<(FieldArea, &mut Editor)> {
+        let Some(Overlay::Queue(form)) = &mut self.overlay else { return None };
+        let text = ui::queue_form::text(area, form, control);
+        let editor = form.editor(control)?;
+        let top = ui::queue_form::first_line(editor, text);
+        Some((FieldArea { text, width: usize::from(text.width.max(1)), top, scrolls: false }, editor))
     }
 
     pub(super) fn queue_form_mouse(&mut self, event: MouseEvent, pos: Position, area: Rect) {
