@@ -139,13 +139,13 @@ impl App {
         }
         for notice in notices {
             match notice {
-                Notice::Waiting(pane) => self.notice_waiting(via, pane),
+                Notice::Waiting(pane) => self.notice_waiting(via, pane, None),
                 Notice::Finished(pane, shell) => self.notice_finished(via, pane, shell),
             }
         }
     }
 
-    pub(super) fn notice_waiting(&mut self, via: Via, pane: u64) {
+    pub(super) fn notice_waiting(&mut self, via: Via, pane: u64, to: Option<i64>) {
         let Some(agent) = self.agent_at(pane) else { return };
         let messenger = self.messenger(via);
         let mut keyboard: Keyboard = messenger::choices(&agent.screen)
@@ -162,7 +162,7 @@ impl App {
         let header =
             format!("{} · {}", m.bold(&format!("! {} needs you", m.escape(&agent.kind))), m.escape(&agent.place));
         let text = with_screen(via, &header, &agent.screen, EXCERPT);
-        self.say(via, text, Delivery { keyboard, route: Some(Route::Pane(pane)), reply_to: None });
+        self.say(via, text, Delivery { keyboard, route: Some(Route::Pane(pane)), reply_to: None, to });
     }
 
     fn notice_finished(&mut self, via: Via, pane: u64, shell: bool) {
@@ -195,12 +195,12 @@ impl App {
                 vec![m.pre(&excerpt(&screen, EXCERPT), m.room(header))]
             }
         };
-        self.say_long(via, header, parts, Delivery { keyboard, route: Some(Route::Pane(pane)), reply_to: None });
+        self.say_long(via, header, parts, Delivery { keyboard, route: Some(Route::Pane(pane)), ..Delivery::default() });
     }
 
-    pub(super) fn send_screen(&mut self, via: Via, pane: u64) {
+    pub(super) fn send_screen(&mut self, via: Via, pane: u64, to: Option<i64>) {
         let Some(agent) = self.agent_at(pane) else {
-            self.say(via, super::chat::GONE.into(), Delivery::default());
+            self.say(via, super::chat::GONE.into(), Delivery { to, ..Delivery::default() });
             return;
         };
         let messenger = self.messenger(via);
@@ -211,7 +211,7 @@ impl App {
         let m = via.markup();
         let header = format!("{} {} · {}", icon(agent.status), m.bold(&m.escape(&agent.kind)), m.escape(&agent.place));
         let text = with_screen(via, &header, &agent.screen, SCREEN);
-        self.say(via, text, Delivery { keyboard, route: Some(Route::Pane(pane)), reply_to: None });
+        self.say(via, text, Delivery { keyboard, route: Some(Route::Pane(pane)), reply_to: None, to });
     }
 
     pub(super) fn status_message(&self, via: Via) -> (Vec<String>, Keyboard) {
