@@ -7,7 +7,7 @@ import { type AgentRow, type App, PAGE_NAMES, crop } from './app';
 import { changesLabel, drawChanges, hasChanges } from './changes';
 import { drawFiles } from './files';
 import { drawFlow } from './flow';
-import { type FieldGrip, drawTodo } from './todo';
+import { type FieldGrip, drawTodo, fieldLines, fieldPosition } from './todo';
 import { type KeysGroup, keyWidth, keysArea, keysFrame, keysItem, keysItems } from './keys';
 import {
   type Areas,
@@ -29,6 +29,7 @@ import {
   helpButton,
   closeButton,
   formArea,
+  INPUT_PROMPT,
   inner,
   intersect,
   isEmpty,
@@ -41,6 +42,7 @@ import {
   EMPTY,
   MIN_MENU_ROW_WIDTH,
   moreAbove,
+  nameWidth,
   pickerArea,
   right,
   rightAligned,
@@ -186,7 +188,6 @@ function updated(ms: number): string {
   if (minutes < 60) return `updated ${minutes}m ago`;
   return `updated ${Math.floor(minutes / 60)}h ago`;
 }
-const INPUT_PROMPT = '› ';
 
 const middle = (r: Rect): Rect => rect(r.x, r.y + Math.floor(Math.max(0, r.h - 1) / 2), r.w, Math.min(r.h, 1));
 const marker = (shown: boolean): Seg => seg(shown ? '▌ ' : '  ', CYAN);
@@ -1198,6 +1199,17 @@ export class Painter {
     if (focused && x < right(row)) this.cursor = { x, y: row.y, shape: 'block' };
   }
 
+  private nameInput(row: Rect, value: string, cursor: number | undefined): void {
+    const chars = [...value];
+    const field = { chars, cursor: Math.min(cursor ?? chars.length, chars.length) };
+    const w = nameWidth(this.app.cols, this.app.rows);
+    const [line, col] = fieldPosition(field, w);
+    const [from, to] = fieldLines(field, w)[line];
+    const x = this.span(row.x, row.y, INPUT_PROMPT, CYAN);
+    this.span(x, row.y, chars.slice(from, to).join(''), { add: BOLD }, w);
+    this.cursor = { x: x + Math.min(col, w - 1), y: row.y, shape: 'block' };
+  }
+
   private form(): void {
     const app = this.app;
     const o = app.overlay;
@@ -1208,7 +1220,7 @@ export class Painter {
     this.box(r, title);
     const c = rect(r.x + 2, r.y + 1, r.w - 4, r.h - 2);
     this.span(c.x, c.y, 'name', DARK);
-    this.input(rect(c.x, c.y + 1, c.w, 1), '', o.input);
+    this.nameInput(rect(c.x, c.y + 1, c.w, 1), o.input, o.cursor);
     if (o.kind === 'newWorkspace') {
       this.span(c.x, c.y + 2, truncateLeft(app.newWorkspaceHint(o), c.w), DARK);
       if (o.worktree !== null) {
