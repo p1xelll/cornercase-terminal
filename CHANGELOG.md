@@ -2,6 +2,12 @@
 
 Every pull request that changes the app adds a section here for its new version. The section becomes the notes of the GitHub Release and shows up in the app's update dialog, so write it for users.
 
+## 0.12.212
+
+- **Other UIs can show a plugin's popup and type into it.** `cornercase surface --popup` streams the popup open in the window as cells, in the same lines as a tab's terminals (one pane, at the popup's own size, with the plugin and action it belongs to), and ends when the popup closes. `cornercase input --popup` types keys, text, pastes and mouse events into its program. A browser view or another client built on the socket can now draw the popup instead of a blank. Nothing changes in the window.
+- `input --popup --pane ID` names the popup by the id its surface lines give it, so keys meant for a popup that has closed never reach the next one.
+- Like a pane, a popup can be read and typed into by any program that talks to cornercase, agents in your panes included: don't use one for a secret or a confirmation only you should see or give.
+- Scripts: `surface` and `input` take `popup`, and `cornercase contract` lists the feature `popup-terminal`.
 ## 0.12.211
 
 - **Act only on the version of a file you saw, from the command line.** `cornercase changes viewed`, `stage`, `unstage` and `discard` take `--digest`, with the file's `digest` from `changes list --json` or `changes file --json`. The command then acts only if the file is still that version: if an agent changed it since, `stage`, `unstage` and `discard` leave it alone and say so, and `viewed` does not mark the newer version. Apps that draw their own changes panel through these commands can now discard, stage or mark exactly what you reviewed. Without `--digest` they act on the file as it is now, as before.
