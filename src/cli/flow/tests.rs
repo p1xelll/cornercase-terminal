@@ -1,5 +1,59 @@
 use super::*;
 
+fn shared_flow() -> Flow {
+    let spec: FlowSpec =
+        serde_json::from_str(crate::test_util::fixture!("control/flows/flow.json")).expect("the flow contract fixture");
+    spec.into_flow()
+}
+
+#[rstest::rstest]
+#[case::stdin(Source::Stdin, false)]
+#[case::web(Source::Repo("octocat/audit".into()), true)]
+fn an_older_servers_preview_keeps_the_roles_and_risks_in_text_and_json(#[case] source: Source, #[case] web: bool) {
+    let legacy = serde_json::json!({
+        "name": "Renamed", "origin": "project", "path": null, "replaced": true, "note": "missing agent", "future": true
+    });
+    let value = complete_preview(legacy, &shared_flow(), &source).expect("a complete preview");
+    assert_eq!((value["name"].as_str(), value["origin"].as_str()), (Some("Renamed"), Some("project")));
+    assert_eq!((value["roles"].as_array().map(Vec::len), value["roles"][0]["model"].as_str()), (Some(3), Some("opus")));
+    assert_eq!(value["roles"][1]["worktree"], "own");
+    let risks = value["check"].as_str().expect("risks");
+    assert!(risks.contains("NODE_ENV=test") && risks.contains("--verbose"));
+    assert_eq!(risks.contains("nobody here reviewed"), web);
+    assert_eq!((value["future"].as_bool(), value["replaced"].as_bool()), (Some(true), Some(true)));
+    let text = checked_line(&answer(value).expect("a preview"));
+    assert!(text.contains("coder: claude · high (edits, own worktree)") && text.contains("NODE_ENV=test"));
+    assert!(text.contains("missing agent") && text.contains("nothing was imported"));
+}
+
+#[test]
+fn a_modern_servers_preview_keeps_its_details_and_unknown_fields() {
+    let modern = serde_json::json!({
+        "roles": [{"role": "orchestrator", "agent": "claude", "future": true}],
+        "check": "the server's risks", "future": true
+    });
+    assert_eq!(complete_preview(modern.clone(), &shared_flow(), &Source::Stdin).expect("a preview"), modern);
+}
+
+#[test]
+fn an_import_preview_names_its_destination_replacement_risks_and_missing_agents() {
+    let preview = Imported {
+        name: "Mine\x1b[2J".into(),
+        origin: "project".into(),
+        replaced: true,
+        roles: vec![RoleInfo { role: "coder".into(), agent: "claude".into(), edits: true, ..RoleInfo::default() }],
+        check: Some("it sets TOKEN=demo; they run without asking, so check them".into()),
+        note: Some("`coder` runs claude, which is not installed here".into()),
+        ..Imported::default()
+    };
+    assert_eq!(
+        checked_line(&preview),
+        "Mine\\u{1b}[2J\n  coder: claude (edits)\nit sets TOKEN=demo; they run without asking, so check them\n\
+         `coder` runs claude, which is not installed here\n\
+         would import into this project (replaces the existing flow); nothing was imported\n"
+    );
+}
+
 fn removed(changed: bool, deleted: Option<&str>) -> FlowRemoved {
     FlowRemoved {
         name: "Quick".into(),

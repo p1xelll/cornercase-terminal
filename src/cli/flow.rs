@@ -13,9 +13,9 @@ use crate::control::{
     FlowSpec, Flows, Imported, RoleInfo, RunEdge, RunFiles, RunInfo, RunState, contract,
 };
 use crate::error::{Error, Result};
-use crate::flows::Worktree;
 use crate::flows::registry::{self, Source};
 use crate::flows::share;
+use crate::flows::{Flow, Worktree};
 
 pub(super) fn run(action: FlowAction) -> Result<()> {
     match action {
@@ -257,7 +257,6 @@ fn import_flow(args: FlowImportArgs) -> Result<()> {
     let text = import_text(&source)?;
     let flow = share::from_share(&text)
         .map_err(|e| Error::Control(share::visible(&format!("cannot read `{}`: {e}", args.source))))?;
-    eprint!("{}", share::summary(&flow));
     let risks = share::risks(&flow, "it");
     let asked = match &source {
         Source::Url(_) | Source::Repo(_) => Some(fetched(&source, risks)),
@@ -269,8 +268,12 @@ fn import_flow(args: FlowImportArgs) -> Result<()> {
         project: args.project,
         place: args.to.name().to_string(),
         replace: args.replace,
-        check: false,
+        check: args.check,
     };
+    if args.check {
+        return checked_import(request, &flow, &source, args.print.json);
+    }
+    eprint!("{}", share::summary(&flow));
     if let Some(risks) = asked.filter(|_| !args.yes)
         && !confirmed_import(&mut request, &source, &risks, args.to)?
     {
@@ -286,6 +289,47 @@ fn import_flow(args: FlowImportArgs) -> Result<()> {
         eprintln!("{note}");
     }
     print_out(&imported_line(&imported))
+}
+
+fn checked_import(request: control::FlowImport, flow: &Flow, source: &Source, json: bool) -> Result<()> {
+    let value = ask("flow import", control::Command::FlowImport(request))?;
+    let value = complete_preview(value, flow, source)?;
+    if json {
+        return print_json(&value);
+    }
+    print_out(&checked_line(&answer(value)?))
+}
+
+fn complete_preview(mut value: serde_json::Value, flow: &Flow, source: &Source) -> Result<serde_json::Value> {
+    let preview: Imported = answer(value.clone())?;
+    if preview.roles.is_empty() {
+        value["roles"] = serde_json::json!(RoleInfo::of_flow(flow));
+    }
+    let risks = preview.check.or_else(|| share::risks(flow, "it"));
+    let risks = match source {
+        Source::Url(_) | Source::Repo(_) => Some(fetched(source, risks)),
+        _ => risks,
+    };
+    if let Some(risks) = risks {
+        value["check"] = risks.into();
+    }
+    Ok(value)
+}
+
+fn checked_line(preview: &Imported) -> String {
+    let mut out = format!("{}\n", share::visible(&preview.name));
+    for role in &preview.roles {
+        let _ = writeln!(out, "  {}", share::visible(&role_summary(role)));
+    }
+    if let Some(check) = &preview.check {
+        let _ = writeln!(out, "{check}");
+    }
+    if let Some(note) = &preview.note {
+        let _ = writeln!(out, "{note}");
+    }
+    let replaced = if preview.replaced { " (replaces the existing flow)" } else { "" };
+    let _ = writeln!(out, "would import into {}{replaced}; nothing was imported", into_place(&preview.origin));
+    out
 }
 
 fn import_text(source: &Source) -> Result<String> {
