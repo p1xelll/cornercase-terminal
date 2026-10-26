@@ -103,14 +103,20 @@ pub enum Error {
     OldServer(&'static str),
     #[error("the cornercase server stopped before answering")]
     ServerGone,
+    #[error(
+        "the cornercase server closed the connection without stopping: it crashed, or this command stopped reading what it sends"
+    )]
+    ServerLost,
     #[error("cornercase hit a bug, see server.log")]
     Bug,
     #[error("failed to run ssh: {0}")]
     RunSsh(std::io::Error),
     #[error("could not reach cornercase on `{host}`: {reason}")]
     Ssh { host: String, reason: String },
-    #[error("cornercase was not found on `{0}`. Install it there, or give its path with --command")]
-    RemoteMissing(String),
+    #[error("cornercase was not found on `{host}`. Install it there, or give its path with {option}")]
+    RemoteMissing { host: String, option: &'static str },
+    #[error("no cornercase server is running on `{0}`")]
+    RemoteNoServer(String),
     #[error("the cornercase on `{0}` is too old to attach to from another machine. Run `cornercase update` there")]
     RemoteTooOld(String),
     #[error(
