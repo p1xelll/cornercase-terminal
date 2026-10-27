@@ -9,6 +9,7 @@ fn with_agents() -> View<'static> {
         has_project: true,
         workspaces: vec![
             WorkspaceEntry {
+                shared: 0,
                 collapsed: false,
                 name: "login".into(),
                 tabs: vec![tab("claude", Some(Status::Working)), tab("claude", Some(Status::Waiting)), "nvim".into()],
@@ -19,6 +20,7 @@ fn with_agents() -> View<'static> {
                 closed: 0,
             },
             WorkspaceEntry {
+                shared: 0,
                 collapsed: false,
                 name: "main".into(),
                 tabs: vec![tab("claude", Some(Status::Done)), tab("claude", Some(Status::Idle))],

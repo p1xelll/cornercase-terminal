@@ -288,3 +288,37 @@ mod remove {
         assert_eq!(changed(&path).expect("git status"), expected);
     }
 }
+
+mod scoped_commands {
+    use super::*;
+
+    #[test]
+    fn never_inherit_the_server_s_repository_variables() {
+        let cmd = scoped(Path::new("/repo"), ["status"], &[("GIT_INDEX_FILE", OsStr::new("/scratch/index"))]);
+
+        let envs: Vec<_> = cmd.get_envs().collect();
+        for name in INHERITED.into_iter().filter(|name| *name != "GIT_INDEX_FILE") {
+            assert!(envs.contains(&(OsStr::new(name), None)), "{name} is not removed: {envs:?}");
+        }
+        assert!(envs.contains(&(OsStr::new("GIT_INDEX_FILE"), Some(OsStr::new("/scratch/index")))));
+    }
+
+    #[test]
+    fn every_runner_drops_them() {
+        let cmd = command(Path::new("/repo"), ["status"]);
+
+        let envs: Vec<_> = cmd.get_envs().collect();
+        for name in INHERITED {
+            assert!(envs.contains(&(OsStr::new(name), None)), "{name} is not removed: {envs:?}");
+        }
+    }
+
+    #[test]
+    fn config_injected_through_the_environment_is_dropped() {
+        let names = ["GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_12", "GIT_CONFIG_GLOBAL", "PATH"];
+
+        let dropped = injected_config(names.into_iter().map(OsString::from));
+
+        assert_eq!(dropped, ["GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_12"].map(OsString::from));
+    }
+}

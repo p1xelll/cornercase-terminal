@@ -10,6 +10,7 @@ use super::overlay::Overlay;
 use super::plugins::Spot;
 use crate::editor::Editor;
 use crate::error::Result;
+use crate::git;
 use crate::host::open::Opener;
 use crate::log::{self};
 use crate::messenger::Via;
@@ -100,6 +101,7 @@ pub(super) enum MenuAction {
     ReopenAgents(u64),
     ForgetAgents(u64),
     PullRequest(u64),
+    MergeCheck(u64),
     ShowFlow(u64),
     Browser,
     Away(Via),
@@ -186,10 +188,10 @@ impl App {
             MenuAction::Pane(_, action) => action.label().into(),
             MenuAction::Mark(_, true) => "mark as pending review".into(),
             MenuAction::Mark(_, false) => "mark as reviewed".into(),
-            MenuAction::AgentFold(_, true) => "collapse".into(),
-            MenuAction::AgentFold(_, false) => "expand".into(),
+            MenuAction::AgentFold(_, collapse) => (if collapse { "collapse" } else { "expand" }).into(),
             MenuAction::CloseAgent(_) => "close agent".into(),
             MenuAction::PullRequest(workspace) => self.pull_request_label(workspace),
+            MenuAction::MergeCheck(_) => "merge check".into(),
             MenuAction::ShowFlow(_) => "show flow".into(),
             MenuAction::Browser if self.config.remote => "open in your phone's browser".into(),
             MenuAction::Browser => "set up your phone's browser…".into(),
@@ -204,11 +206,7 @@ impl App {
     }
 
     pub(super) fn target_menu(&self, target: Target) -> Vec<MenuAction> {
-        let more = match target {
-            Target::Tab(_, _, tab) => self.mark_action(Marked::Tab(tab)),
-            Target::Workspace(_, workspace) => self.pull_request(workspace).map(|_| MenuAction::PullRequest(workspace)),
-            Target::Group(_) | Target::Project(_) => None,
-        };
+        let more = self.more_entries(target);
         let account = match target {
             Target::Tab(_, _, tab) => self.account_entry(self.tab_pane(tab)),
             _ => None,
@@ -244,6 +242,19 @@ impl App {
             .chain(open)
             .chain(spot.map(|spot| self.plugin_menu(spot)).unwrap_or_default())
             .collect()
+    }
+
+    fn more_entries(&self, target: Target) -> Vec<MenuAction> {
+        match target {
+            Target::Tab(_, _, tab) => self.mark_action(Marked::Tab(tab)).into_iter().collect(),
+            Target::Workspace(_, workspace) => {
+                let pull = self.pull_request(workspace).map(|_| MenuAction::PullRequest(workspace));
+                let git =
+                    self.projects.workspace_by(workspace).is_some_and(|w| w.open() && git::branch(&w.path).is_some());
+                pull.into_iter().chain(git.then_some(MenuAction::MergeCheck(workspace))).collect()
+            }
+            Target::Group(_) | Target::Project(_) => Vec::new(),
+        }
     }
 
     fn workspace_tools(&self, workspace: u64) -> [MenuAction; 2] {
@@ -329,6 +340,7 @@ impl App {
             MenuAction::OpenWith(subject, opener) => self.open_with(subject, opener),
             MenuAction::CopyPath(subject) => self.copy_path(subject),
             MenuAction::PullRequest(workspace) => self.open_pull_request(workspace),
+            MenuAction::MergeCheck(workspace) => self.open_merge_check(workspace),
             MenuAction::ShowFlow(workspace) => self.show_flow_of(workspace),
             MenuAction::CloseAgents(workspace) => self.ask_close_agents(workspace),
             MenuAction::ReopenAgents(workspace) => self.reopen_from_window(workspace, area),

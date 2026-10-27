@@ -146,6 +146,7 @@ const HELP_LABELS: Record<HelpItem, string> = {
 };
 const MORE_ITEMS: MoreItem[] = ['settings', 'usage', 'quit'];
 const CLOSE_AGENT_NEEDS = 'this needs cornercase on your computer: the demo closes no agents';
+const MERGE_NEED = 'this needs cornercase on your computer: the demo has no git repositories to merge';
 const WORKTREES_NEED = 'this needs cornercase on your computer: the demo has no worktrees on disk to list';
 const PORTS_NEED = 'this needs cornercase on your computer: the demo runs no servers';
 const SETUP_NEEDS = 'this needs cornercase on your computer: the demo runs no setup scripts';
@@ -2466,6 +2467,7 @@ export class App {
     const tab = target.kind === 'tab' ? this.resolveTarget(target).tab : undefined;
     const mark = tab && this.markAction(tab.panes);
     if (mark) actions.push(mark);
+    if (target.kind === 'workspace' && this.resolveTarget(target).p?.repo) actions.push({ kind: 'mergeCheck', workspace: target.workspace });
     if (target.kind === 'workspace' && this.runOf(target.workspace)) actions.push({ kind: 'showFlow', workspace: target.workspace });
     if (target.kind === 'workspace') actions.push(...this.closedAgentsMenu(target.workspace));
     if (target.kind === 'project' || target.kind === 'workspace') actions.push({ kind: 'openIn' });
@@ -2504,6 +2506,7 @@ export class App {
     if (a.kind === 'mark') return a.pending ? 'mark as pending review' : 'mark as reviewed';
     if (a.kind === 'agentFold') return a.collapsed ? 'collapse' : 'expand';
     if (a.kind === 'closeAgent') return 'close agent';
+    if (a.kind === 'mergeCheck') return 'merge check';
     if (a.kind === 'showFlow') return 'show flow';
     if (a.kind === 'closeAgents') return 'close agents';
     if (a.kind === 'reopenAgents') return `reopen ${agentsLabel(this.closedCount(a.workspace))}`;
@@ -2576,6 +2579,7 @@ export class App {
     else if (a.kind === 'agentFold') this.setAgentFold(a.pane, a.collapsed);
     else if (a.kind === 'closeAgent') this.askCloseAgent(a.pane);
     else if (a.kind === 'sendTodo') this.sendTodo(a.todo, a.pane);
+    else if (a.kind === 'mergeCheck') this.bug(MERGE_NEED);
     else if (a.kind === 'showFlow') return this.showFlowOf(a.workspace);
     else if (a.kind === 'closeAgents') this.closeAgents(a.workspace);
     else if (a.kind === 'reopenAgents') this.reopenAgents(a.workspace);

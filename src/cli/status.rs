@@ -7,7 +7,9 @@ use super::args::StatusArgs;
 use super::{print_json, print_out};
 use crate::agents::activity;
 use crate::client::{answer, ask};
-use crate::control::{self, PaneInfo, PaneRow, PaneRows, ProjectInfo, PullRequestInfo, Report, WorkspaceInfo};
+use crate::control::{
+    self, PaneInfo, PaneRow, PaneRows, ProjectInfo, PullRequestInfo, Report, SharedInfo, WorkspaceInfo,
+};
 use crate::error::{Error, Result};
 use crate::pull_request::Provider;
 
@@ -132,11 +134,22 @@ fn workspace_parts(workspace: &WorkspaceInfo, home: Option<&Path>) -> Vec<String
         format!("{} {noun} changed", c.files)
     }));
     parts.extend(workspace.pull_request.as_ref().map(pull_request_part));
+    parts.extend(shared_part(&workspace.shared));
     parts.extend(workspace.closed_agents.filter(|count| *count > 0).map(|count| {
         let noun = if count == 1 { "agent" } else { "agents" };
         format!("{count} {noun} closed")
     }));
     parts
+}
+
+fn shared_part(shared: &[SharedInfo]) -> Option<String> {
+    let (first, rest) = shared.split_first()?;
+    let noun = if first.count == 1 { "file" } else { "files" };
+    let mut said = format!("shares {} {noun} with workspace {}", first.count, first.workspace);
+    for other in rest {
+        let _ = write!(said, ", {} with workspace {}", other.count, other.workspace);
+    }
+    Some(said)
 }
 
 fn pull_request_part(pull: &PullRequestInfo) -> String {

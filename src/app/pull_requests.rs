@@ -261,7 +261,7 @@ impl App {
         let workspace = self.projects.get(self.active)?.workspaces.get(w)?;
         let entry = self.workspace_entry(workspace);
         let layout = ui::workspace_layout(list, pitch, tabs, self.scroll.of(List::Workspaces));
-        [ui::Tag::Pull, ui::Tag::Stack, ui::Tag::Reopen].into_iter().find_map(|tag| {
+        [ui::Tag::Pull, ui::Tag::Stack, ui::Tag::Shared, ui::Tag::Reopen].into_iter().find_map(|tag| {
             let rect = ui::workspace_tag(&layout, pitch, tabs, w, (&entry, tag))?;
             rect.contains(pos).then_some((tag, workspace.id))
         })
@@ -276,7 +276,7 @@ impl App {
     ) -> Option<(ui::Tag, u64)> {
         let workspace = self.projects.get(p)?.workspaces.get(w)?;
         let entry = self.workspace_entry(workspace);
-        [ui::Tag::Pull, ui::Tag::Stack, ui::Tag::Reopen].into_iter().find_map(|tag| {
+        [ui::Tag::Pull, ui::Tag::Stack, ui::Tag::Shared, ui::Tag::Reopen].into_iter().find_map(|tag| {
             let rect = ui::tree_tag(list, shape, self.scroll.of(List::Projects), (p, w), (&entry, tag))?;
             rect.contains(pos).then_some((tag, workspace.id))
         })
@@ -285,6 +285,7 @@ impl App {
     pub(super) fn press_tag(&mut self, (tag, workspace): (ui::Tag, u64), area: Rect) {
         match tag {
             ui::Tag::Pull | ui::Tag::Stack => self.open_pull_request(workspace),
+            ui::Tag::Shared => self.open_merge_check(workspace),
             ui::Tag::Reopen => self.reopen_from_window(workspace, area),
         }
     }

@@ -12,6 +12,7 @@ mod flow;
 mod held;
 mod idle_restart;
 mod issues;
+mod merge_check;
 mod plugins;
 mod ports;
 mod queue;
@@ -616,6 +617,7 @@ impl App {
             Command::ChangesViewed(viewed) => self.changes_viewed_request(asker, &viewed),
             Command::ChangesDiscard(discard) => self.changes_discard_request(client, asker, &discard),
             Command::ChangesStage(stage) => self.changes_stage_request(client, asker, &stage),
+            Command::ChangesMergeCheck(check) => self.changes_merge_check_request(client, asker, &check),
             other => return ControlFlow::Continue(other),
         })
     }

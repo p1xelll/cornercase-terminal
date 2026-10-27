@@ -23,16 +23,6 @@ const STOP_WAIT: Duration = Duration::from_secs(10);
 const STAGING: &str = ".staging";
 const CHECKOUT: &str = "plugin";
 const SERVICE: Service = Service { name: "the plugin's download", rejected: "the plugin's download was refused" };
-const GIT_ENV: [&str; 8] = [
-    "GIT_DIR",
-    "GIT_WORK_TREE",
-    "GIT_INDEX_FILE",
-    "GIT_OBJECT_DIRECTORY",
-    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-    "GIT_COMMON_DIR",
-    "GIT_NAMESPACE",
-    "GIT_CONFIG_PARAMETERS",
-];
 
 static STAGED: AtomicU32 = AtomicU32::new(0);
 
@@ -304,6 +294,11 @@ fn git<I: IntoIterator<Item = S>, S: AsRef<OsStr>>(
     dir: Option<&Path>,
     args: I,
 ) -> Result<Vec<u8>, String> {
+    let out = git_command(origin, dir, args).output().map_err(|e| format!("cannot run git: {e}"))?;
+    worktree::check(out).map_err(|e| format!("git: {}", text::escape_hidden(&e.to_string())))
+}
+
+fn git_command<I: IntoIterator<Item = S>, S: AsRef<OsStr>>(origin: &Origin, dir: Option<&Path>, args: I) -> Command {
     let protocol = origin.protocol();
     let mut command = Command::new("git");
     if let Some(dir) = dir {
@@ -320,11 +315,8 @@ fn git<I: IntoIterator<Item = S>, S: AsRef<OsStr>>(
         .env("GIT_ASKPASS", "")
         .env("SSH_ASKPASS_REQUIRE", "never")
         .env("GIT_ALLOW_PROTOCOL", protocol);
-    for key in GIT_ENV {
-        command.env_remove(key);
-    }
-    let out = command.output().map_err(|e| format!("cannot run git: {e}"))?;
-    worktree::check(out).map_err(|e| format!("git: {}", text::escape_hidden(&e.to_string())))
+    worktree::drop_inherited(&mut command);
+    command
 }
 
 fn conflict(registry: &Registry, id: &str, origin: &Origin) -> Result<(), String> {

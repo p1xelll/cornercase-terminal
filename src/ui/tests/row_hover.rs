@@ -27,6 +27,7 @@ fn sample(light: bool) -> View<'static> {
     let mut v = View {
         has_project: true,
         workspaces: vec![WorkspaceEntry {
+            shared: 0,
             collapsed: false,
             name: "login".into(),
             tabs: vec!["claude".into(), "nvim".into()],

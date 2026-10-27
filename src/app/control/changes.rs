@@ -42,10 +42,10 @@ struct Wanted<'a> {
 
 type Answer = std::result::Result<Value, Refusal>;
 
-struct Place {
-    id: u64,
-    dir: std::path::PathBuf,
-    base: Option<String>,
+pub(super) struct Place {
+    pub(super) id: u64,
+    pub(super) dir: std::path::PathBuf,
+    pub(super) base: Option<String>,
 }
 
 type Listed = (Vec<String>, Option<String>);
@@ -62,7 +62,7 @@ fn read_file(place: &Place, mode: Mode, path: &str) -> Result<Option<Arc<File>>>
 }
 
 impl App {
-    fn changes_place(&self, asker: Asker, id: Option<u64>) -> std::result::Result<Place, Refusal> {
+    pub(super) fn changes_place(&self, asker: Asker, id: Option<u64>) -> std::result::Result<Place, Refusal> {
         let id = if let Some(id) = id {
             id
         } else {

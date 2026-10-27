@@ -129,6 +129,7 @@ impl Command {
             Self::ChangesViewed(viewed) => viewed.fields(fields),
             Self::ChangesDiscard(discard) => discard.fields(fields),
             Self::ChangesStage(stage) => stage.fields(fields),
+            Self::ChangesMergeCheck(check) => check.fields(fields),
             _ => return false,
         }
         true

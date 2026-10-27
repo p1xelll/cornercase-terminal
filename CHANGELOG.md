@@ -2,6 +2,11 @@
 
 Every pull request that changes the app adds a section here for its new version. The section becomes the notes of the GitHub Release and shows up in the app's update dialog, so write it for users.
 
+## 0.12.218
+
+- **See when two workspaces change the same files.** When two workspaces of a project change the same files since their branches parted, committed or not, both rows show `⇄` and how many files they share, such as `⇄2`, and those files carry a `⇄` in the changes panel. Click the badge, or pick **merge check** in the row's ` ⋯ ` menu, to see which files each pair shares. It also merges the work in a scratch copy with `git merge-tree`: you see whether the workspace merges cleanly into its base branch and with each workspace it shares files with, and which files would conflict and how. No checkout, index or branch is touched. It needs git 2.38 or later.
+- Scripts: `status --json` gives each workspace `shared`, the files it shares with each other workspace. `cornercase changes shared` prints them, and `cornercase changes merge-check` runs the check (`--with ID` for one workspace, `--base BRANCH` for another base; `--json` for the answer of the new `changes-merge-check` request). `cornercase contract` lists the feature `shared-files`.
+
 ## 0.12.217
 
 - **Give an agent on another machine a file from yours.** `cornercase --remote devbox paste-file --pane 12 shot.png` copies the file to `devbox`, keeps it in cornercase's state folder there and pastes its path into pane 12, so the agent in it can open it: no more `scp` and typing the path. Without a file it reads standard input (`pngpaste - | cornercase --remote devbox paste-file --pane 12`), and a nameless image gets its extension. Files up to 32 MB; it prints the path (`--json`: `pane`, `path`, `bytes`). The file is removed when its pane closes, and files an earlier server left after 7 days.

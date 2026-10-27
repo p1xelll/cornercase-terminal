@@ -114,6 +114,32 @@ pub(crate) enum ChangesAction {
         #[command(flatten)]
         print: Print,
     },
+    #[command(
+        about = "Merge a workspace's work, committed or not, into its base and with the workspaces it shares files \
+                 with, in a scratch copy, and print the conflicts"
+    )]
+    MergeCheck {
+        #[command(flatten)]
+        place: Where,
+        #[arg(
+            long,
+            value_name = "ID",
+            conflicts_with = "base",
+            help = "Check only the merge with this workspace of the same project"
+        )]
+        with: Option<u64>,
+        #[arg(long, value_name = "BRANCH", help = "Check only the merge into this branch")]
+        base: Option<String>,
+        #[command(flatten)]
+        print: Print,
+    },
+    #[command(about = "Print the files a workspace changes that other workspaces of its project change too")]
+    Shared {
+        #[command(flatten)]
+        place: Where,
+        #[command(flatten)]
+        print: Print,
+    },
     #[command(about = "Mark a file as viewed, or clear the mark")]
     Viewed {
         #[arg(value_name = "PATH", help = "The file, relative to the workspace")]

@@ -6,11 +6,13 @@ use super::{print_json, print_out, stream_json, workspace};
 use crate::changes::{Mode, Scope, discard, stage as staging};
 use crate::client::{self, answer, ask};
 use crate::control::changes::{
-    Base, Content, Discarded, FileInfo, FileStatus, FoldClass, Gap, LineKind, Patch, StagedFile, Staging, State,
-    Summary,
+    Base, Content, Discarded, FileInfo, FileStatus, FoldClass, Gap, LineKind, MergeChecked, MergeInfo, Patch,
+    StagedFile, Staging, State, Summary,
 };
-use crate::control::{Changes, ChangesBase, ChangesDiscard, ChangesFile, ChangesGap, ChangesStage, ChangesViewed};
-use crate::control::{Command, Report};
+use crate::control::{
+    Changes, ChangesBase, ChangesDiscard, ChangesFile, ChangesGap, ChangesMergeCheck, ChangesStage, ChangesViewed,
+};
+use crate::control::{Command, ProjectInfo, Report, WorkspaceInfo};
 use crate::error::{Error, Result};
 
 pub(super) fn run(args: ChangesArgs) -> Result<()> {
@@ -21,6 +23,8 @@ pub(super) fn run(args: ChangesArgs) -> Result<()> {
         ChangesAction::File { path, place, mode, print } => file(&path, &place, &mode, print.json),
         ChangesAction::Gap { path, hunk, place, mode, print } => gap(&path, hunk, &place, &mode, print.json),
         ChangesAction::Base { branch, default, place, print } => base(branch, default, &place, print.json),
+        ChangesAction::MergeCheck { place, with, base, print } => merge_check(&place, with, base, print.json),
+        ChangesAction::Shared { place, print } => shared(&place, print.json),
         ChangesAction::Viewed { path, clear, digest, place, mode } => viewed(&path, clear, digest, &place, &mode),
         ChangesAction::Discard { path, place, digest, yes } => discard(&path, &place, digest.digest, yes),
         ChangesAction::Stage { path, place, digest } => stage(&path, &place, digest.digest, true),
@@ -64,14 +68,18 @@ fn client_names() -> Option<Report> {
     client::report_now()
 }
 
+fn find(report: Option<&Report>, workspace: u64) -> Option<(&ProjectInfo, &WorkspaceInfo)> {
+    report?.projects.iter().find_map(|p| p.workspaces.iter().find(|w| w.id == workspace).map(|w| (p, w)))
+}
+
 fn names(report: Option<&Report>, workspace: u64) -> String {
-    report
-        .and_then(|report| {
-            report.projects.iter().find_map(|p| {
-                p.workspaces.iter().find(|w| w.id == workspace).map(|w| format!("{} › {}", p.name, w.name))
-            })
-        })
-        .unwrap_or_else(|| format!("workspace {workspace}"))
+    find(report, workspace)
+        .map_or_else(|| format!("workspace {workspace}"), |(p, w)| format!("{} › {}", p.name, w.name))
+}
+
+fn workspace_name(report: Option<&Report>, workspace: u64) -> String {
+    find(report, workspace)
+        .map_or_else(|| format!("workspace {workspace}"), |(_, w)| format!("workspace {workspace} {}", w.name))
 }
 
 fn mark(status: FileStatus) -> &'static str {
@@ -215,6 +223,71 @@ fn base(branch: Option<String>, default: bool, at: &Where, json: bool) -> Result
             ""
         };
         let _ = writeln!(text, "{branch}{tag}");
+    }
+    print_out(&text)
+}
+
+fn merge_check(at: &Where, with: Option<u64>, base: Option<String>, json: bool) -> Result<()> {
+    let request = ChangesMergeCheck { workspace: place("changes merge-check", at)?, with, base };
+    let value = ask("changes-merge-check", Command::ChangesMergeCheck(request))?;
+    if json {
+        print_json(&value)?;
+    }
+    let checked: MergeChecked = answer(value)?;
+    if !json {
+        print_out(&merge_text(&checked, client_names().as_ref()))?;
+    }
+    if checked.checks.iter().any(|check| check.error.is_some()) { Err(Error::Partial) } else { Ok(()) }
+}
+
+pub(super) fn merge_text(checked: &MergeChecked, report: Option<&Report>) -> String {
+    let mut text = String::new();
+    for check in &checked.checks {
+        let into = match (&check.with, &check.base) {
+            (Some(with), _) => format!("with {}", workspace_name(report, *with)),
+            (None, Some(base)) => format!("into {base}"),
+            (None, None) => "into the base branch".to_string(),
+        };
+        let _ = writeln!(text, "{into}  {}", merge_verdict(check));
+        for conflict in &check.conflicts {
+            let _ = writeln!(text, "  {}  {}", conflict.path, conflict.kind);
+        }
+        if check.left_out > 0 {
+            let _ = writeln!(text, "  {} untracked left out (over 1 MiB, or past 8 MiB in all)", check.left_out);
+        }
+    }
+    text
+}
+
+fn merge_verdict(check: &MergeInfo) -> String {
+    match (&check.error, check.conflicts.len()) {
+        (Some(why), _) => format!("could not check: {why}"),
+        (None, 0) => "merges cleanly".to_string(),
+        (None, 1) => "1 conflict".to_string(),
+        (None, n) => format!("{n} conflicts"),
+    }
+}
+
+fn shared(at: &Where, json: bool) -> Result<()> {
+    let report = client::report_now().ok_or_else(|| Error::Control("cannot read the workspaces".into()))?;
+    let id = match place("changes shared", at)? {
+        Some(id) => id,
+        None => report
+            .workspace_here()
+            .map(|w| w.id)
+            .ok_or_else(|| Error::WrongUsage("no workspace is open here: pass --workspace or --worktree".into()))?,
+    };
+    let (_, found) = find(Some(&report), id).ok_or_else(|| Error::Control(format!("there is no workspace {id}")))?;
+    if json {
+        return print_json(&serde_json::json!({ "workspace": id, "shared": found.shared }));
+    }
+    let mut text = String::new();
+    for other in &found.shared {
+        let name = workspace_name(Some(&report), other.workspace);
+        let _ = writeln!(text, "with {name}  {}", crate::text::plural(other.count, "file", "files"));
+        for file in &other.files {
+            let _ = writeln!(text, "  {file}");
+        }
     }
     print_out(&text)
 }

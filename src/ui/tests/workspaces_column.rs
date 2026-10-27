@@ -19,6 +19,7 @@ fn with_workspaces(active_tab: Option<usize>) -> View<'static> {
         has_project: true,
         workspaces: vec![
             WorkspaceEntry {
+                shared: 0,
                 collapsed: false,
                 name: "login".into(),
                 tabs: vec!["claude".into(), "nvim".into()],
@@ -29,6 +30,7 @@ fn with_workspaces(active_tab: Option<usize>) -> View<'static> {
                 closed: 0,
             },
             WorkspaceEntry {
+                shared: 0,
                 collapsed: false,
                 name: "main".into(),
                 tabs: vec!["zsh".into()],
@@ -116,6 +118,7 @@ fn renders_commits_to_pull_before_the_close_button() {
 fn renders_a_workspace_being_removed_without_its_buttons() {
     let mut v = View { hover: Some(at(0)), active_workspace: 1, ..with_workspaces(Some(0)) };
     v.workspaces[0] = WorkspaceEntry {
+        shared: 0,
         collapsed: false,
         behind: 3,
         pull: None,
@@ -154,6 +157,7 @@ fn plus_tab_is_filled_on_hover() {
 fn an_empty_workspace_says_so_in_the_pane() {
     let v = View {
         workspaces: vec![WorkspaceEntry {
+            shared: 0,
             collapsed: false,
             name: "main".into(),
             tabs: Vec::new(),
@@ -470,6 +474,64 @@ mod pull_request_tag {
 
         assert!(cell.modifier.contains(Modifier::UNDERLINED));
         assert_eq!(cell.fg, Color::Red);
+    }
+
+    fn shared_rect(v: &View) -> Rect {
+        workspace_tag(
+            &workspace_layout(wlist(), areas().pitch, &v.tab_lines(), 0),
+            areas().pitch,
+            &v.tab_lines(),
+            0,
+            (&v.workspaces[0], Tag::Shared),
+        )
+        .expect("a target")
+    }
+
+    fn sharing(shared: usize) -> View<'static> {
+        let mut v = tagged("login", 0, stacked(None));
+        v.workspaces[0].shared = shared;
+        v
+    }
+
+    #[test]
+    fn shared_files_sit_after_the_layer_and_before_the_commits() {
+        let v = sharing(2);
+
+        assert_eq!(row_text(&v, WorkspaceRow::Workspace(0)).trim_end(), "  ▾ l… #482✓ 2/3 ⇄2");
+        assert_eq!(render(&v).backend().buffer()[(shared_rect(&v).x, shared_rect(&v).y)].fg, Color::Yellow);
+    }
+
+    #[test]
+    fn no_tag_shows_without_shared_files() {
+        assert!(!row_text(&sharing(0), WorkspaceRow::Workspace(0)).contains('⇄'));
+    }
+
+    #[rstest]
+    #[case::room_for_all(20, "#482✓ 2/3 ⇄2 ↓3")]
+    #[case::the_commits_go_first(15, "#482✓ 2/3 ⇄2")]
+    #[case::then_the_shared_files(12, "#482✓ 2/3")]
+    #[case::then_the_layer(9, "#482✓")]
+    fn a_narrow_row_drops_the_commits_then_the_shared_files_then_the_layer(#[case] room: usize, #[case] kept: &str) {
+        let tags = ["#482✓", "2/3", "⇄2", "↓3"].map(|t| Span::raw(t.to_string())).to_vec();
+
+        let fitted = Tags::fit(tags, room);
+
+        let mut line = Vec::new();
+        fitted.push_onto(&mut line, 0, room);
+        let text: String = line.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(text.trim(), kept);
+    }
+
+    #[test]
+    fn hovering_the_shared_files_underlines_them_in_yellow() {
+        let mut v = sharing(2);
+        let r = shared_rect(&v);
+        v.hover = Some(r.as_position());
+
+        let cell = render(&v).backend().buffer()[(r.x, r.y)].clone();
+
+        assert!(cell.modifier.contains(Modifier::UNDERLINED));
+        assert_eq!(cell.fg, Color::Yellow);
     }
 
     #[test]

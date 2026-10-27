@@ -179,6 +179,7 @@ export type MenuAction =
   | { kind: 'forgetAgents'; workspace: number }
   | { kind: 'pane'; pane: number; action: PaneAction }
   | { kind: 'base'; branch: string }
+  | { kind: 'mergeCheck'; workspace: number }
   | { kind: 'showFlow'; workspace: number }
   | { kind: 'newWorkspace'; project: number }
   | { kind: 'startFlow'; project: number }

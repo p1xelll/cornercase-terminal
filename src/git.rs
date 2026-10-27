@@ -95,6 +95,14 @@ fn common_dir(dir: &Path) -> Option<PathBuf> {
     Some(std::fs::read_to_string(git.join("commondir")).map_or_else(|_| git.clone(), |c| git.join(c.trim())))
 }
 
+pub(crate) fn index_file(dir: &Path) -> Option<PathBuf> {
+    Some(git_dir(dir)?.join("index"))
+}
+
+pub(crate) fn objects_dir(dir: &Path) -> Option<PathBuf> {
+    Some(common_dir(dir)?.join("objects"))
+}
+
 fn read_head(dir: &Path) -> Option<String> {
     Some(std::fs::read_to_string(git_dir(dir)?.join("HEAD")).ok()?.trim().to_string())
 }

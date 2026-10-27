@@ -173,6 +173,7 @@ fn newest_commands() -> Vec<Command> {
         Command::FilesRead(FilesRead::default()),
         Command::FilesSearch(FilesSearch::default()),
         Command::PasteFile(PasteFile::default()),
+        Command::ChangesMergeCheck(ChangesMergeCheck::default()),
     ]
 }
 
@@ -776,6 +777,31 @@ fn a_workspace_says_whether_its_flow_run_reached_its_end() {
 
     assert_eq!(sent["run"], json!({"end": "pull_request", "reached": true}));
     assert!(serde_json::to_value(WorkspaceInfo::default()).expect("json").get("run").is_none());
+}
+
+#[test]
+fn a_workspace_lists_the_files_it_shares_and_leaves_the_key_out_without_any() {
+    let shared = SharedInfo { workspace: 12, count: 2, files: vec!["a.rs".into(), "b.rs".into()] };
+    let with = WorkspaceInfo { shared: vec![shared], ..WorkspaceInfo::default() };
+
+    let sent = serde_json::to_value(&with).expect("json");
+
+    assert_eq!(sent["shared"], json!([{"workspace": 12, "count": 2, "files": ["a.rs", "b.rs"]}]));
+    assert_eq!(serde_json::from_value::<WorkspaceInfo>(sent).expect("back"), with);
+    assert!(serde_json::to_value(WorkspaceInfo::default()).expect("json").get("shared").is_none());
+}
+
+#[test]
+fn a_merge_check_names_its_request_and_logs_what_it_was_asked() {
+    let request: Request =
+        serde_json::from_str(r#"{"command": "changes-merge-check", "args": {"workspace": 11, "with": 12}}"#)
+            .expect("a request");
+
+    assert_eq!(request.command.name(), "changes-merge-check");
+    assert_eq!(
+        request.command.fields(),
+        [("workspace", "11".to_string()), ("with", "12".to_string()), ("base", "false".to_string())]
+    );
 }
 
 #[test]

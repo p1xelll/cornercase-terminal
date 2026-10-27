@@ -211,6 +211,8 @@ impl App {
     fn scroll_dialog(&mut self, delta: isize, area: Rect) {
         if matches!(self.overlay, Some(Overlay::PullRequest { .. })) {
             self.scroll_pull_request(delta, area);
+        } else if matches!(self.overlay, Some(Overlay::MergeCheck { .. })) {
+            self.scroll_merge_check(delta, area);
         } else if matches!(self.overlay, Some(Overlay::FlowMessage { .. })) {
             self.scroll_flow_message(delta, area);
         } else {
@@ -258,6 +260,10 @@ impl App {
             Overlay::Update(step) => self.submit_update(step),
             Overlay::Restart => self.submit_restart(),
             Overlay::PullRequest { workspace, .. } => self.submit_pull_request(workspace),
+            Overlay::MergeCheck { workspace, scroll } => {
+                self.check_merges(workspace);
+                Some(Overlay::MergeCheck { workspace, scroll })
+            }
             Overlay::FlowMessage { workspace, edge, to, .. } => {
                 self.submit_flow_message(workspace, edge, to.as_deref())
             }

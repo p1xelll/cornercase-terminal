@@ -60,6 +60,13 @@ impl Report {
         }
     }
 
+    pub(crate) fn workspace_here(&self) -> Option<&WorkspaceInfo> {
+        let project = self.here()?;
+        let holds = |w: &&WorkspaceInfo| w.tabs.iter().flat_map(|t| &t.panes).any(|pane| pane.caller);
+        let shown = |w: &&WorkspaceInfo| Some(w.id) == self.shown.workspace;
+        project.workspaces.iter().find(holds).or_else(|| project.workspaces.iter().find(shown))
+    }
+
     fn here(&self) -> Option<&ProjectInfo> {
         let panes =
             |p: &ProjectInfo| p.workspaces.iter().flat_map(|w| &w.tabs).flat_map(|t| &t.panes).any(|pane| pane.caller);
@@ -270,6 +277,16 @@ pub struct WorkspaceInfo {
     pub(crate) closed_agents: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) post: Option<PostInfo>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) shared: Vec<SharedInfo>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub(crate) struct SharedInfo {
+    pub(crate) workspace: u64,
+    pub(crate) count: usize,
+    pub(crate) files: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]

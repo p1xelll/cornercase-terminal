@@ -56,6 +56,7 @@ fn shown(sidebar: Sidebar, entries: Vec<AgentEntry>) -> View<'static> {
         active_tab: Some(0),
         sidebar,
         workspaces: vec![WorkspaceEntry {
+            shared: 0,
             collapsed: false,
             name: "default".into(),
             tabs: vec!["codex".into()],

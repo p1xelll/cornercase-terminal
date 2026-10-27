@@ -6,6 +6,7 @@ fn tab(status: Option<Status>) -> TabEntry {
 
 fn workspace(name: &str, collapsed: bool, statuses: &[Option<Status>]) -> WorkspaceEntry {
     WorkspaceEntry {
+        shared: 0,
         collapsed,
         name: name.into(),
         tabs: statuses.iter().map(|s| tab(*s)).collect(),

@@ -29,6 +29,7 @@ const PROGRAM_ICON: &str = "▸";
 pub(crate) const ICON_WIDTH: usize = 2;
 
 const BEHIND_ICON: &str = "↓";
+const SHARED_ICON: &str = "⇄";
 
 pub(crate) const REOPEN_ICON: &str = "▶";
 
@@ -197,6 +198,7 @@ pub(crate) struct WorkspaceEntry {
     pub(crate) collapsed: bool,
     pub(crate) tabs: Vec<TabEntry>,
     pub(crate) behind: u32,
+    pub(crate) shared: usize,
     pub(crate) pull: Option<Mark>,
     pub(crate) removing: bool,
     pub(crate) setting_up: bool,
@@ -401,6 +403,7 @@ fn among_tabs(rows: &[WorkspaceRow], i: usize) -> bool {
 pub(crate) enum Tag {
     Pull,
     Stack,
+    Shared,
     Reopen,
 }
 
@@ -408,6 +411,7 @@ pub(crate) enum Tag {
 struct Places {
     pull: Option<usize>,
     stack: Option<usize>,
+    shared: Option<usize>,
     reopen: Option<usize>,
 }
 
@@ -416,6 +420,7 @@ impl Places {
         match tag {
             Tag::Pull => self.pull,
             Tag::Stack => self.stack,
+            Tag::Shared => self.shared,
             Tag::Reopen => self.reopen,
         }
     }
@@ -438,15 +443,21 @@ fn marks(entry: &WorkspaceEntry, badge: Badge, muted: Color, spin: Option<u8>) -
     let pull_at = reopen_at + usize::from(reopen.is_some()) + usize::from(setting.is_some());
     let pull = entry.pull.map(|mark| pull_tag(muted, mark));
     let stack = entry.pull.and_then(|mark| mark.stack).map(|stack| stack_tag(muted, stack));
+    let shared = (entry.shared > 0)
+        .then(|| Span::styled(format!("{SHARED_ICON}{}", entry.shared), Style::default().fg(Color::Yellow)));
     let places = Places {
         pull: pull.is_some().then_some(pull_at),
         stack: stack.is_some().then_some(pull_at + 1),
+        shared: shared.is_some().then_some(pull_at + usize::from(pull.is_some()) + usize::from(stack.is_some())),
         reopen: reopen.is_some().then_some(reopen_at),
     };
     let behind = Some(entry.behind)
         .filter(|n| *n > 0)
         .map(|n| Span::styled(format!("{BEHIND_ICON}{n}"), Style::default().fg(Color::Yellow)));
-    (badge.into_iter().chain(reopen).chain(setting).chain(pull).chain(stack).chain(behind).collect(), places)
+    (
+        badge.into_iter().chain(reopen).chain(setting).chain(pull).chain(stack).chain(shared).chain(behind).collect(),
+        places,
+    )
 }
 
 pub(super) fn tag_badge(
@@ -497,6 +508,7 @@ pub(super) fn draw_workspace_band(f: &mut Frame, view: &View, band: Band, line: 
     for (tag, add) in [
         (Tag::Pull, Modifier::UNDERLINED),
         (Tag::Stack, Modifier::UNDERLINED),
+        (Tag::Shared, Modifier::UNDERLINED),
         (Tag::Reopen, Modifier::BOLD | Modifier::UNDERLINED),
     ] {
         if let Some(rect) = tag_badge(band.r, band.pitch, band.lead_width(), (entry, badge), tag)

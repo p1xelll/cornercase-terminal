@@ -13,6 +13,16 @@ pub(crate) mod setup;
 
 pub(crate) const INCLUDE_FILE: &str = ".worktreeinclude";
 const DEFAULT_SLUG: &str = "worktree";
+pub(crate) const INHERITED: [&str; 8] = [
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_NAMESPACE",
+    "GIT_CONFIG_PARAMETERS",
+];
 
 pub(crate) fn slug(branch: &str) -> String {
     let mut slug = String::new();
@@ -146,7 +156,27 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    process::output_within(command(repo, args).stdin(Stdio::null()), timeout).map_err(Error::RunGit)
+    git_within_env(repo, args, &[], timeout)
+}
+
+pub(crate) fn git_within_env<I, S>(
+    repo: &Path,
+    args: I,
+    env: &[(&str, &OsStr)],
+    timeout: Duration,
+) -> Result<Option<Output>>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let mut cmd = scoped(repo, args, env);
+    process::output_within(&mut cmd, timeout).map_err(Error::RunGit)
+}
+
+fn scoped<I: IntoIterator<Item = S>, S: AsRef<OsStr>>(repo: &Path, args: I, env: &[(&str, &OsStr)]) -> Command {
+    let mut cmd = command(repo, args);
+    cmd.envs(env.iter().copied()).stdin(Stdio::null());
+    cmd
 }
 
 fn command<I: IntoIterator<Item = S>, S: AsRef<OsStr>>(repo: &Path, args: I) -> Command {
@@ -157,7 +187,25 @@ fn command<I: IntoIterator<Item = S>, S: AsRef<OsStr>>(repo: &Path, args: I) -> 
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_ASKPASS", "")
         .env("SSH_ASKPASS_REQUIRE", "never");
+    drop_inherited(&mut cmd);
     cmd
+}
+
+pub(crate) fn drop_inherited(cmd: &mut Command) {
+    for name in INHERITED {
+        cmd.env_remove(name);
+    }
+    for name in injected_config(std::env::vars_os().map(|(name, _)| name)) {
+        cmd.env_remove(name);
+    }
+}
+
+fn injected_config(names: impl Iterator<Item = OsString>) -> Vec<OsString> {
+    let injects = |name: &OsString| {
+        let name = name.to_string_lossy();
+        name == "GIT_CONFIG_COUNT" || name.starts_with("GIT_CONFIG_KEY_") || name.starts_with("GIT_CONFIG_VALUE_")
+    };
+    names.filter(injects).collect()
 }
 
 pub(crate) fn check(out: Output) -> Result<Vec<u8>> {

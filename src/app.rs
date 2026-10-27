@@ -106,12 +106,14 @@ mod launches;
 mod layout;
 mod links;
 mod menus;
+mod merge_check;
 mod merged_pull_requests;
 mod messenger;
 mod more_menu;
 mod notifications;
 mod opening;
 mod outbox;
+mod overlaps;
 mod overlay;
 mod panes;
 mod pasted_files;
@@ -455,6 +457,7 @@ impl App {
         self.forget_files();
         self.forget_pasted();
         self.count_behind(now);
+        self.scan_overlaps(now);
         self.ask_pull_requests(now);
         self.ask_merged(now);
     }

@@ -83,6 +83,7 @@ fn with_lists(sidebar: Sidebar) -> View<'static> {
         sidebar,
         workspaces: vec![
             WorkspaceEntry {
+                shared: 0,
                 collapsed: false,
                 name: "login".into(),
                 tabs: vec!["claude".into(), "nvim".into()],
@@ -93,6 +94,7 @@ fn with_lists(sidebar: Sidebar) -> View<'static> {
                 closed: 0,
             },
             WorkspaceEntry {
+                shared: 0,
                 collapsed: false,
                 name: "main".into(),
                 tabs: vec!["zsh".into()],

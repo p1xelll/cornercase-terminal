@@ -148,6 +148,7 @@ impl App {
             changes: self.changes_count(ws.id, seen.counted, seen.sweeping),
             closed_agents: Some(self.agents.closed.count(ws.id)).filter(|count| *count > 0),
             post: self.post_info(ws.id),
+            shared: self.shared_info(ws.id),
         }
     }
 
@@ -214,6 +215,7 @@ impl App {
         self.run_status(workspace.id).hash(hash);
         self.agents.closed.count(workspace.id).hash(hash);
         self.post_info(workspace.id).hash(hash);
+        self.shared_info(workspace.id).hash(hash);
         for tab in &workspace.tabs {
             self.tab_refreshed(tab, live, hash);
         }
