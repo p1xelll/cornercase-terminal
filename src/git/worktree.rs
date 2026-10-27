@@ -13,7 +13,7 @@ pub(crate) mod setup;
 
 pub(crate) const INCLUDE_FILE: &str = ".worktreeinclude";
 const DEFAULT_SLUG: &str = "worktree";
-pub(crate) const INHERITED: [&str; 8] = [
+const INHERITED: [&str; 8] = [
     "GIT_DIR",
     "GIT_WORK_TREE",
     "GIT_INDEX_FILE",
@@ -187,13 +187,17 @@ fn command<I: IntoIterator<Item = S>, S: AsRef<OsStr>>(repo: &Path, args: I) -> 
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_ASKPASS", "")
         .env("SSH_ASKPASS_REQUIRE", "never");
+    drop_inherited(&mut cmd);
+    cmd
+}
+
+pub(crate) fn drop_inherited(cmd: &mut Command) {
     for name in INHERITED {
         cmd.env_remove(name);
     }
     for name in injected_config(std::env::vars_os().map(|(name, _)| name)) {
         cmd.env_remove(name);
     }
-    cmd
 }
 
 fn injected_config(names: impl Iterator<Item = OsString>) -> Vec<OsString> {

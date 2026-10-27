@@ -310,9 +310,7 @@ fn git<I: IntoIterator<Item = S>, S: AsRef<OsStr>>(
         .env("GIT_ASKPASS", "")
         .env("SSH_ASKPASS_REQUIRE", "never")
         .env("GIT_ALLOW_PROTOCOL", protocol);
-    for key in worktree::INHERITED {
-        command.env_remove(key);
-    }
+    worktree::drop_inherited(&mut command);
     let out = command.output().map_err(|e| format!("cannot run git: {e}"))?;
     worktree::check(out).map_err(|e| format!("git: {}", text::escape_hidden(&e.to_string())))
 }
