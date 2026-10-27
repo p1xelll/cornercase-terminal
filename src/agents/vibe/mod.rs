@@ -1,9 +1,10 @@
 use std::ffi::OsStr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use crate::agents::activity::Activity;
 use crate::agents::context::counting::Ledger;
+use crate::agents::context::discovery::Follower;
 use crate::agents::context::{Compaction, Context, Look, Record};
 
 pub(in crate::agents) const NAME: &str = "vibe";
@@ -63,45 +64,82 @@ pub(in crate::agents) fn runs_as(arg: &str) -> bool {
     Path::new(arg).file_name() == Some(OsStr::new("vibe-rs"))
 }
 
+#[derive(Debug)]
+struct Held {
+    path: PathBuf,
+    id: String,
+    compaction: Compaction,
+    subagents: usize,
+    resumable: bool,
+}
+
 #[derive(Debug, Default)]
-pub(in crate::agents) struct Reader;
+pub(in crate::agents) struct Reader {
+    following: Follower<session::Session>,
+    held: Option<Held>,
+}
 
 impl Reader {
-    #[expect(clippy::unused_self, reason = "the session reader lands in the follow-up PR")]
     pub(in crate::agents) fn update(
         &mut self,
-        _look: &Look<'_>,
-        _since: SystemTime,
-        _shown: &mut Option<Context>,
-        _ledger: &mut Ledger,
+        look: &Look<'_>,
+        since: SystemTime,
+        shown: &mut Option<Context>,
+        ledger: &mut Ledger,
     ) -> Option<SystemTime> {
-        None
+        let (pid, args) = (look.pid, look.args.clone());
+        let vibe_dir = look.vibe_dir.map(Path::to_path_buf);
+        let mut prompted = None;
+        self.following.poll(
+            move |previous| session::follow(pid, &args, previous, vibe_dir),
+            |found| {
+                self.held = found.map(|session| {
+                    ledger.apply(&session.id, since, std::mem::take(&mut session.counted));
+                    shown.clone_from(&session.context);
+                    prompted = session.prompted;
+                    Held {
+                        path: session.path.clone(),
+                        id: session.id.clone(),
+                        compaction: session.compaction,
+                        subagents: session.subagents,
+                        resumable: session.resumable,
+                    }
+                });
+                if self.held.is_none() {
+                    *shown = None;
+                }
+            },
+        );
+        prompted
     }
 
     pub(in crate::agents) fn activity() -> Option<Activity> {
         None
     }
 
-    #[expect(clippy::unused_self, reason = "the session reader lands in the follow-up PR")]
     pub(in crate::agents) fn compaction(&self) -> Compaction {
-        Compaction::default()
+        self.held.as_ref().map(|held| held.compaction).unwrap_or_default()
     }
 
-    #[expect(clippy::unused_self, reason = "the session reader lands in the follow-up PR")]
     pub(in crate::agents) fn subagents(&self) -> usize {
-        0
+        self.held.as_ref().map_or(0, |held| held.subagents)
     }
 
-    #[expect(clippy::unused_self, reason = "the session reader lands in the follow-up PR")]
     pub(in crate::agents) fn record(&self) -> Option<Record> {
-        None
+        self.held.as_ref().map(|held| Record::Vibe(held.path.clone()))
     }
 
-    #[expect(clippy::unused_self, reason = "the session reader lands in the follow-up PR")]
     pub(in crate::agents) fn conversation(&self) -> Option<&str> {
-        None
+        let held = self.held.as_ref()?;
+        held.resumable.then_some(held.id.as_str())
     }
 }
+
+pub(in crate::agents) mod message;
+pub(in crate::agents) mod session;
+
+#[cfg(test)]
+pub(crate) mod fake;
 
 #[cfg(test)]
 mod tests;

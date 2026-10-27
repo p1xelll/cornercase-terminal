@@ -45,14 +45,10 @@ pub(crate) enum Record {
     Claude(PathBuf),
     Codex(PathBuf),
     Gemini(PathBuf),
-    Opencode {
-        database: PathBuf,
-        session: String,
-    },
+    Opencode { database: PathBuf, session: String },
     Grok(PathBuf),
     Cursor(PathBuf),
     Copilot(PathBuf),
-    #[expect(dead_code, reason = "the unified-store reader that builds it is the next PR")]
     Vibe(PathBuf),
 }
 
@@ -66,7 +62,7 @@ impl Record {
             Self::Grok(path) => grok::session::last_message(path),
             Self::Cursor(path) => cursor::store::last_message(path),
             Self::Copilot(path) => copilot::message::last_message(path),
-            Self::Vibe(_) => Ok(None),
+            Self::Vibe(path) => vibe::message::last_message(path),
         }
     }
 
@@ -79,7 +75,7 @@ impl Record {
             Self::Grok(path) => grok::session::said_all(path, each),
             Self::Cursor(path) => cursor::store::said_all(path, each),
             Self::Copilot(path) => copilot::message::said_all(path, each),
-            Self::Vibe(_) => Ok(()),
+            Self::Vibe(path) => vibe::message::said_all(path, each),
         }
     }
 
@@ -109,6 +105,7 @@ pub(crate) struct Look<'a> {
     pub(crate) title: String,
     pub(crate) screen: &'a dyn Fn() -> String,
     pub(crate) claude_dir: Option<&'a Path>,
+    pub(crate) vibe_dir: Option<&'a Path>,
     pub(crate) account_dir: Option<&'a Path>,
 }
 
@@ -134,7 +131,7 @@ impl Reader {
             Known::Grok => Self::Grok(grok::Reader::default()),
             Known::Cursor => Self::Cursor(cursor::Reader::default()),
             Known::Copilot => Self::Copilot(copilot::Reader::default()),
-            Known::Vibe => Self::Vibe(vibe::Reader),
+            Known::Vibe => Self::Vibe(vibe::Reader::default()),
         }
     }
 

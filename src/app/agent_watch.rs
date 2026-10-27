@@ -32,6 +32,7 @@ type Listed = (Vec<AgentPlace>, Vec<(u64, Option<u64>)>, HashSet<u64>);
 pub(super) struct AgentRuntime {
     pub(super) launches: Launches,
     claude_dir: Option<PathBuf>,
+    vibe_dir: Option<PathBuf>,
     watched: Option<Instant>,
     pub(super) awake: Awake,
     pub(super) stats: agents::stats::Stats,
@@ -44,6 +45,7 @@ impl AgentRuntime {
         Self {
             launches: Launches::default(),
             claude_dir: agents::claude::claude_dir(home),
+            vibe_dir: None,
             watched: None,
             awake: Awake::new(awake::tools()),
             stats: agents::stats::Stats::new(SystemTime::now()),
@@ -59,6 +61,11 @@ impl AgentRuntime {
     #[cfg(test)]
     pub(super) fn set_claude_dir(&mut self, dir: &Path) {
         self.claude_dir = Some(dir.to_path_buf());
+    }
+
+    #[cfg(test)]
+    pub(super) fn set_vibe_dir(&mut self, dir: &Path) {
+        self.vibe_dir = Some(dir.to_path_buf());
     }
 
     #[cfg(test)]
@@ -96,7 +103,7 @@ impl App {
             now,
             read,
             config: &self.config,
-            dirs: (self.agents.claude_dir.as_deref(), self.accounts.dir()),
+            dirs: (self.agents.claude_dir.as_deref(), self.accounts.dir(), self.agents.vibe_dir.as_deref()),
             seen_tabs,
             folds: tree || self.screen.drawn.tab_bar.is_empty(),
             members,
@@ -261,7 +268,7 @@ struct Round<'a> {
     now: Instant,
     read: bool,
     config: &'a Config,
-    dirs: (Option<&'a Path>, &'a Path),
+    dirs: (Option<&'a Path>, &'a Path, Option<&'a Path>),
     seen_tabs: Vec<u64>,
     folds: bool,
     members: Vec<u64>,
@@ -388,7 +395,7 @@ fn log_status(term: &Term, found: Option<&(String, activity::Activity)>, before:
 
 fn agent_in(
     config: &Config,
-    (dir, root): (Option<&Path>, &Path),
+    (dir, root, vibe): (Option<&Path>, &Path, Option<&Path>),
     term: &mut Term,
     now: Instant,
 ) -> Option<(String, activity::Activity)> {
@@ -409,6 +416,7 @@ fn agent_in(
             title: term.emulator.title(),
             screen: &screen,
             claude_dir: dir,
+            vibe_dir: vibe,
             account_dir: given.as_deref(),
         };
         term.context.update(agent, &look);

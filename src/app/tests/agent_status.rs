@@ -20,6 +20,7 @@ mod osc;
 mod resuming;
 mod sound;
 mod tree;
+mod vibe;
 mod views;
 
 fn working_claude() -> (App, Receiver<AppEvent>, Vec<TempDir>, FakeClaude) {
