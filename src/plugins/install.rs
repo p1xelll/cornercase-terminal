@@ -294,6 +294,11 @@ fn git<I: IntoIterator<Item = S>, S: AsRef<OsStr>>(
     dir: Option<&Path>,
     args: I,
 ) -> Result<Vec<u8>, String> {
+    let out = git_command(origin, dir, args).output().map_err(|e| format!("cannot run git: {e}"))?;
+    worktree::check(out).map_err(|e| format!("git: {}", text::escape_hidden(&e.to_string())))
+}
+
+fn git_command<I: IntoIterator<Item = S>, S: AsRef<OsStr>>(origin: &Origin, dir: Option<&Path>, args: I) -> Command {
     let protocol = origin.protocol();
     let mut command = Command::new("git");
     if let Some(dir) = dir {
@@ -311,8 +316,7 @@ fn git<I: IntoIterator<Item = S>, S: AsRef<OsStr>>(
         .env("SSH_ASKPASS_REQUIRE", "never")
         .env("GIT_ALLOW_PROTOCOL", protocol);
     worktree::drop_inherited(&mut command);
-    let out = command.output().map_err(|e| format!("cannot run git: {e}"))?;
-    worktree::check(out).map_err(|e| format!("git: {}", text::escape_hidden(&e.to_string())))
+    command
 }
 
 fn conflict(registry: &Registry, id: &str, origin: &Origin) -> Result<(), String> {

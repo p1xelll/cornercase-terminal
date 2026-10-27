@@ -321,16 +321,4 @@ mod scoped_commands {
 
         assert_eq!(dropped, ["GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_12"].map(OsString::from));
     }
-
-    #[test]
-    fn a_runner_of_another_module_drops_them_with_the_same_function() {
-        let mut cmd = Command::new("git");
-
-        drop_inherited(&mut cmd);
-
-        let envs: Vec<_> = cmd.get_envs().collect();
-        for name in INHERITED {
-            assert!(envs.contains(&(OsStr::new(name), None)), "{name} is not removed: {envs:?}");
-        }
-    }
 }

@@ -13,7 +13,7 @@ pub(crate) mod setup;
 
 pub(crate) const INCLUDE_FILE: &str = ".worktreeinclude";
 const DEFAULT_SLUG: &str = "worktree";
-const INHERITED: [&str; 8] = [
+pub(crate) const INHERITED: [&str; 8] = [
     "GIT_DIR",
     "GIT_WORK_TREE",
     "GIT_INDEX_FILE",

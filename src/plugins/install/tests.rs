@@ -604,3 +604,15 @@ mod subfolders {
         assert!(error.contains("has no folder `plugins/three`"), "{error}");
     }
 }
+
+#[test]
+fn the_installer_s_git_never_inherits_the_servers_repository_variables() {
+    let origin = Origin { repo: "u".into(), url: "u".into(), reference: None, subdir: None };
+
+    let command = git_command(&origin, None, ["status"]);
+
+    let envs: Vec<_> = command.get_envs().collect();
+    for name in worktree::INHERITED {
+        assert!(envs.contains(&(OsStr::new(name), None)), "{name} is not removed: {envs:?}");
+    }
+}
