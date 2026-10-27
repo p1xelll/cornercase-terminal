@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use crate::agents::activity::Activity;
-use crate::agents::{self, Known, claude, codex, copilot, cursor, gemini, grok, opencode};
+use crate::agents::{self, Known, claude, codex, copilot, cursor, gemini, grok, opencode, vibe};
 use crate::error::Result;
 
 pub(in crate::agents) mod counting;
@@ -45,10 +45,15 @@ pub(crate) enum Record {
     Claude(PathBuf),
     Codex(PathBuf),
     Gemini(PathBuf),
-    Opencode { database: PathBuf, session: String },
+    Opencode {
+        database: PathBuf,
+        session: String,
+    },
     Grok(PathBuf),
     Cursor(PathBuf),
     Copilot(PathBuf),
+    #[expect(dead_code, reason = "the unified-store reader that builds it is the next PR")]
+    Vibe(PathBuf),
 }
 
 impl Record {
@@ -61,6 +66,7 @@ impl Record {
             Self::Grok(path) => grok::session::last_message(path),
             Self::Cursor(path) => cursor::store::last_message(path),
             Self::Copilot(path) => copilot::message::last_message(path),
+            Self::Vibe(_) => Ok(None),
         }
     }
 
@@ -73,6 +79,7 @@ impl Record {
             Self::Grok(path) => grok::session::said_all(path, each),
             Self::Cursor(path) => cursor::store::said_all(path, each),
             Self::Copilot(path) => copilot::message::said_all(path, each),
+            Self::Vibe(_) => Ok(()),
         }
     }
 
@@ -80,7 +87,12 @@ impl Record {
         match self {
             Self::Claude(path) => claude::transcript::conversation_files(path),
             Self::Codex(path) => codex::rollout::conversation_files(path),
-            Self::Gemini(_) | Self::Opencode { .. } | Self::Grok(_) | Self::Cursor(_) | Self::Copilot(_) => None,
+            Self::Gemini(_)
+            | Self::Opencode { .. }
+            | Self::Grok(_)
+            | Self::Cursor(_)
+            | Self::Copilot(_)
+            | Self::Vibe(_) => None,
         }
     }
 }
@@ -109,6 +121,7 @@ enum Reader {
     Grok(grok::Reader),
     Cursor(cursor::Reader),
     Copilot(copilot::Reader),
+    Vibe(vibe::Reader),
 }
 
 impl Reader {
@@ -121,6 +134,7 @@ impl Reader {
             Known::Grok => Self::Grok(grok::Reader::default()),
             Known::Cursor => Self::Cursor(cursor::Reader::default()),
             Known::Copilot => Self::Copilot(copilot::Reader::default()),
+            Known::Vibe => Self::Vibe(vibe::Reader),
         }
     }
 
@@ -139,6 +153,7 @@ impl Reader {
             Self::Grok(reader) => reader.update(look, since, shown, ledger),
             Self::Cursor(reader) => reader.update(look, since, shown, ledger),
             Self::Copilot(reader) => reader.update(look, since, shown, ledger),
+            Self::Vibe(reader) => reader.update(look, since, shown, ledger),
         }
     }
 
@@ -151,6 +166,7 @@ impl Reader {
             Self::Grok(reader) => reader.activity(title),
             Self::Cursor(reader) => Some(reader.activity(title)),
             Self::Copilot(reader) => reader.activity(),
+            Self::Vibe(_) => vibe::Reader::activity(),
         }
     }
 
@@ -158,6 +174,7 @@ impl Reader {
         match self {
             Self::Claude(reader) => reader.subagents(),
             Self::Copilot(reader) => reader.subagents(),
+            Self::Vibe(reader) => reader.subagents(),
             Self::Codex(_) | Self::Gemini(_) | Self::Opencode(_) | Self::Grok(_) | Self::Cursor(_) => 0,
         }
     }
@@ -170,6 +187,7 @@ impl Reader {
             Self::Opencode(reader) => reader.compaction(),
             Self::Grok(reader) => reader.compaction(),
             Self::Copilot(reader) => reader.compaction(),
+            Self::Vibe(reader) => reader.compaction(),
             Self::Cursor(_) => Compaction::default(),
         }
     }
@@ -183,6 +201,7 @@ impl Reader {
             Self::Grok(reader) => reader.record(),
             Self::Cursor(reader) => reader.record(),
             Self::Copilot(reader) => reader.record(),
+            Self::Vibe(reader) => reader.record(),
         }
     }
 
@@ -195,6 +214,7 @@ impl Reader {
             Self::Grok(reader) => reader.conversation(),
             Self::Cursor(reader) => reader.conversation(),
             Self::Copilot(reader) => reader.conversation(),
+            Self::Vibe(reader) => reader.conversation(),
         }
     }
 
@@ -206,7 +226,8 @@ impl Reader {
             | Self::Opencode(_)
             | Self::Grok(_)
             | Self::Cursor(_)
-            | Self::Copilot(_) => None,
+            | Self::Copilot(_)
+            | Self::Vibe(_) => None,
         }
     }
 }

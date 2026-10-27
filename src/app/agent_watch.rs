@@ -12,6 +12,7 @@ use super::overlay::Overlay;
 use crate::accounts;
 use crate::agents;
 use crate::agents::AgentState;
+use crate::agents::Known;
 use crate::agents::activity;
 use crate::agents::awake::{self, Awake};
 use crate::agents::context::Look;
@@ -398,7 +399,7 @@ fn agent_in(
     if let Some((pid, name)) = pid.zip(name.as_ref()) {
         term.status_agent = Some((pid, name.clone()));
     }
-    let agent = name.as_deref().and_then(agents::Known::of);
+    let agent = name.as_deref().and_then(Known::of);
     let given = agent.and_then(|kind| Some(kind.account()?.config(&term.accounts().get(kind)?.home)));
     let (args, title) = {
         let screen = || term.emulator.screen_text().unwrap_or_default();
@@ -416,12 +417,7 @@ fn agent_in(
     let found = pid.zip(agent).map(|(pid, kind)| (pid, kind, args.as_slice()));
     term.see_account(root, found, process::env);
     remember(config, term, agent.map(|agent| (agent.name(), args.as_slice())), now);
-    if let Some((pid, agent)) = pid.zip(agent)
-        && term.input_seen != Some(pid)
-        && agent.input_box(|| term.emulator.screen_text().unwrap_or_default()) == Some(true)
-    {
-        term.input_seen = Some(pid);
-    }
+    calibrate(term, pid, agent);
     if let Some(name) = name {
         let activity = term.emulator.program_activity().or_else(|| term.context.activity(&title))?;
         return Some((name, activity));
@@ -431,6 +427,15 @@ fn agent_in(
         term.emulator.acknowledge_status(*pid);
     }
     term.emulator.finished_activity(*pid).map(|activity| (name.clone(), activity))
+}
+
+fn calibrate(term: &mut Term, pid: Option<i32>, agent: Option<Known>) {
+    if let Some((pid, agent)) = pid.zip(agent)
+        && term.input_seen != Some(pid)
+        && agent.input_box(|| term.emulator.screen_text().unwrap_or_default()) == Some(true)
+    {
+        term.input_seen = Some(pid);
+    }
 }
 
 fn remember(config: &Config, term: &mut Term, agent: Option<(&str, &[String])>, now: Instant) {

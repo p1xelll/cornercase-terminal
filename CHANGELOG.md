@@ -2,6 +2,10 @@
 
 Every pull request that changes the app adds a section here for its new version. The section becomes the notes of the GitHub Release and shows up in the app's update dialog, so write it for users.
 
+## 0.12.219
+
+- **Mistral's Vibe CLI is a known agent.** Start an issue with `vibe` or launch it in a tab: cornercase recognises it (its launcher becomes `vibe-rs`), leaves its "Trust this folder?" question to you, and shows whether it is working, waiting, finished or failed from its own OSC 7501 reports. Its modes (`ask`, `smart approve`, `auto-approve`) and `--add-dir` work, a prompt typed while it works waits, and flow roles run it unattended with `--agent auto-approve`. It has no `--model` flag, so a role that names a model says so instead of starting it with one.
+
 ## 0.12.218
 
 - **See when two workspaces change the same files.** When two workspaces of a project change the same files since their branches parted, committed or not, both rows show `⇄` and how many files they share, such as `⇄2`, and those files carry a `⇄` in the changes panel. Click the badge, or pick **merge check** in the row's ` ⋯ ` menu, to see which files each pair shares. It also merges the work in a scratch copy with `git merge-tree`: you see whether the workspace merges cleanly into its base branch and with each workspace it shares files with, and which files would conflict and how. No checkout, index or branch is touched. It needs git 2.38 or later.

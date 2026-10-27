@@ -208,6 +208,19 @@ mod arguments {
     }
 
     #[test]
+    fn vibe_modes_follow_its_agent_flag() {
+        let modes = modes(&config(), Known::Vibe.name());
+        let kind = Known::Vibe.name();
+        let mode = |argv: &[&str]| mode_of(kind, &strings(argv), &modes);
+        assert_eq!(mode(&["vibe", "--agent", "ask"]).as_deref(), Some("ask"));
+        assert_eq!(mode(&["vibe", "--agent=smart-approve"]).as_deref(), Some("smart approve"));
+        assert_eq!(mode(&["vibe", "--smart-approve"]).as_deref(), Some("smart approve"));
+        assert_eq!(mode(&["vibe", "--yolo"]).as_deref(), Some("auto-approve (dangerous)"));
+        assert_eq!(mode(&["vibe", "--auto-approve"]).as_deref(), Some("auto-approve (dangerous)"));
+        assert_eq!(mode(&["vibe", "--agent", "debug"]), None);
+    }
+
+    #[test]
     fn join_quotes_what_a_shell_would_split() {
         assert_eq!(join_args(&strings(&["--add-dir", "../my dir", "it's"])), r"--add-dir '../my dir' 'it'\''s'");
     }
@@ -306,10 +319,14 @@ mod arguments {
             start_line(&c, "aider", Some("plan"), None, None),
             Err("aider has no modes in cornercase; add some with agent_modes in config.json".into())
         );
+        assert_eq!(
+            start_line(&c, "vibe", None, Some("mistral-medium-latest"), None),
+            Err("vibe has no model flag; set its model in its own configuration".into())
+        );
         let refused = start_line(&c, "aider", None, Some("gpt"), None).expect_err("aider takes no model");
         assert_eq!(
             refused,
-            "cornercase passes a model to claude, codex, gemini, opencode, grok, cursor, copilot only; give aider its model in agent_args"
+            "cornercase passes a model to claude, codex, gemini, opencode, grok, cursor, copilot, vibe only; give aider its model in agent_args"
         );
     }
 
