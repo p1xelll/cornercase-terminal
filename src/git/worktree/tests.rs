@@ -288,3 +288,18 @@ mod remove {
         assert_eq!(changed(&path).expect("git status"), expected);
     }
 }
+
+mod scoped_commands {
+    use super::*;
+
+    #[test]
+    fn never_inherit_the_server_s_repository_variables() {
+        let cmd = scoped(Path::new("/repo"), ["status"], &[("GIT_INDEX_FILE", OsStr::new("/scratch/index"))]);
+
+        let envs: Vec<_> = cmd.get_envs().collect();
+        for name in INHERITED_REPOSITORY {
+            assert!(envs.contains(&(OsStr::new(name), None)), "{name} is not removed: {envs:?}");
+        }
+        assert!(envs.contains(&(OsStr::new("GIT_INDEX_FILE"), Some(OsStr::new("/scratch/index")))));
+    }
+}

@@ -159,9 +159,19 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    let mut cmd = command(repo, args);
-    cmd.envs(env.iter().copied()).stdin(Stdio::null());
+    let mut cmd = scoped(repo, args, env);
     process::output_within(&mut cmd, timeout).map_err(Error::RunGit)
+}
+
+const INHERITED_REPOSITORY: [&str; 3] = ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR"];
+
+fn scoped<I: IntoIterator<Item = S>, S: AsRef<OsStr>>(repo: &Path, args: I, env: &[(&str, &OsStr)]) -> Command {
+    let mut cmd = command(repo, args);
+    for name in INHERITED_REPOSITORY {
+        cmd.env_remove(name);
+    }
+    cmd.envs(env.iter().copied()).stdin(Stdio::null());
+    cmd
 }
 
 fn command<I: IntoIterator<Item = S>, S: AsRef<OsStr>>(repo: &Path, args: I) -> Command {
