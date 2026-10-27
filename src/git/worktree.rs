@@ -13,6 +13,16 @@ pub(crate) mod setup;
 
 pub(crate) const INCLUDE_FILE: &str = ".worktreeinclude";
 const DEFAULT_SLUG: &str = "worktree";
+pub(crate) const INHERITED: [&str; 8] = [
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_NAMESPACE",
+    "GIT_CONFIG_PARAMETERS",
+];
 
 pub(crate) fn slug(branch: &str) -> String {
     let mut slug = String::new();
@@ -163,13 +173,8 @@ where
     process::output_within(&mut cmd, timeout).map_err(Error::RunGit)
 }
 
-const INHERITED_REPOSITORY: [&str; 3] = ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR"];
-
 fn scoped<I: IntoIterator<Item = S>, S: AsRef<OsStr>>(repo: &Path, args: I, env: &[(&str, &OsStr)]) -> Command {
     let mut cmd = command(repo, args);
-    for name in INHERITED_REPOSITORY {
-        cmd.env_remove(name);
-    }
     cmd.envs(env.iter().copied()).stdin(Stdio::null());
     cmd
 }
@@ -182,6 +187,9 @@ fn command<I: IntoIterator<Item = S>, S: AsRef<OsStr>>(repo: &Path, args: I) -> 
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_ASKPASS", "")
         .env("SSH_ASKPASS_REQUIRE", "never");
+    for name in INHERITED {
+        cmd.env_remove(name);
+    }
     cmd
 }
 

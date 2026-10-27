@@ -297,9 +297,19 @@ mod scoped_commands {
         let cmd = scoped(Path::new("/repo"), ["status"], &[("GIT_INDEX_FILE", OsStr::new("/scratch/index"))]);
 
         let envs: Vec<_> = cmd.get_envs().collect();
-        for name in INHERITED_REPOSITORY {
+        for name in INHERITED.into_iter().filter(|name| *name != "GIT_INDEX_FILE") {
             assert!(envs.contains(&(OsStr::new(name), None)), "{name} is not removed: {envs:?}");
         }
         assert!(envs.contains(&(OsStr::new("GIT_INDEX_FILE"), Some(OsStr::new("/scratch/index")))));
+    }
+
+    #[test]
+    fn every_runner_drops_them() {
+        let cmd = command(Path::new("/repo"), ["status"]);
+
+        let envs: Vec<_> = cmd.get_envs().collect();
+        for name in INHERITED {
+            assert!(envs.contains(&(OsStr::new(name), None)), "{name} is not removed: {envs:?}");
+        }
     }
 }

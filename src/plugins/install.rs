@@ -23,16 +23,6 @@ const STOP_WAIT: Duration = Duration::from_secs(10);
 const STAGING: &str = ".staging";
 const CHECKOUT: &str = "plugin";
 const SERVICE: Service = Service { name: "the plugin's download", rejected: "the plugin's download was refused" };
-const GIT_ENV: [&str; 8] = [
-    "GIT_DIR",
-    "GIT_WORK_TREE",
-    "GIT_INDEX_FILE",
-    "GIT_OBJECT_DIRECTORY",
-    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-    "GIT_COMMON_DIR",
-    "GIT_NAMESPACE",
-    "GIT_CONFIG_PARAMETERS",
-];
 
 static STAGED: AtomicU32 = AtomicU32::new(0);
 
@@ -320,7 +310,7 @@ fn git<I: IntoIterator<Item = S>, S: AsRef<OsStr>>(
         .env("GIT_ASKPASS", "")
         .env("SSH_ASKPASS_REQUIRE", "never")
         .env("GIT_ALLOW_PROTOCOL", protocol);
-    for key in GIT_ENV {
+    for key in worktree::INHERITED {
         command.env_remove(key);
     }
     let out = command.output().map_err(|e| format!("cannot run git: {e}"))?;
