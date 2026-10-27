@@ -312,4 +312,13 @@ mod scoped_commands {
             assert!(envs.contains(&(OsStr::new(name), None)), "{name} is not removed: {envs:?}");
         }
     }
+
+    #[test]
+    fn config_injected_through_the_environment_is_dropped() {
+        let names = ["GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_12", "GIT_CONFIG_GLOBAL", "PATH"];
+
+        let dropped = injected_config(names.into_iter().map(OsString::from));
+
+        assert_eq!(dropped, ["GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_12"].map(OsString::from));
+    }
 }

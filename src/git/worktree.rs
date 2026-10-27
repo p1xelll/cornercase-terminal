@@ -190,7 +190,18 @@ fn command<I: IntoIterator<Item = S>, S: AsRef<OsStr>>(repo: &Path, args: I) -> 
     for name in INHERITED {
         cmd.env_remove(name);
     }
+    for name in injected_config(std::env::vars_os().map(|(name, _)| name)) {
+        cmd.env_remove(name);
+    }
     cmd
+}
+
+fn injected_config(names: impl Iterator<Item = OsString>) -> Vec<OsString> {
+    let injects = |name: &OsString| {
+        let name = name.to_string_lossy();
+        name == "GIT_CONFIG_COUNT" || name.starts_with("GIT_CONFIG_KEY_") || name.starts_with("GIT_CONFIG_VALUE_")
+    };
+    names.filter(injects).collect()
 }
 
 pub(crate) fn check(out: Output) -> Result<Vec<u8>> {
