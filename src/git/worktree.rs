@@ -146,7 +146,22 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    process::output_within(command(repo, args).stdin(Stdio::null()), timeout).map_err(Error::RunGit)
+    git_within_env(repo, args, &[], timeout)
+}
+
+pub(crate) fn git_within_env<I, S>(
+    repo: &Path,
+    args: I,
+    env: &[(&str, &OsStr)],
+    timeout: Duration,
+) -> Result<Option<Output>>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let mut cmd = command(repo, args);
+    cmd.envs(env.iter().copied()).stdin(Stdio::null());
+    process::output_within(&mut cmd, timeout).map_err(Error::RunGit)
 }
 
 fn command<I: IntoIterator<Item = S>, S: AsRef<OsStr>>(repo: &Path, args: I) -> Command {

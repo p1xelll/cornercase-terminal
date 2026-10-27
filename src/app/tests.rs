@@ -606,6 +606,7 @@ mod pull_requests;
 mod queue;
 mod remote_access;
 mod restarting;
+mod shared_files;
 mod todo_panel;
 mod trace;
 mod updates;

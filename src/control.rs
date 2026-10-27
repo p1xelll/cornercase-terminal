@@ -45,8 +45,8 @@ pub(crate) use app_state::{
 };
 pub(crate) use arrange::{CloseAgent, Fold, GroupDelete, GroupNew, GroupStyle, Move, MovePane, RemovalCheck};
 pub(crate) use changes::{
-    Changes, ChangesBase, ChangesCount, ChangesDiscard, ChangesFile, ChangesGap, ChangesMode, ChangesStage,
-    ChangesViewed,
+    Changes, ChangesBase, ChangesCount, ChangesDiscard, ChangesFile, ChangesGap, ChangesMergeCheck, ChangesMode,
+    ChangesStage, ChangesViewed,
 };
 pub(crate) use closed_agents::{AgentsClose, AgentsForget, AgentsReopen};
 pub(crate) use config::{ConfigExport, ConfigImport, ConfigInfo, Configure};
@@ -66,7 +66,7 @@ pub(crate) use plugins::{PluginActions, PluginList, PluginPopupClose, PluginRun}
 pub(crate) use ports::{Listing, PortStopped, Ports, StopPort};
 pub(crate) use search::{Hit, Matches, Reveal, Search};
 pub(crate) use start_server::StartServer;
-pub(crate) use status::{GroupInfo, KeepAwake, LayerInfo, PostInfo, PullRequestInfo, RunStatus, StackInfo};
+pub(crate) use status::{GroupInfo, KeepAwake, LayerInfo, PostInfo, PullRequestInfo, RunStatus, SharedInfo, StackInfo};
 pub use status::{PaneInfo, PaneRow, PaneRows, ProjectInfo, Report, TabInfo, WorkspaceInfo};
 pub(crate) use surface::Surface;
 pub(crate) use terminal::{Input, Link, PasteFile, Ratio, Redraw, Resize, Scroll, Selection};
@@ -224,6 +224,7 @@ pub(crate) enum Command {
     FilesRead(FilesRead),
     FilesSearch(FilesSearch),
     PasteFile(PasteFile),
+    ChangesMergeCheck(ChangesMergeCheck),
 }
 
 impl Command {
@@ -326,6 +327,7 @@ impl Command {
             Self::ChangesViewed(_) => 66,
             Self::ChangesDiscard(_) => 90,
             Self::ChangesStage(_) => 91,
+            Self::ChangesMergeCheck(_) => 107,
             _ => return None,
         })
     }
@@ -409,7 +411,7 @@ impl Command {
         })
     }
 
-    pub(crate) const NAMES: [&str; 107] = [
+    pub(crate) const NAMES: [&str; 108] = [
         "status",
         "open",
         "new-workspace",
@@ -517,6 +519,7 @@ impl Command {
         "files-read",
         "files-search",
         "paste-file",
+        "changes-merge-check",
     ];
 
     pub(crate) fn chatty(name: &str) -> bool {

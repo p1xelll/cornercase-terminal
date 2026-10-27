@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use super::Fields;
 use super::surface::{Style, Table};
 use crate::changes::diff::{self, Diff, File, Staged};
+use crate::changes::merge::{Conflict, Merge, With};
 use crate::changes::{GapLine, Mode, Scope};
 use crate::term::emulator::Decor;
 
@@ -124,6 +125,71 @@ fn to_stage() -> bool {
 impl ChangesStage {
     pub(super) fn fields(&self, fields: &mut Fields) {
         fields.maybe("workspace", self.workspace).add("path", &self.path).add("staged", self.staged);
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub(crate) struct ChangesMergeCheck {
+    pub(crate) workspace: Option<u64>,
+    pub(crate) with: Option<u64>,
+    pub(crate) base: Option<String>,
+}
+
+impl ChangesMergeCheck {
+    pub(super) fn fields(&self, fields: &mut Fields) {
+        fields.maybe("workspace", self.workspace).maybe("with", self.with).add("base", self.base.is_some());
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub(crate) struct MergeChecked {
+    pub(crate) workspace: u64,
+    pub(crate) checks: Vec<MergeInfo>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub(crate) struct MergeInfo {
+    pub(crate) with: Option<u64>,
+    pub(crate) base: Option<String>,
+    pub(crate) clean: bool,
+    pub(crate) conflicts: Vec<ConflictInfo>,
+    pub(crate) left_out: usize,
+    pub(crate) error: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub(crate) struct ConflictInfo {
+    pub(crate) path: String,
+    pub(crate) kind: String,
+    pub(crate) message: String,
+}
+
+impl From<&Merge> for MergeInfo {
+    fn from(merge: &Merge) -> Self {
+        let (with, base) = match &merge.with {
+            With::Workspace(id) => (Some(*id), None),
+            With::Base(base) => (None, base.clone()),
+        };
+        let found = Self { with, base, ..Self::default() };
+        match &merge.result {
+            Ok(merged) => Self {
+                clean: merged.conflicts.is_empty(),
+                conflicts: merged.conflicts.iter().map(ConflictInfo::from).collect(),
+                left_out: merged.left_out,
+                ..found
+            },
+            Err(why) => Self { error: Some(why.clone()), ..found },
+        }
+    }
+}
+
+impl From<&Conflict> for ConflictInfo {
+    fn from(conflict: &Conflict) -> Self {
+        Self { path: conflict.path.clone(), kind: conflict.kind.clone(), message: conflict.message.clone() }
     }
 }
 

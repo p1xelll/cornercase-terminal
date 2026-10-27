@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -10,6 +10,7 @@ use super::control::{BaseChange, Replied};
 use super::event::AppEvent;
 use super::input::wheel;
 use super::layout::Side;
+use super::merge_check::MergeAnswer;
 use crate::changes::diff::File as ChangedFile;
 use crate::changes::{self, Checkout, Mode, Tints, every};
 use crate::error::Result;
@@ -70,6 +71,15 @@ pub(crate) enum ChangesEvent {
         change: BaseChange,
         listed: Result<(Vec<String>, Option<String>)>,
     },
+    Overlaps {
+        project: u64,
+        scan: Box<changes::overlap::Scan>,
+    },
+    MergeChecked {
+        to: MergeAnswer,
+        workspace: u64,
+        checked: changes::merge::Checked,
+    },
     Acted {
         request: Option<u64>,
         workspace: u64,
@@ -88,6 +98,8 @@ impl ChangesEvent {
             Self::File { .. } => "changes file",
             Self::GapRead { .. } => "changes gap",
             Self::Base { .. } => "changes base",
+            Self::Overlaps { .. } => "overlaps",
+            Self::MergeChecked { .. } => "merge check",
             Self::Acted { action, .. } => match action {
                 changes::act::FileAction::Discard => "changes discard",
                 changes::act::FileAction::Stage => "changes stage",
@@ -119,6 +131,8 @@ impl App {
             ChangesEvent::Base { request, workspace, change, listed } => {
                 self.changes_base_replied(request, workspace, &change, listed);
             }
+            ChangesEvent::Overlaps { project, scan } => self.overlaps_scanned(project, *scan),
+            ChangesEvent::MergeChecked { to, workspace, checked } => self.merge_checked(to, workspace, checked),
             ChangesEvent::Acted { request, workspace, path, action, result } => {
                 self.file_action_answered(request, (workspace, &path), action, result);
             }
@@ -306,7 +320,7 @@ impl App {
         let targets = if every { self.every_targets() } else { Vec::new() };
         let (body, owners, headers) =
             if every { self.every_body(&targets) } else { single_body(target.as_ref()?, model) };
-        let (folded, viewed, gaps) = self.panel_marks(&body, &owners);
+        let Marks { folded, viewed, shared, gaps } = self.panel_marks(&body, &owners);
         let filter = self.panel_filter(&body);
         Some(panel::View {
             scope: self.panels.changes.scope(),
@@ -318,6 +332,7 @@ impl App {
             body,
             folded,
             viewed,
+            shared,
             gaps,
             scroll: self.panels.changes.scroll(),
             live: self.panel_live(every, &targets, model),
@@ -332,16 +347,22 @@ impl App {
     }
 
     fn panel_marks(&self, body: &changes::Body, owners: &[u64]) -> Marks {
-        let (mut folded, mut viewed, mut gaps) = (Vec::new(), Vec::new(), HashMap::new());
+        let mut marks = Marks::default();
+        let mut sharing: HashMap<u64, HashSet<&str>> = HashMap::new();
         if let changes::Body::Ready(diff) = body {
             for (i, file) in diff.files.iter().enumerate() {
                 let ws = owners[i];
-                folded.push(self.panels.changes.folded(ws, diff, file));
-                viewed.push(self.panels.changes.viewed(ws, file));
-                gaps.extend(self.file_gaps(ws, file).map(|(h, lines)| ((i, h), lines)));
+                marks.folded.push(self.panels.changes.folded(ws, diff, file));
+                marks.viewed.push(self.panels.changes.viewed(ws, file));
+                let shared = sharing.entry(ws).or_insert_with(|| self.shared_files(ws));
+                marks.shared.push(
+                    shared.contains(file.path.as_str())
+                        || file.old_path.as_deref().is_some_and(|old| shared.contains(old)),
+                );
+                marks.gaps.extend(self.file_gaps(ws, file).map(|(h, lines)| ((i, h), lines)));
             }
         }
-        (folded, viewed, gaps)
+        marks
     }
 
     fn file_gaps(&self, ws: u64, file: &ChangedFile) -> impl Iterator<Item = (usize, Arc<Vec<changes::GapLine>>)> {
@@ -541,7 +562,13 @@ impl App {
     }
 }
 
-type Marks = (Vec<bool>, Vec<bool>, HashMap<(usize, usize), Arc<Vec<changes::GapLine>>>);
+#[derive(Default)]
+struct Marks {
+    folded: Vec<bool>,
+    viewed: Vec<bool>,
+    shared: Vec<bool>,
+    gaps: HashMap<(usize, usize), Arc<Vec<changes::GapLine>>>,
+}
 
 #[derive(Clone, Copy)]
 pub(in crate::app) struct Hunk {

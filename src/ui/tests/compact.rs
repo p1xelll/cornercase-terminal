@@ -15,6 +15,7 @@ fn in_a_project(nav: Option<Nav>) -> View<'static> {
         has_project: true,
         workspaces: vec![
             WorkspaceEntry {
+                shared: 0,
                 collapsed: false,
                 name: "feat/login".into(),
                 tabs: vec!["claude".into(), "nvim".into()],
@@ -25,6 +26,7 @@ fn in_a_project(nav: Option<Nav>) -> View<'static> {
                 closed: 0,
             },
             WorkspaceEntry {
+                shared: 0,
                 collapsed: false,
                 name: "main".into(),
                 tabs: vec!["zsh".into()],

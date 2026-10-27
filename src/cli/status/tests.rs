@@ -12,6 +12,24 @@ fn a_workspace_with_closed_agents_says_how_many() {
     assert!(!at(None).contains("closed"));
 }
 
+#[test]
+fn a_workspace_says_which_workspaces_it_shares_files_with() {
+    let shared = |others: &[(u64, usize)]| {
+        let shared = others.iter().map(|(workspace, count)| SharedInfo {
+            workspace: *workspace,
+            count: *count,
+            files: Vec::new(),
+        });
+        let workspace = WorkspaceInfo { name: "fix".into(), shared: shared.collect(), ..WorkspaceInfo::default() };
+        workspace_parts(&workspace, None).join("  ")
+    };
+
+    assert!(shared(&[(12, 2)]).ends_with("  shares 2 files with workspace 12"), "{}", shared(&[(12, 2)]));
+    assert!(shared(&[(12, 1)]).ends_with("  shares 1 file with workspace 12"));
+    assert!(shared(&[(12, 2), (14, 3)]).ends_with("  shares 2 files with workspace 12, 3 with workspace 14"));
+    assert!(!shared(&[]).contains("shares"));
+}
+
 mod the_servers_home {
     use super::*;
 

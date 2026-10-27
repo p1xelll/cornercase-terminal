@@ -27,9 +27,8 @@ fn a_compact_panel_covers_the_screen_below_the_bar() {
     );
 }
 
-fn with_panel() -> View<'static> {
-    let tints = crate::changes::Tints::of(&HostTheme::default());
-    let panel = changes::View {
+fn loading_panel() -> changes::View {
+    changes::View {
         scope: crate::changes::Scope::Project,
         project: "shop".into(),
         owners: Vec::new(),
@@ -39,21 +38,27 @@ fn with_panel() -> View<'static> {
         body: crate::changes::Body::Loading,
         folded: Vec::new(),
         viewed: Vec::new(),
+        shared: Vec::new(),
         gaps: HashMap::new(),
         scroll: 0,
         live: false,
         light: false,
         muted: Color::DarkGray,
         soft: Color::Gray,
-        tints,
+        tints: crate::changes::Tints::of(&HostTheme::default()),
         filter: None,
         selection: None,
         icons: false,
-    };
+    }
+}
+
+fn with_panel() -> View<'static> {
+    let panel = loading_panel();
     View {
         has_project: true,
         issues: true,
         workspaces: vec![WorkspaceEntry {
+            shared: 0,
             collapsed: false,
             name: "main".into(),
             tabs: vec!["zsh".into()],

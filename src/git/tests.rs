@@ -280,3 +280,29 @@ mod user_name {
         assert_eq!(user_name_in(&[missing, repo, global]).as_deref(), Some("Grace"));
     }
 }
+
+mod index_and_objects {
+    use super::*;
+    use crate::test_util::{git, git_repo};
+
+    #[test]
+    fn a_linked_worktree_has_its_own_index_and_shares_the_objects() {
+        let repo = git_repo(&[]);
+        let tmp = TempDir::new();
+        let path = tmp.path().join("wt");
+        git(repo.path(), &["worktree", "add", "--quiet", "-b", "wt", &path.display().to_string()]);
+
+        let index = index_file(&path).expect("index of the worktree");
+        assert_eq!(index.parent().and_then(Path::parent).and_then(Path::file_name), Some("worktrees".as_ref()));
+        assert_eq!(index.file_name(), Some("index".as_ref()));
+        let objects = objects_dir(&path).and_then(|dir| dir.canonicalize().ok());
+        assert_eq!(objects, Some(repo.path().join(".git/objects")));
+    }
+
+    #[test]
+    fn the_main_checkout_keeps_both_in_its_git_dir() {
+        let repo = git_repo(&[]);
+        assert_eq!(index_file(repo.path()), Some(repo.path().join(".git/index")));
+        assert_eq!(objects_dir(repo.path()), Some(repo.path().join(".git/objects")));
+    }
+}

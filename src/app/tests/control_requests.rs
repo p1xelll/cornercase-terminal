@@ -558,6 +558,7 @@ mod grok;
 mod groups;
 mod holding;
 mod issues;
+mod merge_check;
 mod one_folder;
 mod ordering;
 mod pane_moves;

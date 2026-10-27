@@ -14,7 +14,7 @@ pub(crate) const CHANGES_VERSION: u32 = 1;
 pub(crate) const FLOW_RUNS_VERSION: u32 = 1;
 pub(crate) const FLOW_MESSAGES_VERSION: u32 = 1;
 pub(crate) const FILES_VERSION: u32 = 1;
-pub(crate) const FEATURES: [&str; 26] = [
+pub(crate) const FEATURES: [&str; 27] = [
     "boot",
     "structured-errors",
     "strict-fields",
@@ -41,6 +41,7 @@ pub(crate) const FEATURES: [&str; 26] = [
     "focus-reveal",
     "popup-terminal",
     "files",
+    "shared-files",
 ];
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

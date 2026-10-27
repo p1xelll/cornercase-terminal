@@ -90,6 +90,20 @@ test('a workspace menu ends with ports after open in…, which need a real corne
   app.destroy();
 });
 
+test('a repository workspace menu offers a merge check, which needs a real cornercase', () => {
+  const app = demo();
+  const p = app.project()!;
+  assert.ok(p.repo);
+  app.openMenu({ x: 2, y: 2 }, { kind: 'workspace', project: p.id, workspace: p.workspaces[0].id });
+  if (app.overlay?.kind !== 'menu') return assert.fail('no menu');
+  const labels = app.overlay.actions.map((a) => app.menuLabel(a));
+  assert.equal(labels[1], 'merge check');
+  app.chooseMenu(1);
+  app.render();
+  assert.ok(app.textAt('the demo has no git repositories to merge'));
+  app.destroy();
+});
+
 test('a tab menu has no open in…', () => {
   const app = demo();
   const p = app.project()!;

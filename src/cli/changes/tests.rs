@@ -27,6 +27,10 @@ mod parsing {
     #[case::discard_without_asking(&["changes", "discard", "src/main.rs", "--yes", "--workspace", "3"])]
     #[case::discard_in_a_branch(&["changes", "discard", "src/main.rs", "--worktree", "x"])]
     #[case::stage(&["changes", "stage", "a.rs"])]
+    #[case::a_merge_check(&["changes", "merge-check"])]
+    #[case::a_merge_check_with_a_workspace(&["changes", "merge-check", "--with", "12", "--worktree", "x", "--json"])]
+    #[case::a_merge_check_into_a_branch(&["changes", "merge-check", "--base", "main"])]
+    #[case::shared_files(&["changes", "shared", "--workspace", "3", "--json"])]
     #[case::unstage_in_a_workspace(&["changes", "unstage", "a.rs", "--workspace", "3"])]
     #[case::stage_in_a_branch(&["changes", "stage", "a.rs", "--worktree", "x"])]
     #[case::viewed_as_seen(&["changes", "viewed", "src/main.rs", "--digest", "550a7a517a389403"])]
@@ -45,6 +49,8 @@ mod parsing {
     #[case::two_places(&["changes", "list", "--workspace", "1", "--worktree", "x"])]
     #[case::default_with_a_branch(&["changes", "base", "main", "--default"])]
     #[case::a_gap_without_its_hunk(&["changes", "gap", "a.rs"])]
+    #[case::a_merge_check_with_and_base(&["changes", "merge-check", "--with", "12", "--base", "main"])]
+    #[case::a_merge_check_with_a_word(&["changes", "merge-check", "--with", "x"])]
     #[case::a_mode_command(&["changes", "mode", "--stream", "1", "commits"])]
     #[case::an_unknown_mode(&["changes", "list", "--mode", "some"])]
     #[case::discard_in_a_mode(&["changes", "discard", "a.rs", "--mode", "commits"])]
@@ -167,5 +173,57 @@ mod text {
 
         assert_eq!(patch_text(&binary), "p.bin: binary file\n");
         assert_eq!(patch_text(&large), "big.sql: too large to show (7 lines changed)\n");
+    }
+}
+
+mod the_merge_check_text {
+    use super::*;
+    use crate::control::changes::{ConflictInfo, MergeChecked, MergeInfo};
+    use crate::control::{ProjectInfo, WorkspaceInfo};
+
+    fn conflict(path: &str, kind: &str) -> ConflictInfo {
+        ConflictInfo { path: path.into(), kind: kind.into(), message: String::new() }
+    }
+
+    fn report() -> Report {
+        let workspace = WorkspaceInfo { id: 12, name: "feat/dark-mode".into(), ..WorkspaceInfo::default() };
+        Report {
+            projects: vec![ProjectInfo { workspaces: vec![workspace], ..ProjectInfo::default() }],
+            ..Report::default()
+        }
+    }
+
+    #[test]
+    fn says_a_clean_merge_into_the_base() {
+        let clean = MergeInfo { base: Some("origin/main".into()), clean: true, ..MergeInfo::default() };
+
+        assert_eq!(
+            merge_text(&MergeChecked { workspace: 11, checks: vec![clean] }, None),
+            "into origin/main  merges cleanly\n"
+        );
+    }
+
+    #[test]
+    fn names_each_conflicting_file_under_the_workspace() {
+        let found =
+            MergeInfo { with: Some(12), conflicts: vec![conflict("src/theme.rs", "contents")], ..MergeInfo::default() };
+
+        let text = merge_text(&MergeChecked { workspace: 11, checks: vec![found] }, Some(&report()));
+
+        assert_eq!(text, "with workspace 12 feat/dark-mode  1 conflict\n  src/theme.rs  contents\n");
+    }
+
+    #[test]
+    fn says_why_a_check_could_not_run_and_what_it_left_out() {
+        let failed =
+            MergeInfo { base: Some("nope".into()), error: Some("no branch nope".into()), ..MergeInfo::default() };
+        let large = MergeInfo { with: Some(12), clean: true, left_out: 2, ..MergeInfo::default() };
+
+        let text = merge_text(&MergeChecked { workspace: 11, checks: vec![failed, large] }, None);
+
+        assert_eq!(
+            text,
+            "into nope  could not check: no branch nope\nwith workspace 12  merges cleanly\n  2 untracked left out (over 1 MiB, or past 8 MiB in all)\n"
+        );
     }
 }

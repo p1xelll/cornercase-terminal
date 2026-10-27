@@ -296,6 +296,25 @@ pub(crate) fn git_repo(files: &[(&str, &str)]) -> TempDir {
     repo
 }
 
+pub(crate) struct Checkouts {
+    pub(crate) repo: TempDir,
+    trees: Vec<TempDir>,
+}
+
+impl Checkouts {
+    pub(crate) fn new(files: &[(&str, &str)]) -> Self {
+        Self { repo: git_repo(files), trees: Vec::new() }
+    }
+
+    pub(crate) fn add(&mut self, branch: &str, from: &str) -> PathBuf {
+        let tree = TempDir::new();
+        let path = tree.path().join(branch);
+        git(self.repo.path(), &["worktree", "add", "--quiet", "-b", branch, &path.display().to_string(), from]);
+        self.trees.push(tree);
+        path
+    }
+}
+
 pub(crate) fn clone_of(remote: &Path) -> (TempDir, PathBuf) {
     let dir = TempDir::new();
     git(dir.path(), &["clone", "--quiet", &remote.display().to_string(), "clone"]);

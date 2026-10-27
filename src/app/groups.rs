@@ -8,7 +8,9 @@ use crate::ui;
 
 use super::interaction::{Clicks, Drag};
 use super::layout::Side;
+use super::merge_check::MergeChecks;
 use super::notifications::Notices;
+use super::overlaps::Overlaps;
 use super::queue_panel::QueueRuntime;
 use super::star_prompt::StarPrompt;
 use super::text_fields::FieldMenu;
@@ -37,6 +39,7 @@ pub(super) struct Git {
     pub(super) merged: merged_pull_requests::MergedPulls,
     pub(super) scans: Scans,
     pub(super) cleanup: Cleanup,
+    pub(super) overlaps: Overlaps,
 }
 
 #[derive(Default)]
@@ -56,4 +59,5 @@ pub(super) struct Panels {
     pub(super) flow: flow_panel::FlowPanel,
     pub(super) queued: QueueRuntime,
     pub(super) ports: ports_dialog::PortsState,
+    pub(super) merges: MergeChecks,
 }

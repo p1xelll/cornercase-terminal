@@ -4,6 +4,8 @@ pub(crate) mod discard;
 pub(crate) mod every;
 pub(crate) mod filter;
 pub(crate) mod git;
+pub(crate) mod merge;
+pub(crate) mod overlap;
 mod porcelain;
 pub(crate) mod selection;
 pub(crate) mod stage;

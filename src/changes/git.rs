@@ -1,9 +1,11 @@
 use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::Read;
 use std::os::unix::ffi::OsStringExt;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::process::Output;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
@@ -27,7 +29,7 @@ const DIFF: [&str; 9] = [
     "--submodule=short",
 ];
 const DEFAULT_BRANCHES: [&str; 2] = ["main", "master"];
-const UNTRACKED_READ_BYTES: u64 = 8 << 20;
+pub(super) const UNTRACKED_READ_BYTES: u64 = 8 << 20;
 const REMOTE_HEAD: &str = "refs/remotes/origin/HEAD";
 
 #[derive(Debug, Clone)]
@@ -55,6 +57,15 @@ pub(super) fn run(dir: &Path, args: &[&str]) -> Result<Vec<u8>> {
     let output = worktree::git_within(dir, GLOBAL.iter().chain(args), timeout)?;
     let Some(output) = output else { return Err(Error::Git("timed out".into())) };
     worktree::check(output)
+}
+
+pub(super) fn run_raw(dir: &Path, args: &[&str], env: &[(&str, &OsStr)]) -> Result<Output> {
+    let timeout = process::time_left(super::GIVE_UP_AFTER);
+    if timeout.is_zero() {
+        return Err(Error::Git("timed out".into()));
+    }
+    let output = worktree::git_within_env(dir, GLOBAL.iter().chain(args), env, timeout)?;
+    output.ok_or_else(|| Error::Git("timed out".into()))
 }
 
 fn text(dir: &Path, args: &[&str]) -> Option<String> {
@@ -291,10 +302,10 @@ pub(super) fn patch_between(dir: &Path, from: &str, to: Option<&str>, paths: &[&
     run(dir, &args)
 }
 
-struct Deadline;
+pub(super) struct Deadline;
 
 impl Deadline {
-    fn arm() -> Self {
+    pub(super) fn arm() -> Self {
         process::set_deadline(Some(Instant::now() + super::GIVE_UP_AFTER));
         Self
     }

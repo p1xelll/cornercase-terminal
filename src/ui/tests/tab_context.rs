@@ -16,6 +16,7 @@ fn with_details(details: Details) -> View<'static> {
     View {
         has_project: true,
         workspaces: vec![WorkspaceEntry {
+            shared: 0,
             collapsed: false,
             name: "login".into(),
             tabs: vec![claude, "nvim".into()],

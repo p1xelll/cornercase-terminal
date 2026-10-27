@@ -53,6 +53,7 @@ fn sample() -> View {
         base: None,
         folded: vec![false, true, true],
         viewed: vec![false, false, false],
+        shared: Vec::new(),
         body: Body::Ready(Arc::new(diff)),
         gaps: HashMap::new(),
         scroll: 0,
@@ -193,6 +194,45 @@ fn a_viewed_row_mutes_its_icon() {
     let (x, y) = cells.into_iter().find(|&(x, y)| buffer[(x, y)].symbol() == "\u{e68b}").expect("a rust icon");
     let muted = dim(view.muted).fg;
     assert_eq!(Some(buffer[(x, y)].fg), muted);
+}
+
+fn marked_cells(view: &View, mark: &str) -> Vec<(u16, u16, Color)> {
+    let terminal = render(view, None);
+    let buffer = terminal.backend().buffer();
+    let cells = (0..AREA.height).flat_map(|y| (0..AREA.width).map(move |x| (x, y)));
+    cells.filter(|&(x, y)| buffer[(x, y)].symbol() == mark).map(|(x, y)| (x, y, buffer[(x, y)].fg)).collect()
+}
+
+#[test]
+fn a_shared_file_shows_a_yellow_mark_before_its_counts() {
+    let mut view = sample();
+    view.shared = vec![true, false, false];
+
+    let marks = marked_cells(&view, "⇄");
+
+    let row = row_of(&view, Row::File(0));
+    assert_eq!(marks.len(), 1, "{marks:?}");
+    let (x, y, colour) = marks[0];
+    assert_eq!((y, colour), (row.y, Color::Yellow));
+    let terminal = render(&view, None);
+    let plus = (row.left()..row.right()).find(|&x| terminal.backend().buffer()[(x, row.y)].symbol() == "+");
+    assert!(plus.is_some_and(|plus| x < plus), "mark at {x}, count at {plus:?}");
+}
+
+#[test]
+fn a_viewed_shared_file_mutes_its_mark() {
+    let mut view = sample();
+    (view.shared, view.viewed) = (vec![true, false, false], vec![true, false, false]);
+
+    assert_eq!(
+        marked_cells(&view, "⇄").iter().map(|(_, _, colour)| *colour).collect::<Vec<_>>(),
+        [dim(view.muted).fg.expect("a colour")]
+    );
+}
+
+#[test]
+fn files_nobody_shares_show_no_mark() {
+    assert_eq!(marked_cells(&sample(), "⇄"), vec![]);
 }
 
 #[test]

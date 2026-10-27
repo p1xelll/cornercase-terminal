@@ -555,6 +555,7 @@ mod output {
             changes: None,
             closed_agents: None,
             post: None,
+            shared: Vec::new(),
             tabs: vec![tab()],
         }
     }

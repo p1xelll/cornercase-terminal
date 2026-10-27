@@ -259,3 +259,44 @@ fn an_unknown_terminal_is_told_why_it_shows_no_image() {
     let raw = String::from_utf8_lossy(&app.raw.lock()).into_owned();
     assert!(!raw.contains("\x1b_G") && !raw.contains("1337;File"), "no image bytes reach it");
 }
+
+fn two_worktrees_editing_one_line(prefix: &str) -> (PathBuf, String, [PathBuf; 2]) {
+    let (repo, repo_name) = edited_repo(prefix);
+    git(&repo, &["checkout", "--quiet", "--", "notes.txt"]);
+    let trees = ["a", "b"].map(|side| std::env::temp_dir().join(format!("{prefix}-{side}-{}", std::process::id())));
+    for (side, tree) in ["a", "b"].into_iter().zip(&trees) {
+        git(&repo, &["worktree", "add", "--quiet", "-b", &format!("side-{side}"), &tree.display().to_string()]);
+        std::fs::write(tree.join("notes.txt"), format!("one\n{}\n", side.to_uppercase())).expect("edit the worktree");
+    }
+    (repo, repo_name, trees)
+}
+
+#[test]
+fn scripts_check_a_merge_without_touching_the_checkouts() {
+    let (repo, repo_name, trees) = two_worktrees_editing_one_line("ccmc");
+    let mut app = Harness::start();
+    app.open_project(1, &repo);
+    app.wait_for("the repo opens as project 2", |s| s.contains(&entry(&repo_name)));
+    let shared_args = ["changes", "shared", "--worktree", "side-a", "--json"];
+    let mut shared = String::new();
+    wait_until("the scan finds the shared file", || {
+        let out = app.session.cli(&shared_args);
+        shared = String::from_utf8_lossy(&out.stdout).into_owned();
+        out.status.success() && shared.contains("notes.txt")
+    });
+    let before = trees.each_ref().map(|tree| git_status(tree));
+
+    let checked = app.session.says(&["changes", "merge-check", "--worktree", "side-a", "--json"]);
+
+    let value: serde_json::Value = serde_json::from_str(&checked).expect("an answer");
+    let pair = value["checks"].as_array().and_then(|checks| checks.iter().find(|c| !c["with"].is_null()));
+    let conflict = pair.map(|check| check["conflicts"][0].clone());
+    let found = conflict.map(|c| (c["path"].clone(), c["kind"].clone()));
+    assert_eq!(found, Some((serde_json::json!("notes.txt"), serde_json::json!("contents"))), "{checked}");
+    let listed: serde_json::Value = serde_json::from_str(&shared).expect("the shared files");
+    assert_eq!(listed["shared"][0]["files"], serde_json::json!(["notes.txt"]), "{shared}");
+    assert_eq!(trees.each_ref().map(|tree| git_status(tree)), before);
+    for dir in std::iter::once(&repo).chain(&trees) {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}

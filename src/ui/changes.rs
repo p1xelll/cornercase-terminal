@@ -28,6 +28,7 @@ const HEADER_ROWS: u16 = 4;
 const FOOTER_ROWS: u16 = 2;
 const BAR_CELLS: usize = 8;
 const VIEWED_WIDTH: u16 = 3;
+const SHARED_TAG: &str = "⇄";
 const SLOT_WIDTH: u16 = 3;
 const DISCARD: &str = "↺";
 const STAGE: &str = "+";
@@ -71,6 +72,7 @@ pub(crate) struct View {
     pub(crate) body: Body,
     pub(crate) folded: Vec<bool>,
     pub(crate) viewed: Vec<bool>,
+    pub(crate) shared: Vec<bool>,
     pub(crate) gaps: HashMap<(usize, usize), Arc<Vec<GapLine>>>,
     pub(crate) scroll: usize,
     pub(crate) live: bool,
@@ -689,7 +691,7 @@ impl Painter<'_> {
         let status = if muted { dim(view.muted) } else { status_style(file.status) };
         put(self.buf, (r.x + 4 + indent, r.y), file.status.letter(), status, r.right());
         let end = self.marks(r, file.staged, viewed);
-        let right = file_tags(view, file, muted);
+        let right = file_tags(view, file, (muted, view.shared.get(i).copied().unwrap_or(false)));
         let right_width: u16 = right.iter().map(|(t, _)| width(t) + 1).sum();
         let mut x = end.saturating_sub(right_width);
         let path_end = x.saturating_sub(1);
@@ -818,8 +820,12 @@ fn empty_note(view: &View) -> String {
     }
 }
 
-fn file_tags(view: &View, file: &File, muted: bool) -> Vec<(String, Style)> {
+fn file_tags(view: &View, file: &File, (muted, shared): (bool, bool)) -> Vec<(String, Style)> {
     let mut right: Vec<(String, Style)> = Vec::new();
+    if shared {
+        let style = if muted { dim(view.muted) } else { Style::default().fg(Color::Yellow) };
+        right.push((SHARED_TAG.to_string(), style));
+    }
     let tag = file.fold.tag().or((file.status == Status::Untracked).then_some("new"));
     if let Some(tag) = tag {
         right.push((tag.to_string(), dim(view.muted).add_modifier(Modifier::ITALIC)));
