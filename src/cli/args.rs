@@ -8,6 +8,7 @@ pub(crate) mod flow;
 pub(crate) mod issue;
 pub(crate) mod plugin;
 pub(crate) mod ports;
+pub(crate) mod processes;
 pub(crate) mod queue;
 pub(crate) mod terminal;
 pub(crate) mod theme;
@@ -22,6 +23,7 @@ use std::path::PathBuf;
 use clap::builder::NonEmptyStringValueParser;
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 
+use super::help::WORKTREES_HELP;
 use super::help::{
     ABOUT, ACCOUNT_HELP, AFTER_HELP, AWAY_HELP, BY_BRANCH, CLOSE_HELP, COMMAND_HELP, COMMAND_THERE, CONFIG_HELP,
     CONTRACT_HELP, EVENTS_HELP, FLOW_HELP, FOCUS_HELP, FOLD_HELP, GO_HELP, GROUP_HELP, HERE_PANE, HERE_WORKSPACE,
@@ -32,7 +34,7 @@ use super::help::{
     START_SERVER_HELP, STATUS_HELP, SURFACE_HELP, THEME_HELP, TODO_HELP, TOUR_HELP, UNTIL_AFTER, UPDATE_HELP,
     USAGE_HELP, VIEW_ARG, VIEW_HELP, VIEW_SET_HELP, WAIT_HELP, WAIT_PANE, WAIT_TAB, WHEN_IDLE,
 };
-use super::help::{AGENTS_HELP, CHANGES_HELP, FILES_HELP, PASTE_FILE_HELP, PORTS_HELP, WORKTREES_HELP};
+use super::help::{AGENTS_HELP, CHANGES_HELP, FILES_HELP, PASTE_FILE_HELP, PORTS_HELP, PROCESSES_HELP};
 use crate::control::Until;
 use crate::term::keys;
 
@@ -248,6 +250,11 @@ pub(crate) enum Control {
         after_help = PORTS_HELP
     )]
     Ports(ports::PortsArgs),
+    #[command(
+        about = "List what every pane runs with its CPU and memory, as the Processes dialog does, or stop a program",
+        after_help = PROCESSES_HELP
+    )]
+    Processes(processes::ProcessesArgs),
     #[command(
         about = "Measure the disk a worktree takes, and free its build folders without removing it",
         after_help = WORKTREES_HELP

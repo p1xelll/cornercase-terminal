@@ -567,6 +567,7 @@ mod parents;
 mod pasting;
 mod plugins;
 mod ports;
+mod processes;
 mod queue;
 mod searching;
 mod setup;
