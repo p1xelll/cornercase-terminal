@@ -3,6 +3,7 @@
   "fetch_minutes": 12,
   "pull_requests": false,
   "merged_pull_requests": false,
+  "shared_files": true,
   "issue_branch": "feat/{key}-{slug}",
   "issue_tabs": [
     "shortcut",
@@ -83,7 +84,11 @@
   "projects": {
     "~/code/web-shop": {
       "setup": "npm ci\ncp ../.env .env",
-      "teardown": "docker compose down"
+      "teardown": "docker compose down",
+      "builds": [
+        "node_modules",
+        ".next"
+      ]
     }
   },
   "account_names": {

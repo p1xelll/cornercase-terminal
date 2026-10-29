@@ -12,25 +12,28 @@ use super::event::AppEvent;
 use super::input::{ListPointer, list_pointer, wheel_span};
 use super::layout::Side;
 use super::overlay::Overlay;
-use super::worktrees::WorktreeEvent;
+use super::worktrees::{ListFor, WorktreeEvent};
 use crate::error::Result;
 use crate::git;
 use crate::log::{Job, Level};
-use crate::process;
 use crate::project::search::Goto;
 use crate::project::{Hierarchy, WorkspaceAt};
 use crate::pull_request::State;
 use crate::time;
 use crate::ui;
 use crate::worktrees::{
-    Action, Dialog, Found, Hit, Kind, List, Live, Row, SCAN_GIVE_UP, SCANS_AT_ONCE, Scan, Step, discover, scan,
+    Action, Dialog, Found, Hit, Kind, List, Live, Row, SCAN_GIVE_UP, SCANS_AT_ONCE, Scan, Step, discover, folders_of,
+    scan,
 };
 
 mod cleanup;
 mod confirm;
+mod free;
+mod sizes;
 
 pub(super) use cleanup::{Cleanup, Deleted};
 pub(super) use confirm::wrap;
+pub(super) use free::Frees;
 
 pub(super) type Place = (PathBuf, u64, u64);
 
@@ -46,6 +49,7 @@ pub(super) struct Scans {
     sent: usize,
     places: Vec<Place>,
     synced: Option<Instant>,
+    sizes: sizes::Sizes,
 }
 
 struct Queued {
@@ -86,7 +90,7 @@ impl App {
             None => None,
         };
         let generation = self.restart_scans();
-        self.spawn_worktree_listing(generation, only.as_ref().map(|(_, _, path)| path.clone()));
+        self.spawn_worktree_listing(ListFor::Dialog(generation), only.as_ref().map(|(_, _, path)| path.clone()));
         let project = only.map(|(id, label, _)| (id, label));
         let dialog = Dialog::new(project, generation, List::new(Vec::new()));
         self.overlay = Some(Overlay::Worktrees(Box::new(dialog)));
@@ -110,7 +114,7 @@ impl App {
         generation
     }
 
-    fn spawn_worktree_listing(&mut self, generation: u64, keep: Option<PathBuf>) {
+    pub(super) fn spawn_worktree_listing(&mut self, to: ListFor, keep: Option<PathBuf>) {
         let repos: Vec<PathBuf> = match &keep {
             Some(path) => vec![path.clone()],
             None => self.projects.iter().filter(|p| git::is_repo_root(&p.path)).map(|p| p.path.clone()).collect(),
@@ -130,9 +134,10 @@ impl App {
                     .collect::<Vec<Found>>())
             },
             move |found, job| {
-                let found = found.unwrap_or_default();
-                job.note("found", found.len());
-                Some(AppEvent::Worktree(WorktreeEvent::Listed { generation, found }))
+                if let Ok(found) = &found {
+                    job.note("found", found.len());
+                }
+                Some(AppEvent::Worktree(WorktreeEvent::Listed { to, found }))
             },
         );
     }
@@ -144,24 +149,19 @@ impl App {
         }
     }
 
-    pub(super) fn worktrees_listed(&mut self, generation: u64, found: Vec<Found>) {
+    pub(super) fn worktrees_found(&mut self, to: ListFor, found: Result<Vec<Found>>) {
+        match to {
+            ListFor::Dialog(generation) => self.worktrees_listed(generation, found.unwrap_or_default()),
+            ListFor::Request { key, sizes } => self.worktree_rows_listed(key, sizes, found),
+        }
+    }
+
+    fn worktrees_listed(&mut self, generation: u64, found: Vec<Found>) {
         if self.worktrees_dialog(generation).is_none() {
             return;
         }
         self.refresh_places();
-        let rows: Vec<Row> = found
-            .into_iter()
-            .map(|found| Row {
-                live: self.live(&found.path).map(|(_, live)| live),
-                removing: self.cleaning_path(&found.path),
-                found,
-                scan: None,
-                outside: Vec::new(),
-                elsewhere: Vec::new(),
-                ticked: false,
-                gone: false,
-            })
-            .collect();
+        let rows = self.fresh_rows(found);
         let queued: Vec<Queued> = rows
             .iter()
             .filter(|row| row.found.kind == Kind::Linked)
@@ -175,21 +175,47 @@ impl App {
             .collect();
         self.git.scans.listing = None;
         self.git.scans.queue.extend(queued);
+        self.queue_sizes(&rows);
         if let Some(dialog) = self.worktrees_dialog(generation) {
             let mut list = List::new(rows);
             list.filter = std::mem::take(&mut dialog.list.filter);
+            list.order_by(dialog.list.order);
             *dialog = Dialog::new(dialog.project.take(), generation, list);
         }
         self.spawn_outside(false);
         self.pump_worktree_scans();
+        self.pump_sizes();
     }
 
-    fn base_of(&self, path: &Path) -> Option<String> {
+    pub(super) fn fresh_rows(&self, found: Vec<Found>) -> Vec<Row> {
+        found
+            .into_iter()
+            .map(|found| Row {
+                live: self.live(&found.path).map(|(_, live)| live),
+                removing: self.cleaning_path(&found.path),
+                found,
+                scan: None,
+                size: None,
+                freeing: false,
+                outside: Vec::new(),
+                elsewhere: Vec::new(),
+                ticked: false,
+                gone: false,
+            })
+            .collect()
+    }
+
+    pub(super) fn relive(&self, row: &mut Row) {
+        row.live = self.live(&row.found.path).map(|(_, live)| live);
+        row.removing = self.cleaning_path(&row.found.path);
+    }
+
+    pub(super) fn base_of(&self, path: &Path) -> Option<String> {
         let (at, _) = self.live(path)?;
         self.projects.workspace(at).base.clone()
     }
 
-    fn refresh_places(&mut self) {
+    pub(super) fn refresh_places(&mut self) {
         let old = std::mem::take(&mut self.git.scans.places);
         let mut places = Vec::new();
         for project in &self.projects {
@@ -279,6 +305,7 @@ impl App {
         if self.git.scans.listing.is_some_and(|since| now.saturating_duration_since(since) >= SCAN_GIVE_UP) {
             self.git.scans.listing = None;
         }
+        self.give_up_sizes(now);
         self.pump_worktree_scans();
     }
 
@@ -299,13 +326,7 @@ impl App {
         let at = path.clone();
         self.spawn_job(
             job,
-            move || {
-                let base = base.or_else(|| crate::changes::git::default_base(&repo));
-                match count {
-                    Some(branch) => scan::branch_commits(&repo, &branch, base.as_deref()),
-                    None => scan::scan(&at, base.as_deref()),
-                }
-            },
+            move || scan::scan_or_count(&at, &repo, base, count.as_deref()),
             move |scan, _| {
                 let scan = Box::new(scan);
                 Some(AppEvent::Worktree(WorktreeEvent::Scanned { generation, ticket, path, scan, confirm }))
@@ -344,13 +365,7 @@ impl App {
 
     fn spawn_outside(&mut self, confirm: bool) {
         let Some(Overlay::Worktrees(dialog)) = &self.overlay else { return };
-        let paths: Vec<PathBuf> = dialog
-            .list
-            .rows
-            .iter()
-            .filter(|row| row.found.kind != Kind::Prunable && !row.gone)
-            .map(|row| row.found.path.clone())
-            .collect();
+        let paths = folders_of(&dialog.list.rows);
         let shells = self.pane_shells(&paths);
         let (generation, ticket) = (self.git.scans.generation, self.git.scans.next);
         self.git.scans.next += 1;
@@ -358,17 +373,12 @@ impl App {
         let job = Job::new(Level::Debug, "worktrees", "outside").with("paths", paths.len());
         self.spawn_job(
             job,
-            move || {
-                let panes = process::owners::trees(&shells);
-                let server = i32::try_from(std::process::id()).unwrap_or_default();
-                let found = scan::outside(&paths, &panes, server);
-                Ok(found.into_iter().map(|(at, name, tab)| (paths[at].clone(), name, tab)).collect::<Vec<_>>())
-            },
+            move || Ok(scan::processes(&paths, &shells)),
             move |found, _| Some(AppEvent::Worktree(WorktreeEvent::Outside { generation, ticket, found })),
         );
     }
 
-    fn pane_shells(&self, paths: &[PathBuf]) -> Vec<(i32, Vec<usize>)> {
+    pub(super) fn pane_shells(&self, paths: &[PathBuf]) -> Vec<(i32, Vec<usize>)> {
         let index = |path: &Path| paths.iter().position(|p| p == path);
         let mut shells = Vec::new();
         for project in &self.projects {
@@ -395,10 +405,7 @@ impl App {
         let failed = found.is_err();
         let found = found.unwrap_or_default();
         for row in &mut dialog.list.rows {
-            let of = |tab: bool| -> Vec<String> {
-                found.iter().filter(|(path, _, t)| *path == row.found.path && *t == tab).map(|f| f.1.clone()).collect()
-            };
-            (row.outside, row.elsewhere) = (of(false), of(true));
+            row.set_processes(&found);
         }
         self.git.scans.outside = if failed { Outside::Failed } else { Outside::Idle };
     }
@@ -438,6 +445,9 @@ impl App {
             Some(ui::WorktreesHit::Tick(i)) => row(i).map(Hit::Tick),
             Some(ui::WorktreesHit::Row(i)) => row(i).map(Hit::Row),
             Some(ui::WorktreesHit::Changes(i)) => row(i).map(Hit::Changes),
+            Some(ui::WorktreesHit::Free(i)) => row(i).map(Hit::Free),
+            Some(ui::WorktreesHit::FreeTicked) => Some(Hit::FreeTicked),
+            Some(ui::WorktreesHit::Order(order)) => Some(Hit::Order(order)),
             Some(ui::WorktreesHit::Remove) => Some(Hit::Remove),
             Some(ui::WorktreesHit::Done) => Some(Hit::Done),
             Some(ui::WorktreesHit::Back) => Some(Hit::Back),
@@ -456,6 +466,8 @@ impl App {
             Action::Close => self.overlay = None,
             Action::Rescan(rows) => self.rescan_worktrees(&rows),
             Action::Remove { branches } => self.remove_worktrees(branches),
+            Action::Free => self.spawn_outside(true),
+            Action::FreeBuilds => self.free_confirmed(),
             Action::Changes(row) => self.worktree_changes(row),
         }
     }
@@ -527,7 +539,13 @@ impl App {
             Some((_, label)) => format!("Worktrees › {label}"),
             None => "Worktrees".to_string(),
         };
-        let confirm = matches!(dialog.step, Step::Confirm { .. }).then(|| self.confirm_view(dialog, area));
+        let confirm = match &dialog.step {
+            Step::List => None,
+            Step::Confirm { .. } => Some(self.confirm_view(dialog, area)),
+            Step::Free { paths } => Some(self.free_view(dialog, area, paths)),
+        };
+        let free = dialog.list.rows.iter().filter(|row| row.ticked && row.can_free()).count();
+        let total = Self::total_text(dialog, now);
         let note = self.worktrees_note(dialog, confirm.as_ref(), area);
         Box::new(ui::Worktrees {
             title,
@@ -536,6 +554,9 @@ impl App {
             selected: dialog.selected,
             scroll: dialog.scroll,
             ticked,
+            free,
+            order: dialog.list.order,
+            total,
             note,
             confirm,
             compact: area.width < ui::COMPACT_WIDTH,
@@ -549,7 +570,10 @@ impl App {
         let Some(confirm) = confirm else {
             let total = dialog.list.rows.iter().filter(|row| row.found.kind == Kind::Linked).count();
             let pending = dialog.list.pending();
-            return (pending > 0).then(|| ui::Note::Info(format!("checking {} of {total}…", total - pending)));
+            if pending > 0 {
+                return Some(ui::Note::Info(format!("checking {} of {total}…", total - pending)));
+            }
+            return Self::sizes_note(dialog).map(ui::Note::Info);
         };
         if confirm.checking {
             let waiting = dialog.checking() + self.git.scans.extra.len();
@@ -573,7 +597,9 @@ impl App {
             .and_then(|l| self.projects.workspace_in(l.project, l.workspace))
             .is_some_and(|at| !self.projects.workspace(at).removing());
         let removing = row.removing || live.is_some_and(|l| l.removing);
-        let status = if removing {
+        let status = if row.freeing {
+            Some("freeing…")
+        } else if removing {
             Some(if closing && !row.removing { "closing…" } else { "removing…" })
         } else {
             live.is_some_and(|l| l.role_of_run).then_some("owned by a flow run")
@@ -588,6 +614,12 @@ impl App {
             age: row_age(row, now),
             marks: self.worktree_marks(row),
             changes: live.is_some() && !removing && row.found.kind == Kind::Linked,
+            free: row.can_free() && !removing,
+            size: row_size(row),
+            builds: row
+                .builds_bytes()
+                .filter(|bytes| *bytes > 0)
+                .map(|bytes| format!("{} builds", crate::text::size(bytes))),
             status: status.map(String::from),
         }
     }
@@ -646,6 +678,15 @@ fn scan_marks(row: &Row, scan: &Scan, muted: Color) -> Vec<(String, Color)> {
         marks.push(("locked".into(), Color::Yellow));
     }
     marks
+}
+
+fn row_size(row: &Row) -> String {
+    match &row.size {
+        _ if !row.has_folder() => String::new(),
+        Some(Ok(size)) => crate::text::size(size.bytes),
+        Some(Err(_)) => "?".into(),
+        None => "…".into(),
+    }
 }
 
 fn row_age(row: &Row, now: SystemTime) -> String {

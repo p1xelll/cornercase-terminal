@@ -326,7 +326,7 @@ mod arguments {
         let refused = start_line(&c, "aider", None, Some("gpt"), None).expect_err("aider takes no model");
         assert_eq!(
             refused,
-            "cornercase passes a model to claude, codex, gemini, opencode, grok, cursor, copilot, vibe only; give aider its model in agent_args"
+            "cornercase passes a model to claude, codex, gemini, opencode, grok, cursor, copilot only; give aider its model in agent_args"
         );
     }
 
@@ -427,6 +427,12 @@ mod choosing {
     #[case::copilot_npx(&["node", "/home/a/.npm/_npx/9f2/node_modules/@github/copilot/npm-loader.js"], Some("copilot"))]
     #[case::copilot_standalone(&["/home/a/.local/bin/copilot"], Some("copilot"))]
     #[case::gh_copilot(&["gh", "copilot", "--", "--model", "auto"], Some("copilot"))]
+    #[case::vibe_through_its_launcher(
+        &["/home/a/.local/share/uv/tools/mistral-vibe/lib/python3.14/site-packages/vibe/_bin/vibe-rs"],
+        Some("vibe")
+    )]
+    #[case::vibe_after_flags(&["python3", "-I", "-B", "-u", "/x/vibe/_bin/vibe-rs"], Some("vibe"))]
+    #[case::vibe_as_a_later_argument(&["less", "notes.txt", "/x/vibe/_bin/vibe-rs"], None)]
     #[case::another_npm_loader(&["node", "/x/node_modules/other/npm-loader.js"], None)]
     #[case::grok_binary_named_agent(&["/home/a/.grok/bin/agent"], None)]
     #[case::a_worker_server_of_another_app(&["node", "/home/a/app/versions/1/index.js", "worker-server"], None)]

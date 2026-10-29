@@ -2,13 +2,42 @@
 
 Every pull request that changes the app adds a section here for its new version. The section becomes the notes of the GitHub Release and shows up in the app's update dialog, so write it for users.
 
+## 0.12.226
+
+- **Mistral's Vibe CLI is a known agent.** Start an issue with `vibe` or launch it in a tab: cornercase recognises it (its launcher becomes `vibe-rs`), leaves its "Trust this folder?" question to you, and shows whether it is working, waiting, finished or failed from its own OSC 7501 reports. Its modes (`ask`, `smart approve`, `auto-approve`) and `--add-dir` work, a prompt typed while it works waits, and flow roles run it unattended with `--agent auto-approve`. It has no `--model` flag, so a role that names a model says so instead of starting it with one.
+- **Vibe CLI shows its model and context use, resumes, and counts in Stats.** Its tab shows `mistral-medium-latest · 23%` (or the configured alias) from its own session store under `$VIBE_HOME` or `~/.vibe`, and `compacted` after `/compact` until the next reply; the second line also says how many subagents it still runs. `cornercase read --last-message` and search read its journal, a restart resumes it with `vibe --resume <id>` (session logging must stay on), and Stats count its prompts, turns and token use (no cache-write split). The reader is pinned to Vibe 3.0.3, with fixtures from a successful turn and a live `/compact` captured through the real TUI, store and OSC path.
+
+## 0.12.225
+
+- **List every worktree on disk from a script.** `cornercase worktrees list` prints the Worktrees dialog's rows in its order: each worktree's project and branch, folder, when it last changed, its size and the part in build folders, and what removing it would lose or stop (uncommitted files, unpushed commits, a lock, programs running there), with `merged` or `no commits`. `--json` adds each one's `safe` and the facts behind it, `--project ID` lists one project's, and `--no-sizes` answers without measuring. It removes nothing. It is the request `worktrees`, which `cornercase contract` lists.
+
+## 0.12.224
+
+- **Long lines wrap in the files viewer and the changes panel.** A line wider than the panel goes on in the rows under it instead of ending in `…`, so you can read it whole without dragging the border or going full screen, and the diff shows how a line changed even when the change is near its end. The extra rows leave the numbers blank and keep the line's colours, its change bar, the find matches and your selection. A click on any of them selects the line, and a selection can start or end on any row. A line that would take more than 100 rows, such as a minified bundle, still ends in `…`; **copy** and **open** give you the rest.
+
+## 0.12.223
+
+- **See what every pane runs, and stop a runaway program.** **More ▴ › processes** (or `k` in the keys menu) opens a Processes dialog with one row per pane of every open project: where it is, what runs in it, and the CPU and memory of everything under its shell. The totals sit at the top and cornercase's own use is the last row. Click a row to see its processes, each with its own figures, and sort by CPU, memory or name, or type to filter. ` go ` shows the pane and ` close ` closes it (or its agent, as **close agent** does). ` stop ` on a process asks first, then sends SIGTERM to it and everything it started, and SIGKILL to what still runs 3 seconds later; a pane's shell is never offered. It measures only while it is open, every 2 seconds, and holds the order of the rows while the pointer is over them.
+- Scripts: `cornercase processes` (`--pane`, `--workspace`, `--worktree`, `--interval`, `--json`) prints the same list, and `cornercase processes stop PID` stops a program of a pane and what it started. They are the requests `processes` and `stop-process`, and `cornercase contract` lists both.
+
+## 0.12.222
+
+- **See how much disk each worktree takes, and free its build folders without removing it.** The Worktrees dialog shows each worktree's size and how much of it is build and dependency folders, such as `2.4 GB · 2.1 GB builds`; **largest first** sorts by it, and the bottom line sums every worktree and what freeing the builds of the ones idle for a week would recover. **free builds** on a row, or for the ticked rows, deletes only the folders git ignores among `node_modules`, `target`, `.next`, `.turbo`, `dist`, `build`, `.venv` and `__pycache__`: the worktree, its branch and its uncommitted changes stay. The confirmation says how much it frees and warns when a program still runs there. A project changes the list in **project settings → build folders**, and its setup can rebuild them the next time.
+- Scripts: `cornercase worktrees size` and `cornercase worktrees free-builds` (`--check` first; `--force` while programs run there), the requests `worktree-size` and `free-builds`, and `cornercase config project --builds`. `cornercase contract` lists the feature `build-folders`.
+
+## 0.12.221
+
+- **Drive another machine's cornercase while it runs a newer version.** `--remote` commands no longer need the same version on both machines: when the other machine runs a newer cornercase than this one, `cornercase --remote devbox status`, `events` and the rest keep working, so an app on your laptop doesn't stop each time only `devbox` updates. When the other machine is the older one, commands still refuse, since its server could ignore what a newer command asks for, and say how to update it from here. The window, `cornercase remote devbox`, still needs the same version on both.
+- **Update, restart and stop another machine's cornercase from here.** `cornercase --remote devbox update`, `restart`, `kill-server` and `logs` now run on `devbox` through your `ssh` instead of refusing `--remote`: same flags, the same questions when you are at a terminal (`--yes` skips them), and the exit status they have there. `cornercase --remote devbox logs --follow` follows that machine's log. The plugin commands that install or change plugins still act only on the machine they run on.
+- `cornercase logs --follow` now ends soon after the program reading it exits, as the other commands that follow a stream already do, instead of waiting for the server's next log line.
+
 ## 0.12.220
 
-- **Vibe CLI shows its model and context use, resumes, and counts in Stats.** Its tab shows `mistral-medium-latest · 23%` (or the configured alias) from its own session store under `$VIBE_HOME` or `~/.vibe`, and `compacted` after `/compact` until the next reply; the second line also says how many subagents it still runs. `cornercase read --last-message` and search read its journal, a restart resumes it with `vibe --resume <id>` (session logging must stay on), and Stats count its prompts, turns and token use (no cache-write split). The reader is pinned to Vibe 3.0.3, with fixtures from a successful turn and a live `/compact` captured through the real TUI, store and OSC path.
+- **Shared files are now a setting, off by default.** The `⇄n` badge on workspace rows and the `⇄` mark in the changes panel only show once you turn on **Settings → Worktrees → shared files** (`shared_files` in `config.json`, or `cornercase config set shared_files true`). While it is off, cornercase runs no background git scan for them. The **merge check** in the row's ` ⋯ ` menu still works either way, and checks the workspace against its base branch.
 
 ## 0.12.219
 
-- **Mistral's Vibe CLI is a known agent.** Start an issue with `vibe` or launch it in a tab: cornercase recognises it (its launcher becomes `vibe-rs`), leaves its "Trust this folder?" question to you, and shows whether it is working, waiting, finished or failed from its own OSC 7501 reports. Its modes (`ask`, `smart approve`, `auto-approve`) and `--add-dir` work, a prompt typed while it works waits, and flow roles run it unattended with `--agent auto-approve`. It has no `--model` flag, so a role that names a model says so instead of starting it with one.
+- **Plan limits load for Claude Code accounts with a busy week.** When cornercase asked Claude Code for your limits, Claude Code also worked out what drives your usage by reading every conversation of the last seven days, which cornercase never showed. With a lot of history that took longer than the ten seconds the Limits tab waits, so the account's section said `usage unavailable: claude did not answer in time`. cornercase now asks only for the limits, and each account answers in a second or two. This needs Claude Code 2.1.261 or later; older versions still read the conversations.
 
 ## 0.12.218
 

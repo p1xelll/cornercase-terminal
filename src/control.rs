@@ -20,6 +20,7 @@ mod flow;
 pub(crate) mod issues;
 pub(crate) mod plugins;
 pub(crate) mod ports;
+pub(crate) mod processes;
 mod search;
 pub(crate) mod start_server;
 mod status;
@@ -31,6 +32,7 @@ pub(crate) mod tour;
 pub(crate) mod usage;
 pub(crate) mod view;
 mod watch;
+pub(crate) mod worktrees;
 
 use fields::{Fields, chosen};
 pub(crate) use todo::{Todo, TodoSend};
@@ -64,6 +66,7 @@ pub(crate) use flow::{
 pub(crate) use issues::{IssueList, IssuePeople, IssueRead, IssueSources};
 pub(crate) use plugins::{PluginActions, PluginList, PluginPopupClose, PluginRun};
 pub(crate) use ports::{Listing, PortStopped, Ports, StopPort};
+pub(crate) use processes::{ProcessStopped, Processes, StopProcess};
 pub(crate) use search::{Hit, Matches, Reveal, Search};
 pub(crate) use start_server::StartServer;
 pub(crate) use status::{GroupInfo, KeepAwake, LayerInfo, PostInfo, PullRequestInfo, RunStatus, SharedInfo, StackInfo};
@@ -74,6 +77,9 @@ pub(crate) use theme::{Theme, ThemeInfo};
 pub(crate) use usage::{Plans, Usage};
 pub(crate) use view::{OpenView, SetView, ViewInfo};
 pub(crate) use watch::{Layout, Snapshot, Watch};
+pub(crate) use worktrees::{
+    BuildsFreed, FreeBuilds, ListWorktrees, WorktreeInfo, WorktreeListing, WorktreeSize, WorktreeSized,
+};
 
 pub const PANE_ENV: &str = "CORNERCASE_PANE";
 pub(crate) const SERVER_ENV: &str = "CORNERCASE_SERVER";
@@ -225,6 +231,11 @@ pub(crate) enum Command {
     FilesSearch(FilesSearch),
     PasteFile(PasteFile),
     ChangesMergeCheck(ChangesMergeCheck),
+    Processes(Processes),
+    StopProcess(StopProcess),
+    WorktreeSize(WorktreeSize),
+    FreeBuilds(FreeBuilds),
+    Worktrees(ListWorktrees),
 }
 
 impl Command {
@@ -400,6 +411,11 @@ impl Command {
             Self::Usage(_) => 67,
             Self::Ports(_) => 101,
             Self::StopPort(_) => 102,
+            Self::Processes(_) => 110,
+            Self::StopProcess(_) => 111,
+            Self::WorktreeSize(_) => 108,
+            Self::FreeBuilds(_) => 109,
+            Self::Worktrees(_) => 112,
             Self::Tour(_) => 95,
             Self::PluginList(_) => 68,
             Self::PluginActions(_) => 69,
@@ -411,7 +427,7 @@ impl Command {
         })
     }
 
-    pub(crate) const NAMES: [&str; 108] = [
+    pub(crate) const NAMES: [&str; 113] = [
         "status",
         "open",
         "new-workspace",
@@ -520,6 +536,11 @@ impl Command {
         "files-search",
         "paste-file",
         "changes-merge-check",
+        "worktree-size",
+        "free-builds",
+        "processes",
+        "stop-process",
+        "worktrees",
     ];
 
     pub(crate) fn chatty(name: &str) -> bool {
@@ -534,6 +555,7 @@ impl Command {
                 | "changes-file"
                 | "changes-gap"
                 | "flow-files"
+                | "processes"
                 | "files-list"
                 | "files-read"
                 | "files-search"
