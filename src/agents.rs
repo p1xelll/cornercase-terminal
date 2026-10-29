@@ -14,7 +14,7 @@ pub(crate) mod opencode;
 pub mod stats;
 pub(crate) mod tree;
 pub(crate) mod usage;
-pub mod vibe;
+pub(crate) mod vibe;
 
 pub use known::Known;
 

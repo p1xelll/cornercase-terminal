@@ -40,6 +40,18 @@ mod store {
     }
 
     #[test]
+    fn a_generation_that_leaves_its_folder_is_not_read() {
+        let fake = FakeVibe::new();
+        let current = json!({"generation": "../generations/0000000000000001", "session_id": ID});
+        std::fs::write(fake.session().join("CURRENT"), current.to_string()).expect("write CURRENT");
+
+        let session = look(fake.path(), ID).expect("the session");
+
+        assert_eq!(session.context, Some(Context { model: "glm-5-3".into(), percent: None }));
+        assert!(!session.resumable);
+    }
+
+    #[test]
     fn hides_the_percentage_after_a_compaction_until_a_newer_turn() {
         let fake = FakeVibe::new();
         fake.turn(

@@ -150,7 +150,9 @@ impl Session {
 
     fn snapshots(&self) -> (Option<Value>, Option<Value>, Option<Value>) {
         let generation = json(&self.path.join("CURRENT"))
-            .and_then(|current| current["generation"].as_str().map(str::to_string))
+            .and_then(|current| {
+                current["generation"].as_str().filter(|generation| plain(generation)).map(str::to_string)
+            })
             .map(|generation| self.path.join("generations").join(generation));
         let of = |name: &str| generation.as_ref().and_then(|dir| json(&dir.join(name)));
         (of("projection-state.json"), of("runtime-state.json"), of("checkpoint.json"))
