@@ -346,18 +346,13 @@ pub(crate) fn start_line(
         }
         chosen = with_mode(kind, &chosen, &table, Some(name));
     }
-    if model.is_some_and(|m| !m.trim().is_empty()) {
-        match Known::of(kind) {
-            None => {
-                let known = Known::ALL.map(Known::name).join(", ");
-                return Err(format!("cornercase passes a model to {known} only; give {kind} its model in agent_args"));
-            }
-            Some(_) => {
-                if let Some(refusal) = model_refusal(kind, model) {
-                    return Err(refusal);
-                }
-            }
-        }
+    if model.is_some_and(|m| !m.trim().is_empty()) && Known::of(kind).is_none() {
+        let known: Vec<&str> = Known::ALL.into_iter().filter(|k| k.model_flag().is_some()).map(Known::name).collect();
+        let known = known.join(", ");
+        return Err(format!("cornercase passes a model to {known} only; give {kind} its model in agent_args"));
+    }
+    if let Some(refusal) = model_refusal(kind, model) {
+        return Err(refusal);
     }
     let effort = effort.map(str::trim).filter(|level| !level.is_empty());
     if let Some(refusal) = effort.and_then(|level| effort_refusal(kind, level)) {
@@ -403,7 +398,8 @@ fn basename(arg: &str) -> &str {
 
 pub(crate) fn detect(config: &Config, argv: &[String]) -> Option<String> {
     let names: Vec<&str> = argv.iter().take(2).map(|a| basename(a)).collect();
-    let scripts: Vec<&str> = argv.iter().take(4).filter(|arg| !arg.starts_with('-')).map(String::as_str).collect();
+    let script = argv.iter().skip(1).find(|arg| !arg.starts_with('-'));
+    let scripts: Vec<&str> = argv.first().into_iter().chain(script).map(String::as_str).collect();
     kinds(config).into_iter().find(|kind| {
         let bin = command(config, kind);
         names.contains(&basename(&bin))

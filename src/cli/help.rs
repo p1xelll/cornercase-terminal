@@ -155,7 +155,7 @@ Gemini, Grok Build, Cursor CLI, Vibe CLI or GitHub Copilot CLI holds a prompt un
 then.
 Grok Build queues that prompt; pressing Enter again sends it now and cancels the turn. Gemini local
 slash commands, ? help and ! shell input, and the / and ! commands of Grok Build and Cursor CLI, and the / and !
-commands and a lone ? of GitHub Copilot CLI, and the /, ! and & commands of Vibe CLI, return after Enter without
+commands and a lone ? of GitHub Copilot CLI, and the / (but not /skill), ! and & commands of Vibe CLI, return after Enter without
 confirming a prompt record. A compact command
 (`/compact` of Claude Code and Codex) returns once the agent records the compaction, however long that takes
 while the agent works on it; --timeout bounds it. In other programs it returns once Enter is pressed.
