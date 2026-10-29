@@ -2,6 +2,10 @@
 
 Every pull request that changes the app adds a section here for its new version. The section becomes the notes of the GitHub Release and shows up in the app's update dialog, so write it for users.
 
+## 0.12.226
+
+- **Mistral's Vibe CLI is a known agent.** Start an issue with `vibe` or launch it in a tab: cornercase recognises it (its launcher becomes `vibe-rs`), leaves its "Trust this folder?" question to you, and shows whether it is working, waiting, finished or failed from its own OSC 7501 reports. Its modes (`ask`, `smart approve`, `auto-approve`) and `--add-dir` work, a prompt typed while it works waits, and flow roles run it unattended with `--agent auto-approve`. It has no `--model` flag, so a role that names a model says so instead of starting it with one.
+
 ## 0.12.225
 
 - **List every worktree on disk from a script.** `cornercase worktrees list` prints the Worktrees dialog's rows in its order: each worktree's project and branch, folder, when it last changed, its size and the part in build folders, and what removing it would lose or stop (uncommitted files, unpushed commits, a lock, programs running there), with `merged` or `no commits`. `--json` adds each one's `safe` and the facts behind it, `--project ID` lists one project's, and `--no-sizes` answers without measuring. It removes nothing. It is the request `worktrees`, which `cornercase contract` lists.
