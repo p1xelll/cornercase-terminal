@@ -211,8 +211,8 @@ prints shell. Subagents an agent started keep every wait waiting, --until turn-o
 agent goes on when they end. It then prints how it ended (idle, done, failed, pending, waiting, working, shell or quiet),
 or the line that matched.
 Waiting for an agent needs OSC 7501 reports, or a reader for Claude Code, Codex, Gemini CLI,
-opencode, Grok Build, Cursor CLI, Vibe CLI or GitHub Copilot CLI in the pane. Without reports, Gemini status needs its dynamic window title,
-and Cursor CLI's waiting needs /status-indicators. A timeout exits with 1 and does not prove that the
+opencode, Grok Build, Cursor CLI or GitHub Copilot CLI in the pane. Without reports, Gemini status needs its dynamic window title,
+and Cursor CLI's waiting needs /status-indicators. Vibe CLI's status comes only from its reports. A timeout exits with 1 and does not prove that the
 agent missed what you sent: read the pane before sending it again.
 
 Several panes and tabs take --any or --all, and the condition applies to each. --any returns once

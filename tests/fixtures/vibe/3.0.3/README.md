@@ -14,7 +14,7 @@ The Rust TUI speaks **OSC 7501**, and its session store is the "unified" format
 
 The account's Mistral budget is exhausted: `vibe --prompt "Reply with the word done"` exits with
 HTTP **402** `billing_vibe_budget_exhausted`, and the same happens in the TUI with the real key.
-No real Mistral turn was possible, and the vault is locked, so no second key was available.
+No real Mistral turn was possible.
 
 The successful turn and the live `/compact` were therefore run through the **real TUI, real unified
 store and real OSC code path**, with Vibe's own generic OpenAI-compatible provider pointed at a local
@@ -148,8 +148,8 @@ prompts: it warns that project configuration is ignored and continues.
 vibe (Python console script) --execvpe--> vibe-rs (Rust TUI, same pid) --> python vibe-app-server
 ```
 
-The foreground process is `vibe-rs`, so `vibe::runs_as` takes `vibe-rs` (and `detect` scans the first
-four non-flag arguments). The app-server's pid is the one the lease names.
+The foreground process is `vibe-rs`, so `vibe::runs_as` takes `vibe-rs` (and `detect` also looks at
+`argv[0]`). The app-server's pid is the one the lease names.
 
 `--agent ask|accept-edits|smart-approve|auto-approve` (default `accept-edits`; no plan mode);
 `--auto-approve` (`--yolo`) and `--smart-approve`; `--add-dir`; `--workdir`; never `--worktree`.
