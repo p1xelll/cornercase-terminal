@@ -29,25 +29,18 @@ fn replies(record: &Value) -> Vec<String> {
         .collect()
 }
 
-fn prompts(record: &Value) -> Vec<String> {
+fn prompt(record: &Value) -> Option<String> {
     let payload = &record["payload"];
     if record["type"].as_str() != Some("command_reserved") || payload["method"].as_str() != Some("turn/start") {
-        return Vec::new();
+        return None;
     }
-    let Some(entries) = payload["params"]["entries"].as_array() else { return Vec::new() };
-    entries
-        .iter()
-        .filter(|entry| entry["role"].as_str() == Some("user"))
-        .filter_map(|entry| {
-            let blocks = entry["content"].as_array()?;
-            message::joined(
-                blocks
-                    .iter()
-                    .filter(|block| block["type"].as_str() == Some("text"))
-                    .filter_map(|block| block["text"].as_str().map(str::to_string)),
-            )
-        })
-        .collect()
+    let blocks = payload["params"]["message"].as_array()?;
+    message::joined(
+        blocks
+            .iter()
+            .filter(|block| block["type"].as_str() == Some("text"))
+            .filter_map(|block| block["text"].as_str().map(str::to_string)),
+    )
 }
 
 fn spoken(role: Role, text: &str) -> Option<Spoken> {
@@ -60,7 +53,7 @@ fn emit(role: Role, text: &str, each: Each) -> bool {
 }
 
 fn speak(record: &Value, each: Each) -> bool {
-    prompts(record).iter().all(|text| emit(Role::Prompt, text, each))
+    prompt(record).is_none_or(|text| emit(Role::Prompt, &text, each))
         && replies(record).iter().all(|text| emit(Role::Reply, text, each))
 }
 

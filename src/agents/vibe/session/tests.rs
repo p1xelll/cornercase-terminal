@@ -2,6 +2,7 @@ use super::*;
 use serde_json::json;
 
 use crate::agents::context::counting::Ledger;
+use crate::agents::context::message::Role;
 use crate::agents::stats::Tokens;
 use crate::agents::vibe::fake::{FakeVibe, ID, Usage};
 
@@ -186,7 +187,7 @@ mod fixtures {
     }
 
     #[test]
-    fn the_3_0_3_success_fixture_reads_the_model_the_window_and_the_last_message() {
+    fn the_3_0_3_success_fixture_reads_the_model_the_window_the_last_message_and_the_prompt() {
         let home = store(
             SUCCESS,
             "0000000000000008",
@@ -205,6 +206,13 @@ mod fixtures {
         assert!(session.resumable);
         let message = crate::agents::vibe::message::last_message(&session.path).expect("read").expect("a reply");
         assert_eq!(message.text, "done");
+        let mut said = Vec::new();
+        crate::agents::vibe::message::said_all(&session.path, &mut |spoken| {
+            said.push((spoken.role, spoken.said.text));
+            true
+        })
+        .expect("search");
+        assert_eq!(said, [(Role::Prompt, "Reply with the word done".to_string()), (Role::Reply, "done".to_string())]);
     }
 
     #[test]

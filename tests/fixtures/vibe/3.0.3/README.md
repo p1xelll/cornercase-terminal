@@ -127,8 +127,8 @@ The reply:
           "output_tokens":12,"reasoning_tokens":0,"total_tokens":1246}}}}}
 ```
 
-`last_message` reads the newest `parts[]` entry of type `text`; search reads `turn/start` user entries
-and those text parts. Records carry no timestamps, so `written` is `None`.
+`last_message` reads the newest `parts[]` entry of type `text`; search reads the text blocks of
+`turn/start`'s `params.message` and those text parts. Records carry no timestamps, so `written` is `None`.
 
 `compact/journal.jsonl` holds the `app_server/session/compact` command (`params.instructions: ""`)
 and the first reply. The compaction's own model call is not an `action_result`; its tokens appear only

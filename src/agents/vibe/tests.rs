@@ -53,7 +53,7 @@ mod messages {
         fake.journal(&[
             json!({"type": "command_reserved", "payload": {
                 "method": "turn/start",
-                "params": {"entries": [{"role": "user", "content": [{"type": "text", "text": "fix the login"}]}]},
+                "params": {"injected": false, "message": [{"type": "text", "text": "fix the login"}]},
             }}),
             json!({"type": "action_result", "payload": {"result": {"result": {
                 "parts": [{"type": "reasoning", "text": "thinking"}, {"type": "text", "text": "first"}],
