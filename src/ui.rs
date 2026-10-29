@@ -71,6 +71,7 @@ pub(crate) use dialog::picker::{Entry, Picker, PickerHit, picker_hit, picker_lis
 pub use dialog::picker::{picker_area, picker_buttons, picker_item};
 pub(crate) use dialog::popup::{Popup, Wanted as PopupWanted, popup_close, popup_inner, popup_size};
 pub(crate) use dialog::ports::{ConfirmBody, PortRow, Ports, PortsHit, ports_hit, ports_room};
+pub(crate) use dialog::processes::{ProcessLine, Processes, ProcessesHit, processes_hit, processes_room};
 #[cfg(test)]
 pub(crate) use dialog::project_settings::project_settings_buttons;
 pub(crate) use dialog::project_settings::{
@@ -106,7 +107,9 @@ pub(crate) use dialog::usage::usage_area;
 pub(crate) use dialog::usage::{Usage, UsageSection, UsageWindow, usage_done, usage_share, usage_tabs};
 #[cfg(test)]
 pub(crate) use dialog::worktrees::worktrees_area;
-pub(crate) use dialog::worktrees::{ConfirmView, WorktreeRow, Worktrees, WorktreesHit, worktrees_hit, worktrees_room};
+pub(crate) use dialog::worktrees::{
+    ConfirmView, Purpose, WorktreeRow, Worktrees, WorktreesHit, worktrees_hit, worktrees_room,
+};
 pub(crate) use dialog::{CANCEL_LABEL, Note, Overlay};
 pub(crate) use drop::{Drag, Landing, Spot, sidebar_drop, tree_drop, workspace_drop};
 pub(crate) use forum::{ForumHit, ForumSetup, hit as forum_hit};
@@ -163,6 +166,7 @@ use dialog::issues::draw_issues;
 use dialog::menu::draw_menu;
 use dialog::picker::draw_picker;
 use dialog::ports::draw_ports;
+use dialog::processes::draw_processes;
 use dialog::project_settings::draw_project_settings;
 use dialog::search::draw_results;
 use dialog::settings::draw_settings;
@@ -463,6 +467,7 @@ fn draw_overlay(f: &mut Frame, view: &View, areas: &Areas) {
         Some(Overlay::ProjectSettings(settings)) => draw_project_settings(f, view, settings),
         Some(Overlay::Worktrees(worktrees)) => draw_worktrees(f, view, worktrees),
         Some(Overlay::Ports(ports)) => draw_ports(f, view, ports),
+        Some(Overlay::Processes(processes)) => draw_processes(f, view, processes),
         Some(Overlay::Popup(popup)) => dialog::popup::draw(f, view, popup),
         Some(Overlay::Search(search)) if search.showing_results() => draw_results(f, view, search, areas.results),
         Some(Overlay::Keys(menu)) => keys::draw(f, view, menu, areas.pane),

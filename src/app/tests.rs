@@ -548,6 +548,7 @@ mod plugin_buttons;
 mod plugin_popup;
 mod plugins;
 mod ports_dialog;
+mod processes_dialog;
 mod project_settings;
 mod projects;
 mod remove_worktree;
@@ -575,6 +576,7 @@ mod tour;
 mod tree_sidebar;
 mod workspace_folds;
 mod workspaces;
+mod worktree_builds;
 mod worktrees_dialog;
 
 #[test]

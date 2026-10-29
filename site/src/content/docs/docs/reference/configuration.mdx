@@ -18,8 +18,8 @@ The ` share ` button hands your settings to a colleague, or imports theirs: see 
 
 <Screen
   name="settings-worktrees"
-  alt="The Worktrees tab: worktrees folder ~/.cornercase/worktrees, new worktrees go in folder/repo/branch; fetch branches every 5 min, commits to pull show as ↓n; pull requests shown, each workspace's pull request and its checks, from gh or glab"
-  crop={[2, 1, 106, 8]}
+  alt="The Worktrees tab: worktrees folder ~/.cornercase/worktrees, new worktrees go in folder/repo/branch; fetch branches every 5 min, commits to pull show as ↓n; pull requests shown, each workspace's pull request and its checks, from gh or glab; merged PRs in stats shown; shared files hidden, ⇄n when two workspaces change the same files"
+  crop={[2, 1, 106, 9]}
 />
 
 | Row | What it sets |
@@ -28,6 +28,7 @@ The ` share ` button hands your settings to a colleague, or imports theirs: see 
 | **fetch branches every** | How often, in minutes, the remotes are fetched to show the [commits to pull](../../guides/worktrees/#commits-to-pull) as `↓n` on each workspace. `0` turns it off. |
 | **merged PRs in stats** | On (the default): Usage → Stats counts your merged pull requests and merge requests, read with `gh` and `glab`. Off: nothing is asked. The note names the accounts read, or why none were. See [Usage and stats](../../guides/projects-workspaces-tabs/#usage-and-stats). |
 | **pull requests** | On (the default): each workspace whose branch has a pull request on GitHub, or a merge request on GitLab, shows its number, the state of its checks (its pipeline's jobs on GitLab) and whether it has merge conflicts, and on GitHub its layer in a stack, read with `gh` or `glab`. Off: nothing is asked. The note says why none show when every project read with one of them fails, because it is missing, logged out or failing. See [Pull requests and their checks](../../guides/worktrees/#pull-requests-and-their-checks). |
+| **shared files** | Off (the default): no workspace is scanned for the files it shares with the others. On: when two workspaces of a project change the same files, both rows show `⇄n` and those files carry `⇄` in the changes panel, from a git scan every few seconds in projects with two or more checkouts. The **merge check** works either way. See [Workspaces that change the same files](../../guides/worktrees/#workspaces-that-change-the-same-files). |
 
 ### Agents
 
@@ -194,7 +195,7 @@ The text holds five sections, each of which the other person can leave out:
 | --- | --- |
 | `agents` | [`agent`](#agent), [`agent_args`](#agent_args), [`agent_modes`](#agent_modes), [`agent_commands`](#agent_commands), [`prompt`](#prompt), [`submit`](#submit), [`accept_trust_prompts`](#accept_trust_prompts), [`resume_agents`](#resume_agents), [`trust_prompt_pattern`](#trust_prompt_pattern) |
 | `issues` | [`issue_branch`](#issue_branch), [`issue_tabs`](#issue_tabs), [`gitlab_url`](#gitlab_url), [`jira_site`](#jira_site), [`jira_jql`](#jira_jql), [`plane_url`](#plane_url), [`plane_workspace`](#plane_workspace), [`plane_filter`](#plane_filter), [`asana_workspace`](#asana_workspace), [`asana_projects`](#asana_projects) |
-| `worktrees` | [`worktrees_dir`](#worktrees_dir), [`fetch_minutes`](#fetch_minutes), [`pull_requests`](#pull_requests), [`merged_pull_requests`](#merged_pull_requests), [`gh`](#gh), [`glab`](#glab) |
+| `worktrees` | [`worktrees_dir`](#worktrees_dir), [`fetch_minutes`](#fetch_minutes), [`pull_requests`](#pull_requests), [`merged_pull_requests`](#merged_pull_requests), [`shared_files`](#shared_files), [`gh`](#gh), [`glab`](#glab) |
 | `interface` | Every switch of the UI tab, from [`sidebar`](#sidebar) to [`tour`](#tour), with the sounds and the [prefix key](#prefix_key) |
 | `repositories` | Each project's [setup and teardown](../../guides/worktrees/#set-up-each-new-worktree), found by the project's git remotes (such as `github.com/acme/web-shop`) rather than its folder, so it reaches the same repository wherever your colleague cloned it |
 
@@ -228,6 +229,7 @@ Every key is optional: a missing key takes its default. Here is a complete file,
   "fetch_minutes": 5,
   "pull_requests": true,
   "merged_pull_requests": true,
+  "shared_files": false,
   "issue_branch": "",
   "issue_tabs": ["all", "github", "gitlab", "shortcut", "linear", "jira", "plane", "asana"],
   "gitlab_url": "",
@@ -296,6 +298,7 @@ Every key is optional: a missing key takes its default. Here is a complete file,
 | [`fetch_minutes`](#fetch_minutes) | number | `5` |
 | [`pull_requests`](#pull_requests) | boolean | `true` |
 | [`merged_pull_requests`](#merged_pull_requests) | boolean | `true` |
+| [`shared_files`](#shared_files) | boolean | `false` |
 | [`issue_branch`](#issue_branch) | string | `""` |
 | [`issue_tabs`](#issue_tabs) | array of strings | `["all", "github", "gitlab", "shortcut", "linear", "jira", "plane", "asana"]` |
 | [`gitlab_url`](#gitlab_url) | string | `""` |
@@ -371,6 +374,10 @@ Whether each workspace shows the pull request of its branch and the state of its
 #### `merged_pull_requests`
 
 Whether Usage → Stats counts the pull requests and merge requests you opened that were merged, read with [`gh`](#gh) and [`glab`](#glab). On by default; off asks nothing. See [Usage and stats](../../guides/projects-workspaces-tabs/#usage-and-stats).
+
+#### `shared_files`
+
+Whether workspaces of a project look for the files they both change: the `⇄n` badge on their rows and the `⇄` mark in the changes panel, from a git scan every few seconds in projects with two or more checkouts. Off by default; off runs no scan, and the **merge check** still checks a workspace against its base branch. See [Workspaces that change the same files](../../guides/worktrees/#workspaces-that-change-the-same-files).
 
 #### `issue_branch`
 
@@ -598,10 +605,10 @@ What happens to a workspace's post when you close the workspace, in forum mode: 
 
 #### `projects`
 
-Per-project commands, keyed by the project's folder (`~/` is expanded): `setup` runs in the first tab of each new [worktree](../../guides/worktrees/#set-up-each-new-worktree) before its agent starts, `teardown` runs before a worktree is removed. Edit them in the project's `⋯` menu, **project settings**; an entry with both empty is removed.
+Per-project settings, keyed by the project's folder (`~/` is expanded): `setup` runs in the first tab of each new [worktree](../../guides/worktrees/#set-up-each-new-worktree) before its agent starts, `teardown` runs before a worktree is removed, and `builds` lists the folder names that [free builds](../../guides/worktrees/#free-build-folders) deletes in the project's worktrees when git ignores them. Without `builds` the list is `node_modules`, `target`, `.next`, `.turbo`, `dist`, `build`, `.venv` and `__pycache__`; `[]` means no folder of the project is freed. Edit them in the project's `⋯` menu, **project settings**; an entry with nothing set is removed.
 
 ```json
-"projects": { "~/code/web-shop": { "setup": "npm ci\ncp ../.env .env", "teardown": "docker compose down" } }
+"projects": { "~/code/web-shop": { "setup": "npm ci\ncp ../.env .env", "teardown": "docker compose down", "builds": ["node_modules", ".next"] } }
 ```
 
 #### `profiles`

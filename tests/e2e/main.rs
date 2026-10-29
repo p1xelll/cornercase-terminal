@@ -37,6 +37,7 @@ mod panels;
 mod panes;
 mod plugins;
 mod ports;
+mod processes;
 mod queue;
 mod remote;
 mod server;
@@ -48,6 +49,7 @@ mod todos;
 mod updates;
 mod usage;
 mod views;
+mod worktrees;
 
 const ROWS: u16 = 24;
 const COLS: u16 = 100;

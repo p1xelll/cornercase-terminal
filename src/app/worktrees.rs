@@ -13,6 +13,8 @@ use super::pull_requests::Looked;
 use super::toast::Toast;
 use super::worktrees_dialog::Deleted;
 use crate::agents::launch::Launch;
+use crate::control::BuildsFreed;
+use crate::control::contract::Refusal;
 use crate::editor::Editor;
 use crate::error::Result;
 use crate::flows::run::RoleWorktree;
@@ -24,7 +26,8 @@ use crate::log::{self, Job, Level};
 use crate::project::{Hierarchy, Phase, Workspace, WorkspaceAt};
 use crate::pull_request::glab::Host;
 use crate::ui::{self};
-use crate::worktrees::{Found, Scan};
+use crate::worktrees::builds::{Freed, Size};
+use crate::worktrees::{Found, Row, Scan};
 
 #[derive(Default)]
 pub(super) struct Upstream {
@@ -52,6 +55,18 @@ pub(super) enum Check {
     Changed,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Measure {
+    Dialog { generation: u64, ticket: u64 },
+    Request(u64),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ListFor {
+    Dialog(u64),
+    Request { key: u64, sizes: bool },
+}
+
 #[derive(Debug)]
 pub(crate) enum WorktreeEvent {
     Created { project: u64, result: Result<PathBuf>, start: Option<Start>, request: Option<u64> },
@@ -61,10 +76,14 @@ pub(crate) enum WorktreeEvent {
     Behind { project: u64, behind: Vec<(u64, u32)> },
     PullRequests { project: u64, looked: Looked },
     GlabHosts(std::result::Result<Vec<Host>, String>),
-    Listed { generation: u64, found: Vec<Found> },
+    Listed { to: ListFor, found: Result<Vec<Found>> },
+    Rows { key: u64, rows: Box<Result<Vec<Row>>> },
     Scanned { generation: u64, ticket: u64, path: PathBuf, scan: Box<Result<Scan>>, confirm: bool },
     Outside { generation: u64, ticket: u64, found: Result<Vec<(PathBuf, String, bool)>> },
     Cleaned { key: u64, result: Result<Option<String>>, branch: Deleted },
+    Measured { answer: Measure, path: PathBuf, size: Box<Result<Size>> },
+    Freed { key: u64, path: PathBuf, result: Box<Result<Freed>> },
+    BuildsRequest { key: u64, result: Box<std::result::Result<BuildsFreed, Refusal>> },
 }
 
 impl WorktreeEvent {
@@ -78,9 +97,13 @@ impl WorktreeEvent {
             Self::PullRequests { .. } => "pull requests",
             Self::GlabHosts(_) => "glab hosts",
             Self::Listed { .. } => "worktrees listed",
+            Self::Rows { .. } => "worktree rows",
             Self::Scanned { .. } => "worktree scanned",
             Self::Outside { .. } => "outside processes",
             Self::Cleaned { .. } => "worktree cleaned",
+            Self::Measured { .. } => "worktree measured",
+            Self::Freed { .. } => "builds freed",
+            Self::BuildsRequest { .. } => "builds request",
         }
     }
 }
@@ -110,12 +133,16 @@ impl App {
             WorktreeEvent::Behind { project, behind } => self.behind_counted(project, &behind),
             WorktreeEvent::PullRequests { project, looked } => self.pull_requests_found(project, looked),
             WorktreeEvent::GlabHosts(listed) => self.glab_hosts_found(listed),
-            WorktreeEvent::Listed { generation, found } => self.worktrees_listed(generation, found),
+            WorktreeEvent::Listed { to, found } => self.worktrees_found(to, found),
+            WorktreeEvent::Rows { key, rows } => self.worktree_rows_answered(key, *rows),
             WorktreeEvent::Scanned { generation, ticket, path, scan, confirm } => {
                 self.worktree_scanned((generation, ticket), &path, *scan, confirm);
             }
             WorktreeEvent::Outside { generation, ticket, found } => self.outside_found((generation, ticket), found),
             WorktreeEvent::Cleaned { key, result, branch } => self.worktree_cleaned(key, result, branch),
+            WorktreeEvent::Measured { answer, path, size } => self.worktree_measured(answer, &path, *size),
+            WorktreeEvent::Freed { key, path, result } => self.builds_freed(key, &path, *result),
+            WorktreeEvent::BuildsRequest { key, result } => self.builds_request_answered(key, *result),
         }
         Ok(())
     }

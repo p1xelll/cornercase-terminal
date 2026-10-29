@@ -17,8 +17,8 @@ use super::text_fields::FieldMenu;
 use super::toast::Toast;
 use super::tour_card::TourRuntime;
 use super::worktrees::Upstream;
-use super::worktrees_dialog::{Cleanup, Scans};
-use super::{flow_panel, merged_pull_requests, ports_dialog, pull_requests};
+use super::worktrees_dialog::{Cleanup, Frees, Scans};
+use super::{flow_panel, merged_pull_requests, ports_dialog, processes_dialog, pull_requests};
 
 #[derive(Default)]
 pub(super) struct Screen {
@@ -39,6 +39,7 @@ pub(super) struct Git {
     pub(super) merged: merged_pull_requests::MergedPulls,
     pub(super) scans: Scans,
     pub(super) cleanup: Cleanup,
+    pub(super) frees: Frees,
     pub(super) overlaps: Overlaps,
 }
 
@@ -59,5 +60,6 @@ pub(super) struct Panels {
     pub(super) flow: flow_panel::FlowPanel,
     pub(super) queued: QueueRuntime,
     pub(super) ports: ports_dialog::PortsState,
+    pub(super) processes: processes_dialog::ProcessesState,
     pub(super) merges: MergeChecks,
 }
